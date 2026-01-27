@@ -1,0 +1,45 @@
+/.vs
+*.log
+bin/
+obj/
+*.exe
+*.dll
+# 忽略编译生成的文件
+Bin/
+Obj/
+[Oo]ut/
+
+# 忽略生成的部署文件
+_publish/
+
+# 忽略调试信息文件
+*.pdb
+
+# 忽略缓存文件
+*.user
+
+# 忽略NuGet包文件
+packages/
+
+# 忽略测试生成的文件
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og*
+
+# 忽略文档生成的文件
+[Dd]oc[Ss]tyle*/
+[Dd]oc[Hh]elp*/
+
+# 忽略MSBuild生成的文件
+*.vspscc
+*.vssscc
+.*proj.*.user
+obj
+bin
+.vscode
+Desktop.ini
+.vs
+/.github
+/web/node_modules
+node_modules/
+wwwroot/
+data

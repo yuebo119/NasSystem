@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>NasSystem.Application</RootNamespace>
+    <AssemblyName>NasSystem.Application</AssemblyName>
+    <Description>NAS System 应用层 - 业务用例、命令查询、DTO</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NasSystem.Domain\NasSystem.Domain.csproj" />
+    <ProjectReference Include="..\NasSystem.Shared\NasSystem.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 验证和映射 -->
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Mapster" />
+    
+    <!-- 配置和缓存抽象 -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageVersion Update="FluentValidation" Version="12.1.1" />
+    <PackageVersion Update="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+  </ItemGroup>
+
+</Project>

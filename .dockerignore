@@ -1,0 +1,67 @@
+# =============================================================================
+# NAS System - Docker Ignore
+# 排除不需要复制到容器的文件
+# =============================================================================
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vs
+.vscode
+.idea
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build 输出
+**/bin
+**/obj
+**/out
+**/publish
+
+# Node
+**/node_modules
+web/dist
+
+# 测试
+**/TestResults
+**/coverage
+
+# 日志
+logs
+*.log
+
+# 临时文件
+**/tmp
+**/temp
+*.tmp
+*.temp
+
+# 文档
+docs
+*.md
+!README.md
+
+# 测试项目 (生产构建不需要)
+tests
+
+# 开发配置
+appsettings.Development.json
+launchSettings.json
+**/Properties/launchSettings.json
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# 其他
+*.swp
+*.bak
+*~
+.DS_Store
+Thumbs.db

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>NasSystem.Domain</RootNamespace>
+    <AssemblyName>NasSystem.Domain</AssemblyName>
+    <Description>NAS System 领域层 - 核心业务实体和接口定义</Description>
+  </PropertyGroup>
+
+  <!-- Domain 层不依赖任何外部包，保持纯净 -->
+
+</Project>

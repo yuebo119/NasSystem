@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>NasSystem.Api</RootNamespace>
+    <AssemblyName>NasSystem.Api</AssemblyName>
+    <Description>NAS System API 层 - Web API 入口、中间件、端点</Description>
+    
+    <!-- 禁用 Native AOT (EF Core 不支持) -->
+    <PublishAot>false</PublishAot>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    
+    <!-- 启用 HTTP/2 和压缩 -->
+    <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NasSystem.Application\NasSystem.Application.csproj" />
+    <ProjectReference Include="..\NasSystem.Infrastructure\NasSystem.Infrastructure.csproj" />
+    <ProjectReference Include="..\NasSystem.Shared\NasSystem.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- OpenAPI / Swagger -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="Scalar.AspNetCore" />
+    
+    <!-- 日志集成 -->
+    <PackageReference Include="Serilog.AspNetCore" />
+    
+    <!-- JWT 认证 -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+
+</Project>

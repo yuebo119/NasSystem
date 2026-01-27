@@ -1,0 +1,70 @@
+# =============================================================================
+# NAS System - Docker Compose
+# 开发和生产环境配置
+# =============================================================================
+
+services:
+  # NAS System 主服务
+  nas-system:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nas-system
+    ports:
+      - "6050:6050"
+    volumes:
+      # 数据持久化
+      - nas-data:/app/data
+      # 存储目录 - 可挂载宿主机目录
+      - nas-storage:/app/storage
+      # 日志
+      - nas-logs:/app/logs
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/nas.db
+      - NasSystem__StoragePath=/app/storage
+      - Jwt__Secret=${JWT_SECRET:-your-super-secret-key-at-least-32-characters-long}
+      - Jwt__Issuer=NasSystem
+      - Jwt__Audience=NasSystemUsers
+      - Jwt__ExpirationMinutes=60
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6050/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - nas-network
+
+  # 可选: Nginx 反向代理 (生产环境)
+  nginx:
+    image: nginx:alpine
+    container_name: nas-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - nas-system
+    restart: unless-stopped
+    networks:
+      - nas-network
+    profiles:
+      - production
+
+# 命名卷
+volumes:
+  nas-data:
+    driver: local
+  nas-storage:
+    driver: local
+  nas-logs:
+    driver: local
+
+# 网络
+networks:
+  nas-network:
+    driver: bridge

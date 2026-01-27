@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>NasSystem.Infrastructure</RootNamespace>
+    <AssemblyName>NasSystem.Infrastructure</AssemblyName>
+    <Description>NAS System 基础设施层 - 数据访问、外部服务、文件系统</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NasSystem.Domain\NasSystem.Domain.csproj" />
+    <ProjectReference Include="..\NasSystem.Application\NasSystem.Application.csproj" />
+    <ProjectReference Include="..\NasSystem.Shared\NasSystem.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 数据访问 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Dapper" />
+    
+    <!-- JWT 认证 -->
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    
+    <!-- 任务调度 -->
+    <PackageReference Include="Hangfire.Core" />
+    <PackageReference Include="Hangfire.MemoryStorage" />
+    
+    <!-- 日志 -->
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    
+    <!-- 覆盖传递依赖的安全漏洞版本 -->
+    <PackageReference Include="Newtonsoft.Json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageVersion Update="Dapper" Version="2.1.66" />
+    <PackageVersion Update="Hangfire.Core" Version="1.8.22" />
+    <PackageVersion Update="Hangfire.MemoryStorage" Version="1.8.1.2" />
+    <PackageVersion Update="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageVersion Update="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageVersion Update="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageVersion Update="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
+  </ItemGroup>
+
+</Project>

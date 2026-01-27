@@ -1,0 +1,463 @@
+// =============================================================================
+// NasSystem.UnitTests - StorageServiceTests.cs
+// 存储服务单元测试
+// =============================================================================
+
+namespace NasSystem.UnitTests.Services;
+
+using FluentAssertions;
+using Moq;
+using NasSystem.Application.Storage;
+using NasSystem.Application.Storage.Dtos;
+using NasSystem.Domain.Common;
+using NasSystem.Domain.Entities;
+using NasSystem.Domain.Enums;
+using NasSystem.Domain.Repositories;
+using NasSystem.Domain.Services;
+using Xunit;
+
+/// <summary>
+/// StorageService 单元测试
+/// </summary>
+public class StorageServiceTests
+{
+    private readonly Mock<IStoragePoolRepository> _poolRepositoryMock;
+    private readonly Mock<IShareRepository> _shareRepositoryMock;
+    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<IFileSystemService> _fileSystemServiceMock;
+    private readonly StorageService _sut;
+
+    public StorageServiceTests()
+    {
+        _poolRepositoryMock = new Mock<IStoragePoolRepository>();
+        _shareRepositoryMock = new Mock<IShareRepository>();
+        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _fileSystemServiceMock = new Mock<IFileSystemService>();
+
+        _sut = new StorageService(
+            _poolRepositoryMock.Object,
+            _shareRepositoryMock.Object,
+            _unitOfWorkMock.Object,
+            _fileSystemServiceMock.Object);
+    }
+
+    #region GetOverviewAsync Tests
+
+    [Fact]
+    public async Task GetOverviewAsync_ReturnsStorageOverview()
+    {
+        // Arrange
+        var pools = new List<StoragePool>
+        {
+            CreateTestPool("Pool1", "/mnt/pool1", 1000L * 1024 * 1024 * 1024, 500L * 1024 * 1024 * 1024),
+            CreateTestPool("Pool2", "/mnt/pool2", 2000L * 1024 * 1024 * 1024, 1000L * 1024 * 1024 * 1024)
+        };
+
+        _poolRepositoryMock
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pools);
+
+        // Act
+        var result = await _sut.GetOverviewAsync();
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PoolCount.Should().Be(2);
+        result.Value.TotalBytes.Should().Be(3000L * 1024 * 1024 * 1024);
+        result.Value.UsedBytes.Should().Be(1500L * 1024 * 1024 * 1024);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_WhenNoPoolsExist_ReturnsZeroValues()
+    {
+        // Arrange
+        _poolRepositoryMock
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StoragePool>());
+
+        // Act
+        var result = await _sut.GetOverviewAsync();
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PoolCount.Should().Be(0);
+        result.Value.TotalBytes.Should().Be(0);
+        result.Value.UsedBytes.Should().Be(0);
+        result.Value.UsagePercentage.Should().Be(0);
+    }
+
+    #endregion
+
+    #region GetPoolsAsync Tests
+
+    [Fact]
+    public async Task GetPoolsAsync_ReturnsAllPools()
+    {
+        // Arrange
+        var pools = new List<StoragePool>
+        {
+            CreateTestPool("Pool1", "/mnt/pool1"),
+            CreateTestPool("Pool2", "/mnt/pool2")
+        };
+
+        _poolRepositoryMock
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pools);
+
+        // Act
+        var result = await _sut.GetPoolsAsync();
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetPoolsAsync_WhenNoPools_ReturnsEmptyList()
+    {
+        // Arrange
+        _poolRepositoryMock
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StoragePool>());
+
+        // Act
+        var result = await _sut.GetPoolsAsync();
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region GetPoolByIdAsync Tests
+
+    [Fact]
+    public async Task GetPoolByIdAsync_WithExistingPool_ReturnsPool()
+    {
+        // Arrange
+        var poolId = Guid.NewGuid();
+        var pool = CreateTestPool("TestPool", "/mnt/test");
+        SetEntityId(pool, poolId);
+
+        _poolRepositoryMock
+            .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+
+        // Act
+        var result = await _sut.GetPoolByIdAsync(poolId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Name.Should().Be("TestPool");
+        result.Value.MountPath.Should().Be("/mnt/test");
+    }
+
+    [Fact]
+    public async Task GetPoolByIdAsync_WithNonExistingPool_ReturnsNotFoundError()
+    {
+        // Arrange
+        var poolId = Guid.NewGuid();
+
+        _poolRepositoryMock
+            .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StoragePool?)null);
+
+        // Act
+        var result = await _sut.GetPoolByIdAsync(poolId);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Contain("NotFound");
+    }
+
+    #endregion
+
+    #region CreatePoolAsync Tests
+
+    [Fact]
+    public async Task CreatePoolAsync_WithValidRequest_CreatesPool()
+    {
+        // Arrange
+        var request = new CreateStoragePoolRequest
+        {
+            Name = "NewPool",
+            MountPath = "/mnt/newpool",
+            RaidLevel = RaidLevel.Raid5,
+            DiskDevicePaths = new List<string> { "/dev/sda", "/dev/sdb" },
+            EnableDeduplication = true,
+            EnableCompression = true
+        };
+
+        _poolRepositoryMock
+            .Setup(x => x.NameExistsAsync("NewPool", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _fileSystemServiceMock
+            .Setup(x => x.DirectoryExists("/mnt/newpool"))
+            .Returns(false);
+
+        // Act
+        var result = await _sut.CreatePoolAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Name.Should().Be("NewPool");
+        result.Value.RaidLevel.Should().Be(RaidLevel.Raid5);
+        result.Value.EnableDeduplication.Should().BeTrue();
+        result.Value.EnableCompression.Should().BeTrue();
+
+        _fileSystemServiceMock.Verify(x => x.CreateDirectory("/mnt/newpool"), Times.Once);
+        _poolRepositoryMock.Verify(x => x.AddAsync(It.IsAny<StoragePool>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreatePoolAsync_WithExistingName_ReturnsConflictError()
+    {
+        // Arrange
+        var request = new CreateStoragePoolRequest
+        {
+            Name = "ExistingPool",
+            MountPath = "/mnt/existing",
+            DiskDevicePaths = new List<string>()
+        };
+
+        _poolRepositoryMock
+            .Setup(x => x.NameExistsAsync("ExistingPool", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        // Act
+        var result = await _sut.CreatePoolAsync(request);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Message.Should().Contain("ExistingPool");
+
+        _poolRepositoryMock.Verify(x => x.AddAsync(It.IsAny<StoragePool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreatePoolAsync_WithExistingDirectory_DoesNotCreateDirectory()
+    {
+        // Arrange
+        var request = new CreateStoragePoolRequest
+        {
+            Name = "NewPool",
+            MountPath = "/mnt/existing",
+            DiskDevicePaths = new List<string>()
+        };
+
+        _poolRepositoryMock
+            .Setup(x => x.NameExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _fileSystemServiceMock
+            .Setup(x => x.DirectoryExists("/mnt/existing"))
+            .Returns(true);
+
+        // Act
+        var result = await _sut.CreatePoolAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _fileSystemServiceMock.Verify(x => x.CreateDirectory(It.IsAny<string>()), Times.Never);
+    }
+
+    #endregion
+
+    #region UpdatePoolAsync Tests
+
+    [Fact]
+    public async Task UpdatePoolAsync_WithValidRequest_UpdatesPool()
+    {
+        // Arrange
+        var poolId = Guid.NewGuid();
+        var pool = CreateTestPool("OldPool", "/mnt/pool");
+        SetEntityId(pool, poolId);
+
+        var request = new UpdateStoragePoolRequest
+        {
+            EnableDeduplication = true,
+            EnableCompression = true
+        };
+
+        _poolRepositoryMock
+            .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+
+        // Act
+        var result = await _sut.UpdatePoolAsync(poolId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.EnableDeduplication.Should().BeTrue();
+        result.Value.EnableCompression.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpdatePoolAsync_WithNonExistingPool_ReturnsNotFoundError()
+    {
+        // Arrange
+        var poolId = Guid.NewGuid();
+        var request = new UpdateStoragePoolRequest { IsEnabled = false };
+
+        _poolRepositoryMock
+            .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StoragePool?)null);
+
+        // Act
+        var result = await _sut.UpdatePoolAsync(poolId, request);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Contain("NotFound");
+    }
+
+    [Fact]
+    public async Task UpdatePoolAsync_WithDisableRequest_DisablesPool()
+    {
+        // Arrange
+        var poolId = Guid.NewGuid();
+        var pool = CreateTestPool("TestPool", "/mnt/pool");
+        SetEntityId(pool, poolId);
+
+        var request = new UpdateStoragePoolRequest { IsEnabled = false };
+
+        _poolRepositoryMock
+            .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+
+        // Act
+        var result = await _sut.UpdatePoolAsync(poolId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsEnabled.Should().BeFalse();
+    }
+
+    #endregion
+
+    #region DeletePoolAsync Tests
+
+    [Fact]
+    public async Task DeletePoolAsync_WithExistingPool_DeletesPool()
+    {
+        // Arrange
+        var poolId = Guid.NewGuid();
+        var pool = CreateTestPool("TestPool", "/mnt/pool");
+        SetEntityId(pool, poolId);
+
+        _poolRepositoryMock
+            .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+
+        _shareRepositoryMock
+            .Setup(x => x.GetByStoragePoolAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Share>());
+
+        // Act
+        var result = await _sut.DeletePoolAsync(poolId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _poolRepositoryMock.Verify(x => x.DeleteAsync(pool, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeletePoolAsync_WithNonExistingPool_ReturnsNotFoundError()
+    {
+        // Arrange
+        var poolId = Guid.NewGuid();
+
+        _poolRepositoryMock
+            .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StoragePool?)null);
+
+        // Act
+        var result = await _sut.DeletePoolAsync(poolId);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Contain("NotFound");
+    }
+
+    #endregion
+
+    #region SetDefaultPoolAsync Tests
+
+    [Fact]
+    public async Task SetDefaultPoolAsync_WithExistingPool_SetsAsDefault()
+    {
+        // Arrange
+        var poolId = Guid.NewGuid();
+        var pool = CreateTestPool("TestPool", "/mnt/pool");
+        SetEntityId(pool, poolId);
+
+        var currentDefault = CreateTestPool("OldDefault", "/mnt/olddefault");
+        currentDefault.SetAsDefault(true);
+
+        _poolRepositoryMock
+            .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+
+        _poolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(currentDefault);
+
+        // Act
+        var result = await _sut.SetDefaultPoolAsync(poolId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _poolRepositoryMock.Verify(x => x.UpdateAsync(It.IsAny<StoragePool>(), It.IsAny<CancellationToken>()), Times.AtLeast(1));
+    }
+
+    [Fact]
+    public async Task SetDefaultPoolAsync_WithNonExistingPool_ReturnsNotFoundError()
+    {
+        // Arrange
+        var poolId = Guid.NewGuid();
+
+        _poolRepositoryMock
+            .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StoragePool?)null);
+
+        // Act
+        var result = await _sut.SetDefaultPoolAsync(poolId);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Contain("NotFound");
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    private static StoragePool CreateTestPool(string name, string mountPath, long totalBytes = 0, long usedBytes = 0)
+    {
+        var pool = StoragePool.Create(name, mountPath);
+        
+        // Use reflection to set capacity for testing
+        if (totalBytes > 0)
+        {
+            var totalProperty = typeof(StoragePool).GetProperty("TotalBytes");
+            totalProperty?.SetValue(pool, totalBytes);
+        }
+        
+        if (usedBytes > 0)
+        {
+            pool.UpdateUsage(usedBytes);
+        }
+        
+        return pool;
+    }
+
+    private static void SetEntityId<T>(T entity, Guid id) where T : Entity
+    {
+        var idProperty = typeof(Entity).GetProperty("Id");
+        idProperty?.SetValue(entity, id);
+    }
+
+    #endregion
+}

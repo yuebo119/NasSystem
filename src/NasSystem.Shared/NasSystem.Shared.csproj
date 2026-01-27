@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>NasSystem.Shared</RootNamespace>
+    <AssemblyName>NasSystem.Shared</AssemblyName>
+    <Description>NAS System 共享库 - 跨层通用类型、扩展方法和常量</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 依赖注入抽象 -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+</Project>
