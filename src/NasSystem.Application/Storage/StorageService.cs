@@ -1,25 +1,23 @@
 // =============================================================================
 // NasSystem.Application - StorageService.cs
-// 存储服务实现
+// 存储服务实现（简化版）
 // =============================================================================
 
 namespace NasSystem.Application.Storage;
 
-using NasSystem.Application.Common;
 using NasSystem.Application.Storage.Dtos;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
-using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
 using NasSystem.Domain.Services;
 using NasSystem.Shared;
 
 /// <summary>
-/// 存储服务实现
+/// 存储服务实现（简化版）
 /// </summary>
 public sealed class StorageService(
     IStoragePoolRepository poolRepository,
-    IShareRepository shareRepository,
+    IFileItemRepository fileItemRepository,
     IUnitOfWork unitOfWork,
     IFileSystemService fileSystemService) : IStorageService
 {
@@ -28,21 +26,18 @@ public sealed class StorageService(
     {
         var pools = await poolRepository.GetAllAsync(cancellationToken);
         
-        long totalBytes = 0;
-        long usedBytes = 0;
-        int diskCount = 0;
-        int healthyCount = 0;
-        int warningCount = 0;
-        int criticalCount = 0;
-
+        // 刷新所有存储池的容量信息
         foreach (var pool in pools)
         {
-            totalBytes += pool.TotalBytes;
-            usedBytes += pool.UsedBytes;
+            await RefreshPoolCapacityAsync(pool, cancellationToken);
         }
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var availableBytes = totalBytes - usedBytes;
-        var usagePercentage = totalBytes > 0 ? (double)usedBytes / totalBytes * 100 : 0;
+        // 使用有效总容量（考虑 maxCapacityBytes）
+        long totalBytes = pools.Sum(p => p.EffectiveTotalBytes);
+        long usedBytes = pools.Sum(p => p.UsedBytes);
+        long availableBytes = totalBytes - usedBytes;
+        double usagePercentage = totalBytes > 0 ? (double)usedBytes / totalBytes * 100 : 0;
 
         return Result<StorageOverviewDto>.Success(new StorageOverviewDto
         {
@@ -53,11 +48,7 @@ public sealed class StorageService(
             TotalDisplay = FormatSize(totalBytes),
             UsedDisplay = FormatSize(usedBytes),
             AvailableDisplay = FormatSize(availableBytes),
-            PoolCount = pools.Count,
-            DiskCount = diskCount,
-            HealthyDiskCount = healthyCount,
-            WarningDiskCount = warningCount,
-            CriticalDiskCount = criticalCount
+            PoolCount = pools.Count
         });
     }
 
@@ -65,6 +56,14 @@ public sealed class StorageService(
         CancellationToken cancellationToken = default)
     {
         var pools = await poolRepository.GetAllAsync(cancellationToken);
+        
+        // 刷新容量信息
+        foreach (var pool in pools)
+        {
+            await RefreshPoolCapacityAsync(pool, cancellationToken);
+        }
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
         var dtos = pools.Select(MapToDto).ToList();
         return Result<IReadOnlyList<StoragePoolDto>>.Success(dtos);
     }
@@ -77,6 +76,9 @@ public sealed class StorageService(
         if (pool is null)
             return Result<StoragePoolDto>.Failure(StorageErrors.PoolNotFound(poolId));
 
+        await RefreshPoolCapacityAsync(pool, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
         return Result<StoragePoolDto>.Success(MapToDto(pool));
     }
 
@@ -88,6 +90,10 @@ public sealed class StorageService(
         if (await poolRepository.NameExistsAsync(request.Name, cancellationToken))
             return Result<StoragePoolDto>.Failure(StorageErrors.PoolNameExists(request.Name));
 
+        // 检查路径是否已存在
+        if (await poolRepository.MountPathExistsAsync(request.MountPath, cancellationToken))
+            return Result<StoragePoolDto>.Failure(StorageErrors.MountPathExists(request.MountPath));
+
         // 创建挂载目录
         if (!fileSystemService.DirectoryExists(request.MountPath))
         {
@@ -98,14 +104,11 @@ public sealed class StorageService(
         var pool = StoragePool.Create(
             name: request.Name,
             mountPath: request.MountPath,
-            raidLevel: request.RaidLevel,
-            description: request.Description);
+            description: request.Description,
+            maxCapacityBytes: request.MaxCapacityBytes);
 
-        // 设置优化选项
-        pool.SetOptimization(request.EnableDeduplication, request.EnableCompression);
-
-        // 初始化状态为健康
-        pool.UpdateStatus(StoragePoolStatus.Healthy);
+        // 刷新容量信息
+        await RefreshPoolCapacityAsync(pool, cancellationToken);
 
         await poolRepository.AddAsync(pool, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -122,18 +125,17 @@ public sealed class StorageService(
         if (pool is null)
             return Result<StoragePoolDto>.Failure(StorageErrors.PoolNotFound(poolId));
 
-        // 更新名称 - 需要在实体中添加方法或直接更新
-        // 这里简化处理，假设有 UpdateInfo 方法
+        // 更新名称、描述和最大容量
+        pool.Update(
+            request.Name ?? pool.Name,
+            request.Description ?? pool.Description,
+            request.MaxCapacityBytes);
 
-        // 更新状态
+        // 更新启用状态
         if (request.IsEnabled.HasValue)
             pool.SetEnabled(request.IsEnabled.Value);
 
-        if (request.EnableDeduplication.HasValue || request.EnableCompression.HasValue)
-            pool.SetOptimization(
-                request.EnableDeduplication ?? pool.EnableDeduplication,
-                request.EnableCompression ?? pool.EnableCompression);
-
+        await RefreshPoolCapacityAsync(pool, cancellationToken);
         await poolRepository.UpdateAsync(pool, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -151,11 +153,6 @@ public sealed class StorageService(
         // 检查是否是默认池
         if (pool.IsDefault)
             return Result.Failure(StorageErrors.CannotDeleteDefaultPool);
-
-        // 检查是否有共享使用此存储池
-        var shares = await shareRepository.GetByStoragePoolAsync(poolId, cancellationToken);
-        if (shares.Count > 0)
-            return Result.Failure(StorageErrors.CannotDeletePoolWithShares);
 
         await poolRepository.DeleteAsync(pool, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -187,134 +184,111 @@ public sealed class StorageService(
         return Result.Success();
     }
 
-    public Task<Result<IReadOnlyList<SystemDiskDto>>> GetSystemDisksAsync(
-        CancellationToken cancellationToken = default)
-    {
-        var disks = new List<SystemDiskDto>();
-
-        try
-        {
-            foreach (var drive in DriveInfo.GetDrives())
-            {
-                if (!drive.IsReady) continue;
-
-                disks.Add(new SystemDiskDto
-                {
-                    DevicePath = drive.Name,
-                    SerialNumber = "N/A",
-                    Model = drive.DriveType.ToString(),
-                    SizeBytes = drive.TotalSize,
-                    SizeDisplay = FormatSize(drive.TotalSize),
-                    DiskType = drive.DriveType == DriveType.Fixed ? DiskType.Hdd : DiskType.Usb,
-                    Status = DiskStatus.Healthy,
-                    HealthPercentage = 100,
-                    TemperatureCelsius = null,
-                    IsSystemDisk = drive.Name.Equals("C:\\", StringComparison.OrdinalIgnoreCase),
-                    IsInUse = true
-                });
-            }
-        }
-        catch
-        {
-            // 忽略无法读取的磁盘
-        }
-
-        return Task.FromResult(Result<IReadOnlyList<SystemDiskDto>>.Success(disks));
-    }
-
-    public async Task<Result<IReadOnlyList<SystemDiskDto>>> GetAvailableDisksAsync(
-        CancellationToken cancellationToken = default)
-    {
-        var allDisksResult = await GetSystemDisksAsync(cancellationToken);
-        if (!allDisksResult.IsSuccess)
-            return allDisksResult;
-
-        var available = allDisksResult.Value
-            .Where(d => !d.IsSystemDisk && !d.IsInUse)
-            .ToList();
-
-        return Result<IReadOnlyList<SystemDiskDto>>.Success(available);
-    }
-
-    public Task<Result<StoragePoolDiskDto>> AddDiskToPoolAsync(
-        Guid poolId,
-        string devicePath,
-        CancellationToken cancellationToken = default)
-    {
-        // TODO: 实现添加磁盘到存储池 (需要底层存储支持)
-        return Task.FromResult(Result<StoragePoolDiskDto>.Failure(
-            new Error("NotImplemented", "磁盘管理功能需要底层存储支持")));
-    }
-
-    public Task<Result> RemoveDiskFromPoolAsync(
-        Guid poolId,
-        Guid diskId,
-        CancellationToken cancellationToken = default)
-    {
-        // TODO: 实现从存储池移除磁盘
-        return Task.FromResult(Result.Failure(
-            new Error("NotImplemented", "磁盘管理功能需要底层存储支持")));
-    }
-
-    public Task<Result> ScanDiskHealthAsync(
-        CancellationToken cancellationToken = default)
-    {
-        // TODO: 实现 SMART 健康扫描
-        return Task.FromResult(Result.Success());
-    }
-
-    public async Task<Result> RefreshUsageAsync(
+    public async Task<Result> RefreshCapacityAsync(
         CancellationToken cancellationToken = default)
     {
         var pools = await poolRepository.GetAllAsync(cancellationToken);
 
         foreach (var pool in pools)
         {
-            try
-            {
-                if (fileSystemService.DirectoryExists(pool.MountPath))
-                {
-                    var driveInfo = new DriveInfo(Path.GetPathRoot(pool.MountPath) ?? pool.MountPath);
-                    pool.UpdateUsage(driveInfo.TotalSize - driveInfo.AvailableFreeSpace);
-                    await poolRepository.UpdateAsync(pool, cancellationToken);
-                }
-            }
-            catch
-            {
-                // 忽略无法访问的存储池
-            }
+            await RefreshPoolCapacityAsync(pool, cancellationToken);
+            await poolRepository.UpdateAsync(pool, cancellationToken);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
 
+    public async Task<Result<CheckStorageSpaceResponse>> CheckStorageSpaceAsync(
+        CheckStorageSpaceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        StoragePool? pool;
+        
+        if (request.StoragePoolId.HasValue)
+        {
+            pool = await poolRepository.GetByIdAsync(request.StoragePoolId.Value, cancellationToken);
+        }
+        else
+        {
+            pool = await poolRepository.GetDefaultAsync(cancellationToken);
+        }
+
+        if (pool is null)
+        {
+            return Result<CheckStorageSpaceResponse>.Success(new CheckStorageSpaceResponse
+            {
+                HasEnoughSpace = false,
+                AvailableBytes = 0,
+                RequiredBytes = request.FileSize,
+                Message = "未找到存储池"
+            });
+        }
+
+        // 刷新容量信息
+        await RefreshPoolCapacityAsync(pool, cancellationToken);
+
+        var hasEnoughSpace = pool.HasEnoughSpace(request.FileSize);
+        
+        return Result<CheckStorageSpaceResponse>.Success(new CheckStorageSpaceResponse
+        {
+            HasEnoughSpace = hasEnoughSpace,
+            AvailableBytes = pool.AvailableBytes,
+            RequiredBytes = request.FileSize,
+            Message = hasEnoughSpace 
+                ? null 
+                : $"存储空间不足，需要 {FormatSize(request.FileSize)}，可用 {FormatSize(pool.AvailableBytes)}"
+        });
+    }
+
     #region 辅助方法
+
+    private async Task RefreshPoolCapacityAsync(StoragePool pool, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 获取磁盘总容量
+            if (fileSystemService.DirectoryExists(pool.MountPath))
+            {
+                var pathRoot = Path.GetPathRoot(pool.MountPath);
+                if (!string.IsNullOrEmpty(pathRoot))
+                {
+                    var driveInfo = new DriveInfo(pathRoot);
+                    if (driveInfo.IsReady)
+                    {
+                        // 计算存储池内所有文件的总大小作为已用空间
+                        var usedBytes = await fileItemRepository.CalculateStoragePoolUsedSpaceAsync(pool.Id, cancellationToken);
+                        pool.UpdateCapacity(driveInfo.TotalSize, usedBytes);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // 忽略无法访问的存储池
+        }
+    }
 
     private static StoragePoolDto MapToDto(StoragePool pool)
     {
-        var availableBytes = pool.TotalBytes - pool.UsedBytes;
-        var usagePercentage = pool.TotalBytes > 0 ? (double)pool.UsedBytes / pool.TotalBytes * 100 : 0;
-
         return new StoragePoolDto
         {
             Id = pool.Id,
             Name = pool.Name,
             Description = pool.Description,
             MountPath = pool.MountPath,
-            Status = pool.Status,
-            RaidLevel = pool.RaidLevel,
-            TotalBytes = pool.TotalBytes,
+            TotalBytes = pool.EffectiveTotalBytes,
             UsedBytes = pool.UsedBytes,
-            AvailableBytes = availableBytes,
-            UsagePercentage = Math.Round(usagePercentage, 2),
-            TotalDisplay = FormatSize(pool.TotalBytes),
+            AvailableBytes = pool.AvailableBytes,
+            UsagePercentage = Math.Round(pool.UsagePercentage, 2),
+            MaxCapacityBytes = pool.MaxCapacityBytes,
+            MaxCapacityDisplay = pool.MaxCapacityBytes.HasValue ? FormatSize(pool.MaxCapacityBytes.Value) : null,
+            TotalDisplay = FormatSize(pool.EffectiveTotalBytes),
             UsedDisplay = FormatSize(pool.UsedBytes),
-            AvailableDisplay = FormatSize(availableBytes),
+            AvailableDisplay = FormatSize(pool.AvailableBytes),
             IsDefault = pool.IsDefault,
             IsEnabled = pool.IsEnabled,
-            EnableDeduplication = pool.EnableDeduplication,
-            EnableCompression = pool.EnableCompression,
+            IsNearlyFull = pool.IsNearlyFull,
             CreatedAt = pool.CreatedAt
         };
     }
@@ -330,4 +304,23 @@ public sealed class StorageService(
     }
 
     #endregion
+}
+
+
+/// <summary>
+/// 存储相关错误
+/// </summary>
+public static class StorageErrors
+{
+    public static Error PoolNotFound(Guid poolId) =>
+        Error.NotFound("StoragePool", poolId);
+
+    public static Error PoolNameExists(string name) =>
+        new("StoragePool.NameExists", $"存储池名称 '{name}' 已存在");
+
+    public static Error MountPathExists(string path) =>
+        new("StoragePool.MountPathExists", $"挂载路径 '{path}' 已被使用");
+
+    public static Error CannotDeleteDefaultPool =>
+        new("StoragePool.CannotDeleteDefault", "不能删除默认存储池");
 }

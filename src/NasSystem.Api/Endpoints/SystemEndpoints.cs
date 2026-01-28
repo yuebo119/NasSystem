@@ -67,6 +67,18 @@ public static class SystemEndpoints
               .WithSummary("关闭 NAS 服务")
               .RequireAuthorization("RequireAdmin");
 
+        // 浏览目录（用于选择存储路径）
+        system.MapGet("/browse-directories", BrowseDirectories)
+              .WithName("BrowseDirectories")
+              .WithSummary("浏览系统目录")
+              .RequireAuthorization("RequireAdmin");
+
+        // 获取系统驱动器列表
+        system.MapGet("/drives", GetDrives)
+              .WithName("GetDrives")
+              .WithSummary("获取系统驱动器列表")
+              .RequireAuthorization("RequireAdmin");
+
         return group;
     }
 
@@ -158,6 +170,145 @@ public static class SystemEndpoints
             ScheduledTime = DateTime.UtcNow.AddSeconds(5)
         }));
     }
+
+    private static IResult GetDrives()
+    {
+        try
+        {
+            var drives = DriveInfo.GetDrives()
+                .Where(d => d.IsReady)
+                .Select(d => new
+                {
+                    Name = d.Name.TrimEnd('\\'),
+                    Label = string.IsNullOrEmpty(d.VolumeLabel) ? d.DriveType.ToString() : d.VolumeLabel,
+                    DriveType = d.DriveType.ToString(),
+                    TotalSize = d.TotalSize,
+                    AvailableSpace = d.AvailableFreeSpace,
+                    TotalDisplay = FormatSize(d.TotalSize),
+                    AvailableDisplay = FormatSize(d.AvailableFreeSpace)
+                })
+                .ToList();
+
+            return Results.Ok(ApiResponse<object>.Ok(drives));
+        }
+        catch (Exception ex)
+        {
+            return Results.Ok(ApiResponse<object>.Fail("System.Error", $"获取驱动器列表失败: {ex.Message}"));
+        }
+    }
+
+    private static IResult BrowseDirectories(string? path)
+    {
+        try
+        {
+            // 如果没有指定路径，返回驱动器列表
+            if (string.IsNullOrEmpty(path))
+            {
+                var drives = DriveInfo.GetDrives()
+                    .Where(d => d.IsReady)
+                    .Select(d => new DirectoryItemDto
+                    {
+                        Name = string.IsNullOrEmpty(d.VolumeLabel) ? d.Name.TrimEnd('\\') : $"{d.VolumeLabel} ({d.Name.TrimEnd('\\')})",
+                        Path = d.Name,
+                        IsRoot = true
+                    })
+                    .ToList();
+
+                return Results.Ok(ApiResponse<BrowseDirectoriesResult>.Ok(new BrowseDirectoriesResult
+                {
+                    CurrentPath = "",
+                    ParentPath = null,
+                    Directories = drives
+                }));
+            }
+
+            // 规范化路径
+            var normalizedPath = Path.GetFullPath(path);
+            
+            if (!Directory.Exists(normalizedPath))
+            {
+                return Results.Ok(ApiResponse<object>.Fail("System.Error", "目录不存在"));
+            }
+
+            // 获取父目录
+            var parentDir = Directory.GetParent(normalizedPath);
+            string? parentPath = parentDir?.FullName;
+
+            // 获取子目录
+            var directories = new List<DirectoryItemDto>();
+            try
+            {
+                var dirs = Directory.GetDirectories(normalizedPath);
+                foreach (var dir in dirs)
+                {
+                    try
+                    {
+                        var dirInfo = new DirectoryInfo(dir);
+                        // 跳过系统和隐藏目录
+                        if ((dirInfo.Attributes & FileAttributes.System) != 0 ||
+                            (dirInfo.Attributes & FileAttributes.Hidden) != 0)
+                            continue;
+
+                        directories.Add(new DirectoryItemDto
+                        {
+                            Name = dirInfo.Name,
+                            Path = dirInfo.FullName,
+                            IsRoot = false
+                        });
+                    }
+                    catch
+                    {
+                        // 跳过无法访问的目录
+                    }
+                }
+            }
+            catch
+            {
+                // 无法读取目录内容
+            }
+
+            return Results.Ok(ApiResponse<BrowseDirectoriesResult>.Ok(new BrowseDirectoriesResult
+            {
+                CurrentPath = normalizedPath,
+                ParentPath = parentPath,
+                Directories = directories.OrderBy(d => d.Name).ToList()
+            }));
+        }
+        catch (Exception ex)
+        {
+            return Results.Ok(ApiResponse<object>.Fail("System.Error", $"浏览目录失败: {ex.Message}"));
+        }
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes == 0) return "0 B";
+        string[] sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1) { order++; len /= 1024; }
+        return $"{len:0.##} {sizes[order]}";
+    }
+}
+
+/// <summary>
+/// 目录浏览结果
+/// </summary>
+public record BrowseDirectoriesResult
+{
+    public string CurrentPath { get; init; } = "";
+    public string? ParentPath { get; init; }
+    public List<DirectoryItemDto> Directories { get; init; } = [];
+}
+
+/// <summary>
+/// 目录项
+/// </summary>
+public record DirectoryItemDto
+{
+    public string Name { get; init; } = "";
+    public string Path { get; init; } = "";
+    public bool IsRoot { get; init; }
 }
 
 /// <summary>

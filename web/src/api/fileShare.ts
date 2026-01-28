@@ -1,0 +1,154 @@
+import http from './http'
+
+// 分享访问类型
+export enum ShareAccessType {
+  Public = 0,    // 公开访问
+  Password = 1,  // 密码保护
+  Internal = 2   // 仅内部用户
+}
+
+// 权限级别
+export enum PermissionLevel {
+  None = 0,
+  Read = 1,
+  ReadWrite = 2,
+  FullControl = 3
+}
+
+// 文件分享 DTO
+export interface FileShareDto {
+  id: string
+  shareCode: string
+  shareUrl: string
+  fileItemId: string
+  fileName: string
+  filePath: string
+  isFolder: boolean
+  sizeBytes?: number
+  sizeDisplay?: string
+  accessType: ShareAccessType
+  permission: PermissionLevel
+  expiresAt?: string
+  maxDownloads?: number
+  downloadCount: number
+  isEnabled: boolean
+  isExpired: boolean
+  isDownloadLimitReached: boolean
+  createdByUserId: string
+  createdByUserName?: string
+  createdAt: string
+  updatedAt?: string
+}
+
+// 公开分享信息 DTO
+export interface PublicShareInfoDto {
+  shareCode: string
+  fileName: string
+  isFolder: boolean
+  sizeBytes?: number
+  sizeDisplay?: string
+  accessType: ShareAccessType
+  permission: PermissionLevel
+  requiresPassword: boolean
+  isExpired: boolean
+  isDownloadLimitReached: boolean
+  isAccessible: boolean
+  createdByUserName?: string
+}
+
+// 创建分享请求
+export interface CreateFileShareRequest {
+  fileItemId: string
+  accessType?: ShareAccessType
+  password?: string
+  permission?: PermissionLevel
+  expiresAt?: string
+  maxDownloads?: number
+}
+
+// 更新分享请求
+export interface UpdateFileShareRequest {
+  accessType?: ShareAccessType
+  password?: string
+  clearPassword?: boolean
+  permission?: PermissionLevel
+  expiresAt?: string
+  clearExpiresAt?: boolean
+  maxDownloads?: number
+  clearMaxDownloads?: boolean
+  isEnabled?: boolean
+}
+
+// 分享文件夹内容
+export interface ShareFolderContentDto {
+  shareCode: string
+  currentPath: string
+  items: ShareFileItemDto[]
+}
+
+// 分享文件项
+export interface ShareFileItemDto {
+  id: string
+  name: string
+  isFolder: boolean
+  sizeBytes?: number
+  sizeDisplay?: string
+  mimeType?: string
+  createdAt: string
+  updatedAt?: string
+}
+
+// 管理 API
+export const fileShareApi = {
+  // 创建分享
+  create: (data: CreateFileShareRequest) =>
+    http.post<FileShareDto>('/file-shares', data),
+
+  // 获取我的分享列表
+  getMyShares: () =>
+    http.get<FileShareDto[]>('/file-shares'),
+
+  // 获取分享详情
+  getById: (id: string) =>
+    http.get<FileShareDto>(`/file-shares/${id}`),
+
+  // 更新分享
+  update: (id: string, data: UpdateFileShareRequest) =>
+    http.put<FileShareDto>(`/file-shares/${id}`, data),
+
+  // 删除分享
+  delete: (id: string) =>
+    http.delete(`/file-shares/${id}`),
+
+  // 重新生成分享码
+  regenerateCode: (id: string) =>
+    http.post<FileShareDto>(`/file-shares/${id}/regenerate-code`)
+}
+
+// 公开访问 API
+export const publicShareApi = {
+  // 获取公开分享信息
+  getInfo: (shareCode: string) =>
+    http.get<PublicShareInfoDto>(`/public-shares/${shareCode}`),
+
+  // 验证密码
+  verifyPassword: (shareCode: string, password: string) =>
+    http.post<{ accessToken: string }>(`/public-shares/${shareCode}/verify`, { password }),
+
+  // 获取下载链接
+  getDownloadUrl: (shareCode: string, token?: string, subPath?: string) => {
+    let url = `/api/v1/public-shares/${shareCode}/download`
+    if (subPath) url += `/${subPath}`
+    if (token) url += `?token=${encodeURIComponent(token)}`
+    return url
+  },
+
+  // 获取文件夹内容
+  getFolderContent: (shareCode: string, token?: string, subPath?: string) => {
+    let url = `/public-shares/${shareCode}/files`
+    if (subPath) url += `/${subPath}`
+    const params: Record<string, string> = {}
+    if (token) params.token = token
+    return http.get<ShareFolderContentDto>(url, { params })
+  }
+}

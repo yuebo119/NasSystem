@@ -1,6 +1,6 @@
 // =============================================================================
 // NasSystem.Api - StorageEndpoints.cs
-// 存储池管理 API 端点
+// 存储池管理 API 端点（简化版）
 // =============================================================================
 
 namespace NasSystem.Api.Extensions;
@@ -10,7 +10,7 @@ using NasSystem.Application.Storage.Dtos;
 using NasSystem.Shared;
 
 /// <summary>
-/// 存储池管理端点扩展
+/// 存储池管理端点扩展（简化版）
 /// </summary>
 public static class StorageEndpoints
 {
@@ -63,29 +63,17 @@ public static class StorageEndpoints
                .WithSummary("设置默认存储池")
                .RequireAuthorization("RequireAdmin");
 
-        // 获取系统磁盘列表
-        storage.MapGet("/disks", GetSystemDisks)
-               .WithName("GetSystemDisks")
-               .WithSummary("获取系统磁盘列表")
+        // 刷新容量信息
+        storage.MapPost("/refresh", RefreshCapacity)
+               .WithName("RefreshStorageCapacity")
+               .WithSummary("刷新存储容量信息")
                .RequireAuthorization("RequireAdmin");
 
-        // 获取可用磁盘
-        storage.MapGet("/disks/available", GetAvailableDisks)
-               .WithName("GetAvailableDisks")
-               .WithSummary("获取可用磁盘列表")
-               .RequireAuthorization("RequireAdmin");
-
-        // 刷新存储使用情况
-        storage.MapPost("/refresh", RefreshUsage)
-               .WithName("RefreshStorageUsage")
-               .WithSummary("刷新存储使用情况")
-               .RequireAuthorization("RequireAdmin");
-
-        // 扫描磁盘健康
-        storage.MapPost("/scan-health", ScanDiskHealth)
-               .WithName("ScanDiskHealth")
-               .WithSummary("扫描磁盘健康状态")
-               .RequireAuthorization("RequireAdmin");
+        // 检查存储空间
+        storage.MapPost("/check-space", CheckStorageSpace)
+               .WithName("CheckStorageSpace")
+               .WithSummary("检查存储空间是否足够")
+               .RequireAuthorization();
 
         return group;
     }
@@ -139,27 +127,17 @@ public static class StorageEndpoints
         return result.ToHttpResult();
     }
 
-    private static async Task<IResult> GetSystemDisks(IStorageService storageService)
+    private static async Task<IResult> RefreshCapacity(IStorageService storageService)
     {
-        var result = await storageService.GetSystemDisksAsync();
+        var result = await storageService.RefreshCapacityAsync();
         return result.ToHttpResult();
     }
 
-    private static async Task<IResult> GetAvailableDisks(IStorageService storageService)
+    private static async Task<IResult> CheckStorageSpace(
+        CheckStorageSpaceRequest request,
+        IStorageService storageService)
     {
-        var result = await storageService.GetAvailableDisksAsync();
-        return result.ToHttpResult();
-    }
-
-    private static async Task<IResult> RefreshUsage(IStorageService storageService)
-    {
-        var result = await storageService.RefreshUsageAsync();
-        return result.ToHttpResult();
-    }
-
-    private static async Task<IResult> ScanDiskHealth(IStorageService storageService)
-    {
-        var result = await storageService.ScanDiskHealthAsync();
+        var result = await storageService.CheckStorageSpaceAsync(request);
         return result.ToHttpResult();
     }
 }

@@ -3,6 +3,8 @@ import { ref, watch, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api/file'
+import { fileShareApi, ShareAccessType, PermissionLevel, type FileShareDto, type CreateFileShareRequest } from '@/api/fileShare'
+import { storageApi } from '@/api/storage'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import { 
@@ -10,7 +12,7 @@ import {
   CopyDocument, Rank, MoreFilled, FolderAdd, Search,
   Grid, List, View, Hide, DeleteFilled, Back,
   Document, Folder, Picture, VideoPlay, Headset,
-  FolderOpened, HomeFilled
+  FolderOpened, HomeFilled, Share, Link
 } from '@element-plus/icons-vue'
 import type { FileItem } from '@/types'
 
@@ -68,6 +70,22 @@ const operationCancelled = ref(false)
 
 // 扫描同步
 const scanning = ref(false)
+
+// 分享相关
+const shareDialogVisible = ref(false)
+const shareTarget = ref<FileItem | null>(null)
+const shareForm = ref<CreateFileShareRequest>({
+  fileItemId: '',
+  accessType: ShareAccessType.Public,
+  password: '',
+  permission: PermissionLevel.Read,
+  expiresAt: undefined,
+  maxDownloads: undefined
+})
+const shareResult = ref<FileShareDto | null>(null)
+const shareLoading = ref(false)
+const expiresOption = ref('never') // never, 1d, 7d, 30d, custom
+const maxDownloadsOption = ref('unlimited') // unlimited, 1, 10, 100, custom
 
 // 表格引用
 const fileTableRef = ref<any>(null)
@@ -455,6 +473,20 @@ function downloadSelected() {
   files.forEach(file => downloadFile(file))
 }
 
+// 分享选中文件
+function shareSelected() {
+  if (fileStore.selectedItems.length === 0) {
+    ElMessage.warning('请选择要分享的文件')
+    return
+  }
+  if (fileStore.selectedItems.length > 1) {
+    ElMessage.warning('暂不支持多选分享，请选择单个文件或文件夹')
+    return
+  }
+  const item = fileStore.selectedItems[0]
+  openShareDialog(item)
+}
+
 // 搜索文件
 async function handleSearch() {
   if (!searchQuery.value.trim()) {
@@ -562,6 +594,23 @@ async function handleUpload() {
     ElMessage.warning('请选择要上传的文件')
     return
   }
+  
+  // 计算总文件大小
+  const totalSize = uploadFiles.value.reduce((sum, file) => sum + (file.raw?.size || 0), 0)
+  
+  // 检查存储空间
+  try {
+    const checkResult = await storageApi.checkSpace({ fileSize: totalSize }) as any
+    if (checkResult.success && checkResult.data) {
+      if (!checkResult.data.hasEnoughSpace) {
+        ElMessage.error(checkResult.data.message || `存储空间不足！需要 ${formatSize(totalSize)}，可用 ${formatSize(checkResult.data.availableBytes)}`)
+        return
+      }
+    }
+  } catch (e) {
+    console.warn('检查存储空间失败，继续上传', e)
+  }
+  
   uploading.value = true
   uploadProgress.value = 0
   
@@ -845,6 +894,95 @@ function handleCommand(command: string, item: FileItem) {
     case 'delete':
       handleDeleteItem(item)
       break
+    case 'share':
+      openShareDialog(item)
+      break
+  }
+}
+
+// 打开分享对话框
+function openShareDialog(item: FileItem) {
+  shareTarget.value = item
+  shareForm.value = {
+    fileItemId: item.id,
+    accessType: ShareAccessType.Public,
+    password: '',
+    permission: PermissionLevel.Read,
+    expiresAt: undefined,
+    maxDownloads: undefined
+  }
+  shareResult.value = null
+  expiresOption.value = 'never'
+  maxDownloadsOption.value = 'unlimited'
+  shareDialogVisible.value = true
+}
+
+// 生成随机密码
+function generatePassword() {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789'
+  let password = ''
+  for (let i = 0; i < 8; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  shareForm.value.password = password
+}
+
+// 计算过期时间
+function computeExpiresAt(): string | undefined {
+  if (expiresOption.value === 'never') return undefined
+  if (expiresOption.value === 'custom') return shareForm.value.expiresAt
+  
+  const now = new Date()
+  const days = parseInt(expiresOption.value.replace('d', ''))
+  now.setDate(now.getDate() + days)
+  return now.toISOString()
+}
+
+// 计算下载限制
+function computeMaxDownloads(): number | undefined {
+  if (maxDownloadsOption.value === 'unlimited') return undefined
+  if (maxDownloadsOption.value === 'custom') return shareForm.value.maxDownloads
+  return parseInt(maxDownloadsOption.value)
+}
+
+// 创建分享
+async function handleCreateShare() {
+  if (!shareTarget.value) return
+  
+  shareLoading.value = true
+  try {
+    const request: CreateFileShareRequest = {
+      fileItemId: shareTarget.value.id,
+      accessType: shareForm.value.accessType,
+      permission: shareForm.value.permission,
+      expiresAt: computeExpiresAt(),
+      maxDownloads: computeMaxDownloads()
+    }
+    
+    if (shareForm.value.accessType === ShareAccessType.Password && shareForm.value.password) {
+      request.password = shareForm.value.password
+    }
+    
+    const result = await fileShareApi.create(request)
+    if (result.data) {
+      shareResult.value = result.data
+      ElMessage.success('分享创建成功')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '创建分享失败')
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+// 复制分享链接
+async function copyShareLink() {
+  if (!shareResult.value) return
+  try {
+    await navigator.clipboard.writeText(shareResult.value.shareUrl)
+    ElMessage.success('链接已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
   }
 }
 
@@ -912,6 +1050,11 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
         <el-tooltip content="下载" placement="bottom">
           <el-button @click="downloadSelected" :disabled="!fileStore.hasSelection">
             <el-icon><Download /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip content="分享" placement="bottom">
+          <el-button @click="shareSelected" :disabled="!fileStore.hasSelection" type="primary">
+            <el-icon><Share /></el-icon>
           </el-button>
         </el-tooltip>
         <el-tooltip content="删除" placement="bottom">
@@ -1024,6 +1167,9 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
                 </el-dropdown-item>
                 <el-dropdown-item v-if="canPreview(row)" command="preview">
                   <el-icon><View /></el-icon> 预览
+                </el-dropdown-item>
+                <el-dropdown-item command="share">
+                  <el-icon><Share /></el-icon> 分享
                 </el-dropdown-item>
                 <el-dropdown-item command="rename">
                   <el-icon><EditPen /></el-icon> 重命名
@@ -1250,7 +1396,7 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
         </div>
       </el-upload>
       <div class="upload-info" v-if="uploadFiles.length > 0">
-        已选择 {{ uploadFiles.length }} 个文件
+        已选择 {{ uploadFiles.length }} 个文件，共 {{ formatSize(uploadFiles.reduce((sum, f) => sum + (f.raw?.size || 0), 0)) }}
       </div>
       <el-progress v-if="uploading" :percentage="uploadProgress" />
       <template #footer>
@@ -1315,6 +1461,131 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
       <template #footer>
         <el-button @click="cancelOperation" :disabled="operationCancelled">
           {{ operationCancelled ? '正在取消...' : '取消' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 分享对话框 -->
+    <el-dialog v-model="shareDialogVisible" title="分享文件" width="500">
+      <div class="share-target" v-if="shareTarget">
+        <el-icon :size="24" :color="getFileIconColor(shareTarget)">
+          <component :is="getFileIcon(shareTarget)" />
+        </el-icon>
+        <div class="share-target-info">
+          <div class="share-target-name">{{ shareTarget.name }}</div>
+          <div class="share-target-path">{{ shareTarget.path }}</div>
+        </div>
+      </div>
+
+      <!-- 分享结果 -->
+      <div v-if="shareResult" class="share-result">
+        <el-alert type="success" :closable="false" show-icon>
+          <template #title>分享链接已生成</template>
+        </el-alert>
+        <div class="share-link-box">
+          <el-input v-model="shareResult.shareUrl" readonly>
+            <template #append>
+              <el-button @click="copyShareLink">
+                <el-icon><CopyDocument /></el-icon>
+                复制
+              </el-button>
+            </template>
+          </el-input>
+        </div>
+        <div class="share-info-list">
+          <div class="share-info-item">
+            <span class="label">访问方式:</span>
+            <span>{{ shareResult.accessType === 0 ? '公开' : shareResult.accessType === 1 ? '密码保护' : '仅内部用户' }}</span>
+          </div>
+          <div class="share-info-item" v-if="shareResult.accessType === 1 && shareForm.password">
+            <span class="label">访问密码:</span>
+            <span class="password">{{ shareForm.password }}</span>
+          </div>
+          <div class="share-info-item">
+            <span class="label">权限:</span>
+            <span>{{ shareResult.permission === 1 ? '只读' : shareResult.permission === 2 ? '读写' : '完全控制' }}</span>
+          </div>
+          <div class="share-info-item" v-if="shareResult.expiresAt">
+            <span class="label">有效期至:</span>
+            <span>{{ formatDate(shareResult.expiresAt) }}</span>
+          </div>
+          <div class="share-info-item" v-if="shareResult.maxDownloads">
+            <span class="label">下载限制:</span>
+            <span>{{ shareResult.maxDownloads }} 次</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分享表单 -->
+      <el-form v-else label-width="80px" class="share-form">
+        <el-form-item label="访问方式">
+          <el-radio-group v-model="shareForm.accessType">
+            <el-radio :value="ShareAccessType.Public">公开访问</el-radio>
+            <el-radio :value="ShareAccessType.Password">密码保护</el-radio>
+            <el-radio :value="ShareAccessType.Internal">仅内部用户</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item label="访问密码" v-if="shareForm.accessType === ShareAccessType.Password">
+          <el-input v-model="shareForm.password" placeholder="设置访问密码" show-password>
+            <template #append>
+              <el-button @click="generatePassword">随机生成</el-button>
+            </template>
+          </el-input>
+        </el-form-item>
+
+        <el-form-item label="权限">
+          <el-radio-group v-model="shareForm.permission">
+            <el-radio :value="PermissionLevel.Read">只读</el-radio>
+            <el-radio :value="PermissionLevel.ReadWrite">读写</el-radio>
+            <el-radio :value="PermissionLevel.FullControl">完全控制</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item label="有效期">
+          <el-radio-group v-model="expiresOption">
+            <el-radio value="never">永久</el-radio>
+            <el-radio value="1d">1天</el-radio>
+            <el-radio value="7d">7天</el-radio>
+            <el-radio value="30d">30天</el-radio>
+            <el-radio value="custom">自定义</el-radio>
+          </el-radio-group>
+          <el-date-picker
+            v-if="expiresOption === 'custom'"
+            v-model="shareForm.expiresAt"
+            type="datetime"
+            placeholder="选择过期时间"
+            style="margin-top: 8px; width: 100%"
+          />
+        </el-form-item>
+
+        <el-form-item label="下载限制">
+          <el-radio-group v-model="maxDownloadsOption">
+            <el-radio value="unlimited">不限</el-radio>
+            <el-radio value="1">1次</el-radio>
+            <el-radio value="10">10次</el-radio>
+            <el-radio value="100">100次</el-radio>
+            <el-radio value="custom">自定义</el-radio>
+          </el-radio-group>
+          <el-input-number
+            v-if="maxDownloadsOption === 'custom'"
+            v-model="shareForm.maxDownloads"
+            :min="1"
+            :max="10000"
+            placeholder="下载次数"
+            style="margin-top: 8px; width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="shareDialogVisible = false">{{ shareResult ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!shareResult" type="primary" @click="handleCreateShare" :loading="shareLoading">
+          创建分享
+        </el-button>
+        <el-button v-else type="primary" @click="copyShareLink">
+          <el-icon><Link /></el-icon>
+          复制链接
         </el-button>
       </template>
     </el-dialog>
@@ -1621,6 +1892,84 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
     .progress-text {
       flex-shrink: 0;
     }
+  }
+}
+
+.share-target {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  
+  .share-target-info {
+    flex: 1;
+    min-width: 0;
+    
+    .share-target-name {
+      font-weight: 500;
+      font-size: 15px;
+    }
+    
+    .share-target-path {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      margin-top: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}
+
+.share-result {
+  .share-link-box {
+    margin: 16px 0;
+  }
+  
+  .share-info-list {
+    background: var(--el-fill-color-light);
+    border-radius: 8px;
+    padding: 16px;
+    
+    .share-info-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 0;
+      font-size: 14px;
+      
+      &:not(:last-child) {
+        border-bottom: 1px solid var(--el-border-color-lighter);
+      }
+      
+      .label {
+        color: var(--el-text-color-secondary);
+        width: 80px;
+        flex-shrink: 0;
+      }
+      
+      .password {
+        font-family: monospace;
+        background: var(--el-color-warning-light-9);
+        padding: 2px 8px;
+        border-radius: 4px;
+        color: var(--el-color-warning-dark-2);
+      }
+    }
+  }
+}
+
+.share-form {
+  :deep(.el-form-item) {
+    margin-bottom: 20px;
+  }
+  
+  :deep(.el-radio-group) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }
 </style>

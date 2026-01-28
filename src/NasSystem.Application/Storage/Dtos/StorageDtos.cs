@@ -1,14 +1,12 @@
 // =============================================================================
 // NasSystem.Application - StorageDtos.cs
-// 存储相关 DTO
+// 存储相关 DTO（简化版）
 // =============================================================================
 
 namespace NasSystem.Application.Storage.Dtos;
 
-using NasSystem.Domain.Enums;
-
 /// <summary>
-/// 存储池 DTO
+/// 存储池 DTO（简化版）
 /// </summary>
 public sealed record StoragePoolDto
 {
@@ -16,63 +14,23 @@ public sealed record StoragePoolDto
     public required string Name { get; init; }
     public string? Description { get; init; }
     public required string MountPath { get; init; }
-    public required StoragePoolStatus Status { get; init; }
-    public required RaidLevel RaidLevel { get; init; }
     public required long TotalBytes { get; init; }
     public required long UsedBytes { get; init; }
     public required long AvailableBytes { get; init; }
     public required double UsagePercentage { get; init; }
+    public long? MaxCapacityBytes { get; init; }
+    public string? MaxCapacityDisplay { get; init; }
     public string? TotalDisplay { get; init; }
     public string? UsedDisplay { get; init; }
     public string? AvailableDisplay { get; init; }
     public required bool IsDefault { get; init; }
     public required bool IsEnabled { get; init; }
-    public required bool EnableDeduplication { get; init; }
-    public required bool EnableCompression { get; init; }
+    public required bool IsNearlyFull { get; init; }
     public required DateTime CreatedAt { get; init; }
-    public IReadOnlyList<StoragePoolDiskDto>? Disks { get; init; }
 }
 
 /// <summary>
-/// 存储池磁盘 DTO
-/// </summary>
-public sealed record StoragePoolDiskDto
-{
-    public required Guid Id { get; init; }
-    public required string SerialNumber { get; init; }
-    public required string Model { get; init; }
-    public required string DevicePath { get; init; }
-    public required long SizeBytes { get; init; }
-    public string? SizeDisplay { get; init; }
-    public required DiskType DiskType { get; init; }
-    public required DiskStatus Status { get; init; }
-    public required int HealthPercentage { get; init; }
-    public int? TemperatureCelsius { get; init; }
-    public long? PowerOnHours { get; init; }
-    public required bool IsHotSpare { get; init; }
-    public DateTime? LastCheckedAt { get; init; }
-}
-
-/// <summary>
-/// 系统磁盘信息 DTO (未加入存储池的磁盘)
-/// </summary>
-public sealed record SystemDiskDto
-{
-    public required string DevicePath { get; init; }
-    public required string SerialNumber { get; init; }
-    public required string Model { get; init; }
-    public required long SizeBytes { get; init; }
-    public string? SizeDisplay { get; init; }
-    public required DiskType DiskType { get; init; }
-    public required DiskStatus Status { get; init; }
-    public required int HealthPercentage { get; init; }
-    public int? TemperatureCelsius { get; init; }
-    public required bool IsSystemDisk { get; init; }
-    public required bool IsInUse { get; init; }
-}
-
-/// <summary>
-/// 存储使用情况概览 DTO
+/// 存储使用情况概览 DTO（简化版）
 /// </summary>
 public sealed record StorageOverviewDto
 {
@@ -84,34 +42,53 @@ public sealed record StorageOverviewDto
     public string? UsedDisplay { get; init; }
     public string? AvailableDisplay { get; init; }
     public required int PoolCount { get; init; }
-    public required int DiskCount { get; init; }
-    public required int HealthyDiskCount { get; init; }
-    public required int WarningDiskCount { get; init; }
-    public required int CriticalDiskCount { get; init; }
+    public string HealthStatus { get; init; } = "Healthy";
 }
 
 /// <summary>
-/// 创建存储池请求
+/// 创建存储池请求（简化版）
 /// </summary>
 public sealed record CreateStoragePoolRequest
 {
     public required string Name { get; init; }
     public string? Description { get; init; }
     public required string MountPath { get; init; }
-    public RaidLevel RaidLevel { get; init; } = RaidLevel.None;
-    public required IReadOnlyList<string> DiskDevicePaths { get; init; }
-    public bool EnableDeduplication { get; init; }
-    public bool EnableCompression { get; init; }
+    /// <summary>
+    /// 最大容量限制（字节），null 或 0 表示不限制
+    /// </summary>
+    public long? MaxCapacityBytes { get; init; }
 }
 
 /// <summary>
-/// 更新存储池请求
+/// 更新存储池请求（简化版）
 /// </summary>
 public sealed record UpdateStoragePoolRequest
 {
     public string? Name { get; init; }
     public string? Description { get; init; }
     public bool? IsEnabled { get; init; }
-    public bool? EnableDeduplication { get; init; }
-    public bool? EnableCompression { get; init; }
+    /// <summary>
+    /// 最大容量限制（字节），null 表示不修改，0 表示取消限制
+    /// </summary>
+    public long? MaxCapacityBytes { get; init; }
+}
+
+/// <summary>
+/// 检查存储空间请求
+/// </summary>
+public sealed record CheckStorageSpaceRequest
+{
+    public required long FileSize { get; init; }
+    public Guid? StoragePoolId { get; init; }
+}
+
+/// <summary>
+/// 检查存储空间响应
+/// </summary>
+public sealed record CheckStorageSpaceResponse
+{
+    public required bool HasEnoughSpace { get; init; }
+    public required long AvailableBytes { get; init; }
+    public required long RequiredBytes { get; init; }
+    public string? Message { get; init; }
 }

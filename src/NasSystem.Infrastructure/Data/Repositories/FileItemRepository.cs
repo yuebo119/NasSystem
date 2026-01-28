@@ -236,6 +236,15 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
         return Task.CompletedTask;
     }
 
+    public async Task<long> CalculateStoragePoolUsedSpaceAsync(
+        Guid storagePoolId,
+        CancellationToken cancellationToken = default)
+    {
+        return await QueryNoTracking()
+            .Where(f => f.StoragePoolId == storagePoolId && !f.IsDeleted && f.ItemType == Domain.Enums.FileItemType.File)
+            .SumAsync(f => f.SizeBytes, cancellationToken);
+    }
+
     private static string NormalizePath(string path)
     {
         var normalized = path.Replace('\\', '/').TrimEnd('/');

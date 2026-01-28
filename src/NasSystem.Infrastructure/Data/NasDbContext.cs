@@ -39,14 +39,19 @@ public sealed class NasDbContext(DbContextOptions<NasDbContext> options) : DbCon
     public DbSet<StoragePool> StoragePools => Set<StoragePool>();
 
     /// <summary>
-    /// 存储池磁盘表
-    /// </summary>
-    public DbSet<StoragePoolDisk> StoragePoolDisks => Set<StoragePoolDisk>();
-
-    /// <summary>
     /// 文件版本表
     /// </summary>
     public DbSet<FileVersion> FileVersions => Set<FileVersion>();
+
+    /// <summary>
+    /// 文件分享表
+    /// </summary>
+    public DbSet<FileShare> FileShares => Set<FileShare>();
+
+    /// <summary>
+    /// 文件权限表
+    /// </summary>
+    public DbSet<FilePermission> FilePermissions => Set<FilePermission>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

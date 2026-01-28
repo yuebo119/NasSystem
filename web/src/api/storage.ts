@@ -19,6 +19,8 @@ export interface StoragePool {
   usedBytes: number
   availableBytes: number
   usagePercentage: number
+  maxCapacityBytes?: number
+  maxCapacityDisplay?: string
   isDefault: boolean
   isEnabled: boolean
   enableDeduplication: boolean
@@ -43,6 +45,42 @@ export interface CreatePoolRequest {
   raidLevel: number
   description?: string
   diskIds?: string[]
+  maxCapacityBytes?: number
+}
+
+export interface CheckStorageSpaceRequest {
+  fileSize: number
+  storagePoolId?: string
+}
+
+export interface CheckStorageSpaceResponse {
+  hasEnoughSpace: boolean
+  availableBytes: number
+  requiredBytes: number
+  message?: string
+}
+
+// 目录浏览相关类型
+export interface DirectoryItem {
+  name: string
+  path: string
+  isRoot: boolean
+}
+
+export interface BrowseDirectoriesResult {
+  currentPath: string
+  parentPath?: string
+  directories: DirectoryItem[]
+}
+
+export interface DriveInfo {
+  name: string
+  label: string
+  driveType: string
+  totalSize: number
+  availableSpace: number
+  totalDisplay: string
+  availableDisplay: string
 }
 
 // API 函数
@@ -71,6 +109,17 @@ export const storageApi = {
 
   // 获取磁盘列表
   getDisks: () => http.get('/storage/disks'),
+
+  // 浏览目录
+  browseDirectories: (path?: string) => 
+    http.get<BrowseDirectoriesResult>('/system/browse-directories', { params: { path } }),
+
+  // 获取驱动器列表
+  getDrives: () => http.get<DriveInfo[]>('/system/drives'),
+
+  // 检查存储空间
+  checkSpace: (data: CheckStorageSpaceRequest) => 
+    http.post<CheckStorageSpaceResponse>('/storage/check-space', data),
 }
 
 export default storageApi

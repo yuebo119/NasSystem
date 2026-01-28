@@ -53,29 +53,36 @@ public enum FileItemType
 }
 
 /// <summary>
-/// 共享类型
+/// 共享类型（已废弃，保留兼容）
 /// </summary>
+[Obsolete("使用 ShareAccessType 替代")]
 public enum ShareType
 {
-    /// <summary>
-    /// SMB/CIFS 共享 (Windows)
-    /// </summary>
     Smb = 0,
-
-    /// <summary>
-    /// NFS 共享 (Linux/Unix)
-    /// </summary>
     Nfs = 1,
-
-    /// <summary>
-    /// WebDAV 共享
-    /// </summary>
     WebDav = 2,
+    Ftp = 3
+}
+
+/// <summary>
+/// 分享访问类型
+/// </summary>
+public enum ShareAccessType
+{
+    /// <summary>
+    /// 公开访问（任何人可访问）
+    /// </summary>
+    Public = 0,
 
     /// <summary>
-    /// FTP 共享
+    /// 密码保护
     /// </summary>
-    Ftp = 3
+    Password = 1,
+
+    /// <summary>
+    /// 仅内部用户（需登录）
+    /// </summary>
+    Internal = 2
 }
 
 /// <summary>

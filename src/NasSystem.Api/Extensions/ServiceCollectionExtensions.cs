@@ -136,6 +136,9 @@ public static class ServiceCollectionExtensions
         // 健康检查端点
         app.MapHealthChecks("/health");
 
+        // SPA 回退：对于 /s/* 路径，返回 index.html 让前端路由处理
+        app.MapFallbackToFile("/s/{*path}", "index.html");
+
         // 版本信息端点
         app.MapGet("/api/version", () => Results.Ok(new
         {
@@ -173,10 +176,16 @@ public static class ServiceCollectionExtensions
         // 共享管理端点
         apiGroup.MapShareEndpoints();
         
+        // 文件分享端点
+        apiGroup.MapFileShareEndpoints();
+        
         // 存储池管理端点
         apiGroup.MapStorageEndpoints();
         
         // 系统管理端点
         apiGroup.MapSystemEndpoints();
+        
+        // 公开分享访问端点（无需登录）
+        app.MapPublicShareEndpoints();
     }
 }

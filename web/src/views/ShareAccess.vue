@@ -1,0 +1,821 @@
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { 
+  Download, Lock, Document, Folder, Picture, VideoPlay, 
+  Headset, FolderOpened, Warning, User, ArrowLeft,
+  Clock, View, Link as LinkIcon
+} from '@element-plus/icons-vue'
+import { publicShareApi, ShareAccessType, type PublicShareInfoDto, type ShareFolderContentDto, type ShareFileItemDto } from '@/api/fileShare'
+
+const route = useRoute()
+const shareCode = computed(() => route.params.shareCode as string)
+
+// 状态
+const loading = ref(true)
+const shareInfo = ref<PublicShareInfoDto | null>(null)
+const error = ref('')
+const passwordInput = ref('')
+const verifying = ref(false)
+const accessToken = ref('')
+const folderContent = ref<ShareFolderContentDto | null>(null)
+const currentPath = ref('')
+const downloading = ref(false)
+
+// 加载分享信息
+const loadShareInfo = async () => {
+  loading.value = true
+  error.value = ''
+  try {
+    const result = await publicShareApi.getInfo(shareCode.value)
+    if (result.data) {
+      shareInfo.value = result.data
+      if (result.data.isAccessible && result.data.isFolder) {
+        await loadFolderContent()
+      }
+    }
+  } catch (e: any) {
+    error.value = e.message || '分享不存在或已失效'
+  } finally {
+    loading.value = false
+  }
+}
+
+// 验证密码
+const verifyPassword = async () => {
+  if (!passwordInput.value) {
+    ElMessage.warning('请输入访问密码')
+    return
+  }
+  verifying.value = true
+  try {
+    const result = await publicShareApi.verifyPassword(shareCode.value, passwordInput.value)
+    if (result.data?.accessToken) {
+      accessToken.value = result.data.accessToken
+      ElMessage.success('验证成功')
+      if (shareInfo.value?.isFolder) {
+        await loadFolderContent()
+      }
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '密码错误')
+  } finally {
+    verifying.value = false
+  }
+}
+
+// 加载文件夹内容
+const loadFolderContent = async (subPath?: string) => {
+  try {
+    const result = await publicShareApi.getFolderContent(shareCode.value, accessToken.value || undefined, subPath)
+    if (result.data) {
+      folderContent.value = result.data
+      currentPath.value = subPath || ''
+    }
+  } catch (e: any) {
+    ElMessage.error('加载文件夹内容失败')
+  }
+}
+
+// 下载文件
+const downloadFile = (subPath?: string) => {
+  downloading.value = true
+  const url = publicShareApi.getDownloadUrl(shareCode.value, accessToken.value || undefined, subPath)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = ''
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  setTimeout(() => { downloading.value = false }, 1000)
+}
+
+// 进入子目录
+const enterFolder = (item: ShareFileItemDto) => {
+  if (item.isFolder) {
+    const newPath = currentPath.value ? `${currentPath.value}/${item.name}` : item.name
+    loadFolderContent(newPath)
+  }
+}
+
+// 返回上级
+const goBack = () => {
+  if (!currentPath.value) return
+  const parts = currentPath.value.split('/')
+  parts.pop()
+  loadFolderContent(parts.join('/') || undefined)
+}
+
+// 获取文件图标
+const getFileIcon = (item: ShareFileItemDto | PublicShareInfoDto) => {
+  if (item.isFolder) return Folder
+  const name = 'fileName' in item ? item.fileName : item.name
+  const ext = name.substring(name.lastIndexOf('.')).toLowerCase()
+  const iconMap: Record<string, any> = {
+    '.pdf': Document, '.doc': Document, '.docx': Document,
+    '.txt': Document, '.md': Document, '.json': Document,
+    '.jpg': Picture, '.jpeg': Picture, '.png': Picture, '.gif': Picture, '.webp': Picture,
+    '.mp4': VideoPlay, '.avi': VideoPlay, '.mkv': VideoPlay, '.mov': VideoPlay,
+    '.mp3': Headset, '.wav': Headset, '.flac': Headset,
+    '.zip': FolderOpened, '.rar': FolderOpened, '.7z': FolderOpened,
+  }
+  return iconMap[ext] || Document
+}
+
+// 获取文件图标颜色
+const getFileIconColor = (item: ShareFileItemDto | PublicShareInfoDto) => {
+  if (item.isFolder) return '#ffc107'
+  const name = 'fileName' in item ? item.fileName : item.name
+  const ext = name.substring(name.lastIndexOf('.')).toLowerCase()
+  if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) return '#67C23A'
+  if (['.mp4', '.avi', '.mkv', '.mov'].includes(ext)) return '#409EFF'
+  if (['.mp3', '.wav', '.flac'].includes(ext)) return '#E6A23C'
+  if (['.pdf', '.doc', '.docx'].includes(ext)) return '#F56C6C'
+  return '#909399'
+}
+
+// 是否可以访问
+const canAccess = computed(() => {
+  if (!shareInfo.value) return false
+  if (shareInfo.value.accessType === ShareAccessType.Public) return true
+  if (shareInfo.value.accessType === ShareAccessType.Password && accessToken.value) return true
+  return false
+})
+
+// 面包屑路径
+const breadcrumbs = computed(() => {
+  if (!currentPath.value) return []
+  return currentPath.value.split('/')
+})
+
+onMounted(() => {
+  loadShareInfo()
+})
+</script>
+
+<template>
+  <div class="share-page">
+    <!-- 背景装饰 -->
+    <div class="bg-decoration">
+      <div class="circle circle-1"></div>
+      <div class="circle circle-2"></div>
+      <div class="circle circle-3"></div>
+    </div>
+
+    <div class="share-wrapper">
+      <!-- Logo -->
+      <div class="brand">
+        <div class="brand-icon">
+          <el-icon :size="24"><LinkIcon /></el-icon>
+        </div>
+        <span>NAS Share</span>
+      </div>
+
+      <!-- 主卡片 -->
+      <div class="share-card">
+        <!-- 加载中 -->
+        <div v-if="loading" class="state-container loading-state">
+          <div class="spinner"></div>
+          <p>正在加载分享信息...</p>
+        </div>
+
+        <!-- 错误状态 -->
+        <div v-else-if="error" class="state-container error-state">
+          <div class="state-icon error">
+            <el-icon :size="48"><Warning /></el-icon>
+          </div>
+          <h2>无法访问此分享</h2>
+          <p>{{ error }}</p>
+          <el-button type="primary" plain @click="loadShareInfo">重试</el-button>
+        </div>
+
+        <!-- 已过期 -->
+        <div v-else-if="shareInfo?.isExpired" class="state-container error-state">
+          <div class="state-icon warning">
+            <el-icon :size="48"><Clock /></el-icon>
+          </div>
+          <h2>分享已过期</h2>
+          <p>此分享链接已超过有效期，无法继续访问</p>
+        </div>
+
+        <!-- 下载限制已达 -->
+        <div v-else-if="shareInfo?.isDownloadLimitReached" class="state-container error-state">
+          <div class="state-icon warning">
+            <el-icon :size="48"><View /></el-icon>
+          </div>
+          <h2>下载次数已用完</h2>
+          <p>此分享链接的下载次数已达上限</p>
+        </div>
+
+        <!-- 需要密码 -->
+        <div v-else-if="shareInfo?.requiresPassword && !accessToken" class="state-container password-state">
+          <div class="file-icon-wrapper">
+            <el-icon :size="56" :color="getFileIconColor(shareInfo)">
+              <component :is="getFileIcon(shareInfo)" />
+            </el-icon>
+          </div>
+          <h2 class="file-name">{{ shareInfo.fileName }}</h2>
+          <p class="file-size" v-if="shareInfo.sizeDisplay">{{ shareInfo.sizeDisplay }}</p>
+          
+          <div class="password-section">
+            <div class="lock-badge">
+              <el-icon :size="20"><Lock /></el-icon>
+              <span>需要密码访问</span>
+            </div>
+            <el-input 
+              v-model="passwordInput" 
+              type="password" 
+              placeholder="请输入访问密码"
+              size="large"
+              @keyup.enter="verifyPassword"
+              show-password
+              class="password-input"
+            />
+            <el-button 
+              type="primary" 
+              size="large" 
+              @click="verifyPassword" 
+              :loading="verifying"
+              class="verify-btn"
+            >
+              {{ verifying ? '验证中...' : '验证并访问' }}
+            </el-button>
+          </div>
+          
+          <div class="share-info" v-if="shareInfo.createdByUserName">
+            <el-icon><User /></el-icon>
+            <span>{{ shareInfo.createdByUserName }} 分享</span>
+          </div>
+        </div>
+
+        <!-- 需要登录 -->
+        <div v-else-if="shareInfo?.accessType === ShareAccessType.Internal" class="state-container login-state">
+          <div class="file-icon-wrapper">
+            <el-icon :size="56" :color="getFileIconColor(shareInfo)">
+              <component :is="getFileIcon(shareInfo)" />
+            </el-icon>
+          </div>
+          <h2 class="file-name">{{ shareInfo.fileName }}</h2>
+          <p class="file-size" v-if="shareInfo.sizeDisplay">{{ shareInfo.sizeDisplay }}</p>
+          
+          <div class="login-section">
+            <div class="lock-badge internal">
+              <el-icon :size="20"><User /></el-icon>
+              <span>仅限内部用户</span>
+            </div>
+            <p class="login-hint">请登录系统后访问此分享</p>
+            <el-button type="primary" size="large" @click="$router.push('/login')">
+              登录系统
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 可访问 - 单文件 -->
+        <div v-else-if="shareInfo && canAccess && !shareInfo.isFolder" class="state-container file-state">
+          <div class="file-icon-wrapper large">
+            <el-icon :size="72" :color="getFileIconColor(shareInfo)">
+              <component :is="getFileIcon(shareInfo)" />
+            </el-icon>
+          </div>
+          <h2 class="file-name">{{ shareInfo.fileName }}</h2>
+          <p class="file-size" v-if="shareInfo.sizeDisplay">文件大小: {{ shareInfo.sizeDisplay }}</p>
+          
+          <el-button 
+            type="primary" 
+            size="large" 
+            @click="downloadFile()"
+            :loading="downloading"
+            class="download-btn"
+          >
+            <el-icon v-if="!downloading"><Download /></el-icon>
+            {{ downloading ? '准备下载...' : '立即下载' }}
+          </el-button>
+          
+          <div class="share-info" v-if="shareInfo.createdByUserName">
+            <el-icon><User /></el-icon>
+            <span>{{ shareInfo.createdByUserName }} 分享</span>
+          </div>
+        </div>
+
+        <!-- 可访问 - 文件夹 -->
+        <div v-else-if="shareInfo && canAccess && shareInfo.isFolder" class="folder-state">
+          <div class="folder-header">
+            <div class="folder-title">
+              <el-icon :size="28" color="#ffc107"><Folder /></el-icon>
+              <div class="title-text">
+                <h2>{{ shareInfo.fileName }}</h2>
+                <div class="breadcrumb" v-if="currentPath">
+                  <span class="root" @click="loadFolderContent()">根目录</span>
+                  <template v-for="(crumb, index) in breadcrumbs" :key="index">
+                    <span class="separator">/</span>
+                    <span 
+                      class="crumb" 
+                      :class="{ active: index === breadcrumbs.length - 1 }"
+                      @click="index < breadcrumbs.length - 1 && loadFolderContent(breadcrumbs.slice(0, index + 1).join('/'))"
+                    >
+                      {{ crumb }}
+                    </span>
+                  </template>
+                </div>
+              </div>
+            </div>
+            <div class="header-actions">
+              <el-button type="primary" @click="downloadFile(currentPath || undefined)" :loading="downloading">
+                <el-icon><Download /></el-icon>
+                下载整个文件夹 (ZIP)
+              </el-button>
+              <el-button v-if="currentPath" @click="goBack" :icon="ArrowLeft">
+                返回
+              </el-button>
+            </div>
+          </div>
+          
+          <div class="folder-content" v-if="folderContent">
+            <div 
+              v-for="item in folderContent.items" 
+              :key="item.id" 
+              class="file-item"
+              @click="item.isFolder ? enterFolder(item) : null"
+              :class="{ clickable: item.isFolder }"
+            >
+              <div class="item-icon">
+                <el-icon :size="24" :color="getFileIconColor(item)">
+                  <component :is="getFileIcon(item)" />
+                </el-icon>
+              </div>
+              <div class="item-details">
+                <span class="item-name">{{ item.name }}</span>
+                <span class="item-meta">{{ item.isFolder ? '文件夹' : item.sizeDisplay }}</span>
+              </div>
+              <el-button 
+                v-if="!item.isFolder" 
+                type="primary"
+                size="small"
+                plain
+                @click.stop="downloadFile(currentPath ? `${currentPath}/${item.name}` : item.name)"
+              >
+                <el-icon><Download /></el-icon>
+                下载
+              </el-button>
+              <el-icon v-else class="arrow-icon"><ArrowLeft style="transform: rotate(180deg)" /></el-icon>
+            </div>
+            
+            <div v-if="folderContent.items.length === 0" class="empty-folder">
+              <el-icon :size="48" color="#dcdfe6"><FolderOpened /></el-icon>
+              <p>此文件夹为空</p>
+            </div>
+          </div>
+          
+          <div class="share-info" v-if="shareInfo.createdByUserName">
+            <el-icon><User /></el-icon>
+            <span>{{ shareInfo.createdByUserName }} 分享</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部 -->
+      <div class="footer">
+        <span>Powered by NAS System</span>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style lang="scss" scoped>
+.share-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.bg-decoration {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  
+  .circle {
+    position: absolute;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
+    
+    &.circle-1 {
+      width: 600px;
+      height: 600px;
+      top: -200px;
+      right: -200px;
+    }
+    
+    &.circle-2 {
+      width: 400px;
+      height: 400px;
+      bottom: -100px;
+      left: -100px;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(16, 185, 129, 0.1));
+    }
+    
+    &.circle-3 {
+      width: 200px;
+      height: 200px;
+      top: 50%;
+      left: 10%;
+      background: linear-gradient(135deg, rgba(244, 63, 94, 0.08), rgba(251, 146, 60, 0.08));
+    }
+  }
+}
+
+.share-wrapper {
+  width: 100%;
+  max-width: 520px;
+  position: relative;
+  z-index: 1;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 18px;
+  font-weight: 500;
+  
+  .brand-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+  }
+}
+
+.share-card {
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: 20px;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.state-container {
+  padding: 48px 40px;
+  text-align: center;
+}
+
+// 加载状态
+.loading-state {
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid #e5e7eb;
+    border-top-color: #6366f1;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 20px;
+  }
+  
+  p {
+    color: #6b7280;
+    margin: 0;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// 错误状态
+.error-state {
+  .state-icon {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    
+    &.error {
+      background: linear-gradient(135deg, #fef2f2, #fee2e2);
+      color: #ef4444;
+    }
+    
+    &.warning {
+      background: linear-gradient(135deg, #fffbeb, #fef3c7);
+      color: #f59e0b;
+    }
+  }
+  
+  h2 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    color: #1f2937;
+  }
+  
+  p {
+    margin: 0 0 24px;
+    color: #6b7280;
+  }
+}
+
+// 文件图标
+.file-icon-wrapper {
+  width: 100px;
+  height: 100px;
+  background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  
+  &.large {
+    width: 120px;
+    height: 120px;
+    border-radius: 24px;
+  }
+}
+
+.file-name {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.file-size {
+  margin: 0 0 24px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+// 密码区域
+.password-section {
+  margin-top: 8px;
+  
+  .lock-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    color: #92400e;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 20px;
+  }
+  
+  .password-input {
+    margin-bottom: 16px;
+    
+    :deep(.el-input__wrapper) {
+      border-radius: 12px;
+      padding: 4px 16px;
+    }
+  }
+  
+  .verify-btn {
+    width: 100%;
+    border-radius: 12px;
+    height: 48px;
+    font-size: 16px;
+  }
+}
+
+// 登录区域
+.login-section {
+  .lock-badge.internal {
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    color: #1e40af;
+  }
+  
+  .login-hint {
+    margin: 20px 0;
+    color: #6b7280;
+  }
+  
+  .el-button {
+    border-radius: 12px;
+    height: 48px;
+    padding: 0 48px;
+    font-size: 16px;
+  }
+}
+
+// 文件下载
+.file-state {
+  .download-btn {
+    width: 200px;
+    height: 52px;
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: 500;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border: none;
+    
+    &:hover {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    }
+  }
+}
+
+// 分享信息
+.share-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+// 文件夹状态
+.folder-state {
+  padding: 0;
+  
+  .folder-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 28px;
+    border-bottom: 1px solid #e5e7eb;
+    background: #fafafa;
+    gap: 16px;
+    flex-wrap: wrap;
+    
+    .folder-title {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      
+      .title-text {
+        h2 {
+          margin: 0;
+          font-size: 18px;
+          color: #1f2937;
+        }
+        
+        .breadcrumb {
+          margin-top: 4px;
+          font-size: 12px;
+          color: #9ca3af;
+          
+          .root, .crumb {
+            cursor: pointer;
+            
+            &:hover:not(.active) {
+              color: #6366f1;
+            }
+          }
+          
+          .active {
+            color: #6b7280;
+            cursor: default;
+          }
+          
+          .separator {
+            margin: 0 4px;
+          }
+        }
+      }
+    }
+    
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+  }
+  
+  .folder-content {
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 12px;
+    
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      transition: all 0.2s;
+      
+      &.clickable {
+        cursor: pointer;
+        
+        &:hover {
+          background: #f3f4f6;
+        }
+      }
+      
+      .item-icon {
+        width: 44px;
+        height: 44px;
+        background: #f3f4f6;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      
+      .item-details {
+        flex: 1;
+        min-width: 0;
+        
+        .item-name {
+          display: block;
+          font-weight: 500;
+          color: #1f2937;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        
+        .item-meta {
+          font-size: 12px;
+          color: #9ca3af;
+        }
+      }
+      
+      .arrow-icon {
+        color: #d1d5db;
+      }
+      
+      .el-button {
+        border-radius: 8px;
+      }
+    }
+    
+    .empty-folder {
+      padding: 48px 20px;
+      text-align: center;
+      
+      p {
+        margin: 12px 0 0;
+        color: #9ca3af;
+      }
+    }
+  }
+  
+  .share-info {
+    padding: 16px 28px;
+    margin: 0;
+    border-top: 1px solid #e5e7eb;
+  }
+}
+
+.footer {
+  text-align: center;
+  margin-top: 20px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+}
+
+// 响应式
+@media (max-width: 480px) {
+  .share-wrapper {
+    max-width: 100%;
+  }
+  
+  .state-container {
+    padding: 36px 24px;
+  }
+  
+  .file-name {
+    font-size: 18px;
+  }
+  
+  .folder-state {
+    .folder-header {
+      padding: 16px 20px;
+      flex-direction: column;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    
+    .folder-content {
+      padding: 8px;
+      
+      .file-item {
+        padding: 12px;
+      }
+    }
+  }
+}
+</style>

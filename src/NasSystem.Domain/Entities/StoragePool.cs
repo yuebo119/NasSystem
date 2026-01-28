@@ -1,16 +1,16 @@
 // =============================================================================
 // NasSystem.Domain - StoragePool.cs
-// 存储池实体
+// 存储池实体（简化版）
 // =============================================================================
 
 namespace NasSystem.Domain.Entities;
 
 using NasSystem.Domain.Common;
-using NasSystem.Domain.Enums;
 using NasSystem.Domain.Events;
 
 /// <summary>
-/// 存储池实体
+/// 存储池实体（简化版）
+/// 仅作为存储根目录配置，移除 RAID、磁盘管理等硬件相关功能
 /// </summary>
 public sealed class StoragePool : Entity
 {
@@ -20,34 +20,14 @@ public sealed class StoragePool : Entity
     public string Name { get; private set; } = string.Empty;
 
     /// <summary>
-    /// 存储池描述
-    /// </summary>
-    public string? Description { get; private set; }
-
-    /// <summary>
-    /// 挂载路径
+    /// 挂载路径（存储根目录）
     /// </summary>
     public string MountPath { get; private set; } = string.Empty;
 
     /// <summary>
-    /// 存储池状态
+    /// 描述
     /// </summary>
-    public StoragePoolStatus Status { get; private set; } = StoragePoolStatus.Healthy;
-
-    /// <summary>
-    /// RAID 级别
-    /// </summary>
-    public RaidLevel RaidLevel { get; private set; } = RaidLevel.None;
-
-    /// <summary>
-    /// 总容量 (字节)
-    /// </summary>
-    public long TotalBytes { get; private set; }
-
-    /// <summary>
-    /// 已使用容量 (字节)
-    /// </summary>
-    public long UsedBytes { get; private set; }
+    public string? Description { get; private set; }
 
     /// <summary>
     /// 是否为默认存储池
@@ -60,18 +40,19 @@ public sealed class StoragePool : Entity
     public bool IsEnabled { get; private set; } = true;
 
     /// <summary>
-    /// 是否启用去重
+    /// 总容量（从文件系统动态读取）
     /// </summary>
-    public bool EnableDeduplication { get; private set; }
+    public long TotalBytes { get; private set; }
 
     /// <summary>
-    /// 是否启用压缩
+    /// 已使用容量
     /// </summary>
-    public bool EnableCompression { get; private set; }
+    public long UsedBytes { get; private set; }
 
-    // 导航属性
-    public ICollection<StoragePoolDisk> Disks { get; private set; } = [];
-    public ICollection<Share> Shares { get; private set; } = [];
+    /// <summary>
+    /// 最大容量限制（null 表示不限制，使用磁盘实际容量）
+    /// </summary>
+    public long? MaxCapacityBytes { get; private set; }
 
     // EF Core 需要的无参构造函数
     private StoragePool() { }
@@ -82,16 +63,17 @@ public sealed class StoragePool : Entity
     public static StoragePool Create(
         string name,
         string mountPath,
-        RaidLevel raidLevel = RaidLevel.None,
-        string? description = null)
+        string? description = null,
+        long? maxCapacityBytes = null)
     {
         var pool = new StoragePool
         {
             Name = name,
-            Description = description,
             MountPath = mountPath,
-            RaidLevel = raidLevel,
-            Status = StoragePoolStatus.Initializing
+            Description = description,
+            MaxCapacityBytes = maxCapacityBytes,
+            IsDefault = false,
+            IsEnabled = true
         };
 
         pool.AddDomainEvent(new StoragePoolCreatedEvent(pool.Id, pool.Name));
@@ -99,45 +81,32 @@ public sealed class StoragePool : Entity
     }
 
     /// <summary>
-    /// 添加磁盘
+    /// 更新存储池信息
     /// </summary>
-    public void AddDisk(StoragePoolDisk disk)
+    public void Update(string name, string? description, long? maxCapacityBytes = null)
     {
-        Disks.Add(disk);
-        RecalculateCapacity();
+        Name = name;
+        Description = description;
+        if (maxCapacityBytes.HasValue)
+            MaxCapacityBytes = maxCapacityBytes.Value > 0 ? maxCapacityBytes : null;
         MarkAsModified();
     }
 
     /// <summary>
-    /// 移除磁盘
+    /// 设置最大容量限制
     /// </summary>
-    public void RemoveDisk(StoragePoolDisk disk)
+    public void SetMaxCapacity(long? maxCapacityBytes)
     {
-        Disks.Remove(disk);
-        RecalculateCapacity();
+        MaxCapacityBytes = maxCapacityBytes;
         MarkAsModified();
     }
 
     /// <summary>
-    /// 更新状态
+    /// 更新容量信息（从文件系统读取）
     /// </summary>
-    public void UpdateStatus(StoragePoolStatus status)
+    public void UpdateCapacity(long totalBytes, long usedBytes)
     {
-        var oldStatus = Status;
-        Status = status;
-        MarkAsModified();
-
-        if (oldStatus != status)
-        {
-            AddDomainEvent(new StoragePoolStatusChangedEvent(Id, oldStatus, status));
-        }
-    }
-
-    /// <summary>
-    /// 更新使用量
-    /// </summary>
-    public void UpdateUsage(long usedBytes)
-    {
+        TotalBytes = totalBytes;
         UsedBytes = usedBytes;
         MarkAsModified();
     }
@@ -161,47 +130,29 @@ public sealed class StoragePool : Entity
     }
 
     /// <summary>
-    /// 设置优化选项
+    /// 有效总容量（考虑最大容量限制）
     /// </summary>
-    public void SetOptimization(bool enableDeduplication, bool enableCompression)
-    {
-        EnableDeduplication = enableDeduplication;
-        EnableCompression = enableCompression;
-        MarkAsModified();
-    }
+    public long EffectiveTotalBytes => MaxCapacityBytes.HasValue && MaxCapacityBytes.Value < TotalBytes 
+        ? MaxCapacityBytes.Value 
+        : TotalBytes;
 
     /// <summary>
-    /// 重新计算容量
+    /// 可用容量（考虑最大容量限制）
     /// </summary>
-    private void RecalculateCapacity()
-    {
-        // 根据 RAID 级别计算有效容量
-        var totalDiskBytes = Disks.Sum(d => d.SizeBytes);
-
-        TotalBytes = RaidLevel switch
-        {
-            RaidLevel.None => totalDiskBytes,
-            RaidLevel.Raid0 => totalDiskBytes,
-            RaidLevel.Raid1 => totalDiskBytes / 2,
-            RaidLevel.Raid5 => totalDiskBytes - (Disks.Count > 0 ? Disks.First().SizeBytes : 0),
-            RaidLevel.Raid6 => totalDiskBytes - (Disks.Count > 1 ? Disks.Take(2).Sum(d => d.SizeBytes) : 0),
-            RaidLevel.Raid10 => totalDiskBytes / 2,
-            _ => totalDiskBytes
-        };
-    }
+    public long AvailableBytes => Math.Max(0, EffectiveTotalBytes - UsedBytes);
 
     /// <summary>
-    /// 可用容量 (字节)
+    /// 使用率 (0-100)，基于有效总容量
     /// </summary>
-    public long AvailableBytes => TotalBytes - UsedBytes;
-
-    /// <summary>
-    /// 使用率 (0-100)
-    /// </summary>
-    public double UsagePercentage => TotalBytes > 0 ? (double)UsedBytes / TotalBytes * 100 : 0;
+    public double UsagePercentage => EffectiveTotalBytes > 0 ? (double)UsedBytes / EffectiveTotalBytes * 100 : 0;
 
     /// <summary>
     /// 是否即将满 (>90%)
     /// </summary>
     public bool IsNearlyFull => UsagePercentage > 90;
+
+    /// <summary>
+    /// 检查是否有足够空间上传指定大小的文件
+    /// </summary>
+    public bool HasEnoughSpace(long fileSize) => AvailableBytes >= fileSize;
 }

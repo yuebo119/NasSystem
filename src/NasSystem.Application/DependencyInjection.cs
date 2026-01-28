@@ -8,6 +8,7 @@ namespace NasSystem.Application;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Application.Files;
+using NasSystem.Application.FileShares;
 using NasSystem.Application.FileVersions;
 using NasSystem.Application.Shares;
 using NasSystem.Application.Storage;
@@ -34,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<IFileVersionService, FileVersionService>();
         services.AddScoped<IShareService, ShareService>();
         services.AddScoped<IStorageService, StorageService>();
+        services.AddScoped<IFileShareService, FileShareService>();
 
         return services;
     }

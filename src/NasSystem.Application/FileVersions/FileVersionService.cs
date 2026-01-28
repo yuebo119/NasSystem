@@ -209,7 +209,7 @@ public class FileVersionService : IFileVersionService
             version.StoragePath,
             FileMode.Open,
             FileAccess.Read,
-            FileShare.Read);
+            System.IO.FileShare.Read);
 
         return Result<(Stream, string, string)>.Success((stream, fileName, contentType));
     }

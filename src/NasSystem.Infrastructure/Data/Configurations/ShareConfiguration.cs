@@ -51,7 +51,7 @@ public sealed class ShareConfiguration : IEntityTypeConfiguration<Share>
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(s => s.StoragePool)
-            .WithMany(sp => sp.Shares)
+            .WithMany()
             .HasForeignKey(s => s.StoragePoolId)
             .OnDelete(DeleteBehavior.Restrict);
 

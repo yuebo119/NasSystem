@@ -34,6 +34,9 @@ public static class DatabaseInitializer
             // 确保数据库已创建
             await context.Database.EnsureCreatedAsync();
 
+            // 执行数据库迁移（添加缺失的列）
+            await MigrateSchemaAsync(context, logger);
+
             // 检查是否需要初始化数据
             if (!await context.Users.AnyAsync())
             {
@@ -53,6 +56,49 @@ public static class DatabaseInitializer
         {
             logger.LogError(ex, "数据库初始化失败");
             throw;
+        }
+    }
+
+    /// <summary>
+    /// 迁移数据库架构（添加缺失的列）
+    /// </summary>
+    private static async Task MigrateSchemaAsync(NasDbContext context, ILogger logger)
+    {
+        try
+        {
+            // 检查 StoragePools 表是否有 MaxCapacityBytes 列
+            var connection = context.Database.GetDbConnection();
+            await connection.OpenAsync();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA table_info(StoragePools);";
+            
+            bool hasMaxCapacityBytes = false;
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    var columnName = reader.GetString(1);
+                    if (columnName == "MaxCapacityBytes")
+                    {
+                        hasMaxCapacityBytes = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasMaxCapacityBytes)
+            {
+                logger.LogInformation("添加 MaxCapacityBytes 列到 StoragePools 表...");
+                using var alterCommand = connection.CreateCommand();
+                alterCommand.CommandText = "ALTER TABLE StoragePools ADD COLUMN MaxCapacityBytes INTEGER NULL;";
+                await alterCommand.ExecuteNonQueryAsync();
+                logger.LogInformation("MaxCapacityBytes 列添加成功");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "数据库架构迁移时出现警告");
         }
     }
 
@@ -87,18 +133,22 @@ public static class DatabaseInitializer
         var defaultPool = StoragePool.Create(
             name: "默认存储池",
             mountPath: storagePath,
-            raidLevel: RaidLevel.None,
             description: "系统默认存储池");
 
         defaultPool.SetAsDefault(true);
-        defaultPool.UpdateStatus(StoragePoolStatus.Healthy);
 
         // 尝试获取磁盘容量
         try
         {
-            var driveInfo = new DriveInfo(Path.GetPathRoot(storagePath) ?? storagePath);
-            // 通过 UpdateUsage 设置使用量
-            defaultPool.UpdateUsage(driveInfo.TotalSize - driveInfo.AvailableFreeSpace);
+            var pathRoot = Path.GetPathRoot(storagePath);
+            if (!string.IsNullOrEmpty(pathRoot))
+            {
+                var driveInfo = new DriveInfo(pathRoot);
+                if (driveInfo.IsReady)
+                {
+                    defaultPool.UpdateCapacity(driveInfo.TotalSize, driveInfo.TotalSize - driveInfo.AvailableFreeSpace);
+                }
+            }
         }
         catch
         {

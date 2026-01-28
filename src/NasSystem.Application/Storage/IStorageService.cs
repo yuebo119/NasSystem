@@ -1,6 +1,6 @@
 // =============================================================================
 // NasSystem.Application - IStorageService.cs
-// 存储服务接口
+// 存储服务接口（简化版）
 // =============================================================================
 
 namespace NasSystem.Application.Storage;
@@ -9,7 +9,7 @@ using NasSystem.Application.Storage.Dtos;
 using NasSystem.Shared;
 
 /// <summary>
-/// 存储服务接口
+/// 存储服务接口（简化版）
 /// </summary>
 public interface IStorageService
 {
@@ -62,42 +62,15 @@ public interface IStorageService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 获取系统磁盘列表
+    /// 刷新容量信息
     /// </summary>
-    Task<Result<IReadOnlyList<SystemDiskDto>>> GetSystemDisksAsync(
+    Task<Result> RefreshCapacityAsync(
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 获取可用磁盘列表 (未加入存储池)
+    /// 检查存储空间是否足够
     /// </summary>
-    Task<Result<IReadOnlyList<SystemDiskDto>>> GetAvailableDisksAsync(
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 向存储池添加磁盘
-    /// </summary>
-    Task<Result<StoragePoolDiskDto>> AddDiskToPoolAsync(
-        Guid poolId,
-        string devicePath,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 从存储池移除磁盘
-    /// </summary>
-    Task<Result> RemoveDiskFromPoolAsync(
-        Guid poolId,
-        Guid diskId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 扫描磁盘 SMART 信息
-    /// </summary>
-    Task<Result> ScanDiskHealthAsync(
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 刷新存储使用情况
-    /// </summary>
-    Task<Result> RefreshUsageAsync(
+    Task<Result<CheckStorageSpaceResponse>> CheckStorageSpaceAsync(
+        CheckStorageSpaceRequest request,
         CancellationToken cancellationToken = default);
 }

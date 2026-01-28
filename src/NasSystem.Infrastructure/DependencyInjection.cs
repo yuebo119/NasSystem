@@ -50,6 +50,8 @@ public static class DependencyInjection
         services.AddScoped<IShareRepository, ShareRepository>();
         services.AddScoped<ISharePermissionRepository, SharePermissionRepository>();
         services.AddScoped<IStoragePoolRepository, StoragePoolRepository>();
+        services.AddScoped<IFileShareRepository, FileShareRepository>();
+        services.AddScoped<IFilePermissionRepository, FilePermissionRepository>();
 
         // 注册领域服务
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
@@ -100,8 +102,55 @@ public static class DependencyInjection
         // 应用迁移或创建数据库
         await context.Database.EnsureCreatedAsync();
 
+        // 执行架构迁移（添加缺失的列）
+        await MigrateSchemaAsync(context);
+
         // 初始化种子数据
         await SeedDataAsync(context);
+    }
+
+    /// <summary>
+    /// 迁移数据库架构（添加缺失的列）
+    /// </summary>
+    private static async Task MigrateSchemaAsync(NasDbContext context)
+    {
+        try
+        {
+            var connection = context.Database.GetDbConnection();
+            if (connection.State != System.Data.ConnectionState.Open)
+                await connection.OpenAsync();
+
+            // 检查 StoragePools 表是否有 MaxCapacityBytes 列
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA table_info(StoragePools);";
+            
+            bool hasMaxCapacityBytes = false;
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    var columnName = reader.GetString(1);
+                    if (columnName == "MaxCapacityBytes")
+                    {
+                        hasMaxCapacityBytes = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasMaxCapacityBytes)
+            {
+                Console.WriteLine("添加 MaxCapacityBytes 列到 StoragePools 表...");
+                using var alterCommand = connection.CreateCommand();
+                alterCommand.CommandText = "ALTER TABLE StoragePools ADD COLUMN MaxCapacityBytes INTEGER NULL;";
+                await alterCommand.ExecuteNonQueryAsync();
+                Console.WriteLine("MaxCapacityBytes 列添加成功");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"数据库架构迁移时出现警告: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -133,7 +182,6 @@ public static class DependencyInjection
             mountPath: Path.Combine(AppContext.BaseDirectory, "storage"),
             description: "系统默认存储池");
         defaultPool.SetAsDefault(true);
-        defaultPool.UpdateStatus(Domain.Enums.StoragePoolStatus.Healthy);
 
         context.StoragePools.Add(defaultPool);
 

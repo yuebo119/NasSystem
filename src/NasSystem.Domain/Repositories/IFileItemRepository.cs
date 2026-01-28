@@ -112,6 +112,13 @@ public interface IFileItemRepository : IRepository<FileItem>
     Task DeleteRangeAsync(
         IEnumerable<FileItem> items,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 计算存储池内所有文件的总大小
+    /// </summary>
+    Task<long> CalculateStoragePoolUsedSpaceAsync(
+        Guid storagePoolId,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
