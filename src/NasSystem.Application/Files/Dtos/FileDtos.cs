@@ -144,3 +144,36 @@ public sealed record SearchFilesRequest
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 50;
 }
+
+/// <summary>
+/// 文件统计 DTO
+/// </summary>
+public sealed record FileStatisticsDto
+{
+    public int TotalFiles { get; init; }
+    public int TotalFolders { get; init; }
+    public long TotalSizeBytes { get; init; }
+    public string? TotalSizeDisplay { get; init; }
+    public int ImageCount { get; init; }
+    public int VideoCount { get; init; }
+    public int AudioCount { get; init; }
+    public int DocumentCount { get; init; }
+    public int OtherCount { get; init; }
+    public int RecentFilesCount { get; init; }
+}
+
+/// <summary>
+/// 扫描结果 DTO
+/// </summary>
+public sealed record ScanResultDto
+{
+    public int AddedFiles { get; init; }
+    public int AddedFolders { get; init; }
+    public int RemovedFiles { get; init; }
+    public int RemovedFolders { get; init; }
+    public int UpdatedFiles { get; init; }
+    public long TotalSizeBytes { get; init; }
+    public string? TotalSizeDisplay { get; init; }
+    public TimeSpan Duration { get; init; }
+    public string? Message { get; init; }
+}

@@ -5,6 +5,8 @@
 
 namespace NasSystem.Application.Users.Dtos;
 
+using System.Text.Json.Serialization;
+
 /// <summary>
 /// 用户信息 DTO
 /// </summary>
@@ -57,10 +59,17 @@ public sealed record UpdateUserDto(
 /// <summary>
 /// 登录请求
 /// </summary>
-public sealed record LoginDto(
-    string Username,
-    string Password,
-    bool RememberMe = false);
+public sealed class LoginDto
+{
+    [JsonPropertyName("username")]
+    public string Username { get; init; } = string.Empty;
+    
+    [JsonPropertyName("password")]
+    public string Password { get; init; } = string.Empty;
+    
+    [JsonPropertyName("rememberMe")]
+    public bool RememberMe { get; init; }
+}
 
 /// <summary>
 /// 登录结果

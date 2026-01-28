@@ -19,6 +19,14 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddApiServices(this IServiceCollection services)
     {
+        // 配置 JSON 序列化选项
+        services.ConfigureHttpJsonOptions(options =>
+        {
+            options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+            options.SerializerOptions.PropertyNameCaseInsensitive = true;
+            options.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        });
+
         // .NET 10 原生 OpenAPI 支持
         services.AddOpenApi("v1", options =>
         {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api/file'
@@ -37,9 +37,15 @@ const copyDestination = ref('/')
 const searchQuery = ref('')
 const searchResults = ref<FileItem[]>([])
 const searchLoading = ref(false)
+const searchItemType = ref('')
+const searchExtension = ref('')
+const searchInCurrentDir = ref(true)
 const recycleBinItems = ref<FileItem[]>([])
 const recycleBinLoading = ref(false)
 const previewItem = ref<FileItem | null>(null)
+
+// 搜索防抖定时器
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // 上传相关
 const uploadFiles = ref<UploadFile[]>([])
@@ -52,6 +58,20 @@ const textContent = ref('')
 // 剪贴板
 const clipboard = ref<{ items: FileItem[], action: 'copy' | 'cut' } | null>(null)
 
+// 操作进度
+const operationDialogVisible = ref(false)
+const operationTitle = ref('')
+const operationCurrent = ref(0)
+const operationTotal = ref(0)
+const operationCurrentItem = ref('')
+const operationCancelled = ref(false)
+
+// 扫描同步
+const scanning = ref(false)
+
+// 表格引用
+const fileTableRef = ref<any>(null)
+
 // 监听路由变化加载目录
 watch(
   () => route.params.path,
@@ -60,6 +80,83 @@ watch(
     fileStore.loadDirectory(targetPath)
   },
   { immediate: true }
+)
+
+// 监听搜索关键词变化，自动触发搜索（防抖）
+watch(
+  [searchQuery, searchItemType, searchExtension, searchInCurrentDir],
+  () => {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer)
+    }
+    if (searchQuery.value.trim()) {
+      searchDebounceTimer = setTimeout(() => {
+        handleSearch()
+      }, 300)
+    } else {
+      searchResults.value = []
+    }
+  }
+)
+
+// 聚焦特定文件的方法
+async function focusFileItem(itemId: string) {
+  await nextTick()
+  await nextTick() // 等待 DOM 更新
+  
+  // 等待一小段时间确保表格渲染完成
+  await new Promise(resolve => setTimeout(resolve, 150))
+  
+  const item = fileStore.sortedFiles.find(f => f.id === itemId)
+  if (item) {
+    // 清除之前的选择
+    fileStore.clearSelection()
+    fileStore.selectItem(item)
+    
+    // 使用 el-table 的方法选中行
+    if (fileTableRef.value) {
+      // 先清除所有选择
+      fileTableRef.value.clearSelection()
+      // 选中目标行
+      fileTableRef.value.toggleRowSelection(item, true)
+      fileTableRef.value.setCurrentRow(item)
+      
+      // 滚动到该行
+      const index = fileStore.sortedFiles.findIndex(f => f.id === item.id)
+      if (index >= 0) {
+        await nextTick()
+        // 尝试多种方式滚动到目标行
+        const tableEl = fileTableRef.value.$el
+        if (tableEl) {
+          // 方法1: 使用 scrollIntoView
+          const rows = tableEl.querySelectorAll('.el-table__body-wrapper tbody tr')
+          if (rows[index]) {
+            rows[index].scrollIntoView({ behavior: 'smooth', block: 'center' })
+          } else {
+            // 方法2: 手动计算滚动位置
+            const tableBody = tableEl.querySelector('.el-table__body-wrapper')
+            if (tableBody) {
+              const rowHeight = 48
+              const targetScroll = index * rowHeight - tableBody.clientHeight / 2 + rowHeight / 2
+              tableBody.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' })
+            }
+          }
+        }
+      }
+    }
+  }
+  fileStore.setFocusItem(null)
+}
+
+// 监听目录加载完成后聚焦特定文件
+watch(
+  () => fileStore.isLoading,
+  async (loading, prevLoading) => {
+    // 当加载完成时（从 true 变为 false）
+    if (prevLoading && !loading && fileStore.focusItemId) {
+      await focusFileItem(fileStore.focusItemId)
+    }
+  }
 )
 
 // 导航到文件夹
@@ -127,7 +224,8 @@ async function handleRename() {
 
 // 删除选中项
 async function handleDelete(permanent = false) {
-  const count = fileStore.selectionCount
+  const items = [...fileStore.selectedItems]
+  const count = items.length
   if (count === 0) {
     ElMessage.warning('请先选择要删除的文件')
     return
@@ -140,12 +238,46 @@ async function handleDelete(permanent = false) {
       permanent ? '永久删除' : '删除确认',
       { confirmButtonText: permanent ? '永久删除' : '删除', cancelButtonText: '取消', type: 'warning' }
     )
-    const result = await fileStore.deleteSelected(permanent)
-    if (result.success) {
-      ElMessage.success(permanent ? '已永久删除' : '已移至回收站')
-    } else {
-      ElMessage.error(result.error?.message || '删除失败')
+    
+    // 显示进度对话框
+    operationTitle.value = '正在删除...'
+    operationTotal.value = count
+    operationCurrent.value = 0
+    operationCancelled.value = false
+    operationDialogVisible.value = true
+    
+    let successCount = 0
+    let failCount = 0
+    
+    for (const item of items) {
+      if (operationCancelled.value) break
+      
+      operationCurrentItem.value = item.name
+      try {
+        const result = await fileApi.delete([item.path], permanent)
+        if (result.success) {
+          successCount++
+        } else {
+          failCount++
+        }
+      } catch {
+        failCount++
+      }
+      operationCurrent.value++
     }
+    
+    operationDialogVisible.value = false
+    
+    if (operationCancelled.value) {
+      ElMessage.info(`已取消，成功删除 ${successCount} 个项目`)
+    } else if (failCount === 0) {
+      ElMessage.success(`成功删除 ${successCount} 个项目`)
+    } else {
+      ElMessage.warning(`删除完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+    }
+    
+    fileStore.clearSelection()
+    await fileStore.loadDirectory(fileStore.currentPath)
   } catch {
     // 取消操作
   }
@@ -199,31 +331,67 @@ async function handlePaste() {
     ElMessage.warning('剪贴板为空')
     return
   }
-  const paths = clipboard.value.items.map(item => item.path)
+  const items = [...clipboard.value.items]
+  const action = clipboard.value.action
   const destination = fileStore.currentPath
   
-  try {
-    if (clipboard.value.action === 'copy') {
-      const result = await fileApi.copy(paths, destination)
-      if (result.success) {
-        ElMessage.success('粘贴成功')
-        await fileStore.loadDirectory(fileStore.currentPath)
+  // 显示进度对话框
+  operationTitle.value = action === 'copy' ? '正在复制...' : '正在移动...'
+  operationTotal.value = items.length
+  operationCurrent.value = 0
+  operationCancelled.value = false
+  operationDialogVisible.value = true
+  
+  let successCount = 0
+  let failCount = 0
+  
+  for (const item of items) {
+    if (operationCancelled.value) break
+    
+    operationCurrentItem.value = item.name
+    try {
+      if (action === 'copy') {
+        const result = await fileApi.copy([item.path], destination)
+        if (result.success) {
+          successCount++
+        } else {
+          failCount++
+        }
       } else {
-        ElMessage.error(result.error?.message || '粘贴失败')
+        const result = await fileApi.move([item.path], destination)
+        if (result.success) {
+          successCount++
+        } else {
+          failCount++
+        }
       }
-    } else {
-      const result = await fileApi.move(paths, destination)
-      if (result.success) {
-        ElMessage.success('粘贴成功')
-        clipboard.value = null  // 剪切后清空剪贴板
-        await fileStore.loadDirectory(fileStore.currentPath)
-      } else {
-        ElMessage.error(result.error?.message || '粘贴失败')
-      }
+    } catch {
+      failCount++
     }
-  } catch (e) {
-    ElMessage.error('粘贴操作失败')
+    operationCurrent.value++
   }
+  
+  operationDialogVisible.value = false
+  
+  if (action === 'cut') {
+    clipboard.value = null  // 剪切后清空剪贴板
+  }
+  
+  const actionText = action === 'copy' ? '复制' : '移动'
+  if (operationCancelled.value) {
+    ElMessage.info(`已取消，成功${actionText} ${successCount} 个项目`)
+  } else if (failCount === 0) {
+    ElMessage.success(`成功${actionText} ${successCount} 个项目`)
+  } else {
+    ElMessage.warning(`${actionText}完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+  }
+  
+  await fileStore.loadDirectory(fileStore.currentPath)
+}
+
+// 取消操作
+function cancelOperation() {
+  operationCancelled.value = true
 }
 
 // 打开上传对话框
@@ -296,8 +464,10 @@ async function handleSearch() {
   searchLoading.value = true
   try {
     const result = await fileApi.search(searchQuery.value.trim(), {
-      path: fileStore.currentPath,
-      pageSize: 100
+      path: searchInCurrentDir.value ? fileStore.currentPath : undefined,
+      itemType: searchItemType.value || undefined,
+      extension: searchExtension.value || undefined,
+      pageSize: 200
     })
     if (result.success && result.data) {
       searchResults.value = result.data.items
@@ -309,15 +479,34 @@ async function handleSearch() {
   }
 }
 
+// 重置搜索
+function resetSearch() {
+  searchQuery.value = ''
+  searchResults.value = []
+  searchItemType.value = ''
+  searchExtension.value = ''
+  searchInCurrentDir.value = true
+}
+
 // 跳转到搜索结果
-function goToSearchResult(item: FileItem) {
+async function goToSearchResult(item: FileItem) {
   searchDialogVisible.value = false
   if (item.isFolder) {
+    // 如果是文件夹，直接打开
     router.push(`/files${item.path}`)
   } else {
-    // 跳转到文件所在目录
+    // 如果是文件，跳转到文件所在目录并聚焦该文件
     const parentPath = item.path.substring(0, item.path.lastIndexOf('/')) || '/'
-    router.push(`/files${parentPath}`)
+    const currentRoutePath = fileStore.currentPath
+    
+    if (parentPath === currentRoutePath) {
+      // 如果已经在目标目录，直接聚焦文件
+      await focusFileItem(item.id)
+    } else {
+      // 跳转到目标目录，设置 focusItemId 让 watch 处理聚焦
+      fileStore.setFocusItem(item.id)
+      router.push(`/files${parentPath}`)
+    }
   }
 }
 
@@ -485,6 +674,40 @@ function handleRefresh() {
   fileStore.loadDirectory(fileStore.currentPath)
 }
 
+// 扫描同步
+async function handleScanSync() {
+  try {
+    await ElMessageBox.confirm(
+      '扫描将以物理文件为准，同步数据库记录。\n\n' +
+      '• 新增的物理文件将被添加到数据库\n' +
+      '• 已删除的物理文件将从数据库移除\n' +
+      '• 文件大小变化将被更新\n\n' +
+      '确定要执行扫描同步吗？',
+      '扫描同步',
+      { confirmButtonText: '开始扫描', cancelButtonText: '取消', type: 'warning' }
+    )
+    
+    scanning.value = true
+    const result = await fileApi.scanAndSync()
+    
+    if (result.success && result.data) {
+      const data = result.data
+      ElMessage.success({
+        message: `扫描完成！\n新增: ${data.addedFiles} 文件, ${data.addedFolders} 文件夹\n删除: ${data.removedFiles} 文件, ${data.removedFolders} 文件夹\n更新: ${data.updatedFiles} 文件`,
+        duration: 5000
+      })
+      // 刷新当前目录
+      await fileStore.loadDirectory(fileStore.currentPath)
+    } else {
+      ElMessage.error(result.error?.message || '扫描失败')
+    }
+  } catch {
+    // 用户取消
+  } finally {
+    scanning.value = false
+  }
+}
+
 // 切换显示隐藏文件
 function toggleShowHidden() {
   fileStore.showHidden = !fileStore.showHidden
@@ -555,6 +778,37 @@ function handleSelectionChange(selection: FileItem[]) {
   fileStore.selectedItems = selection
 }
 
+// 处理表格排序变化
+function handleSortChange({ prop, order }: { prop: string, order: string | null }) {
+  if (!order) {
+    // 取消排序，恢复默认按名称排序
+    fileStore.setSort('name')
+    return
+  }
+  
+  // 映射列属性到排序字段
+  const sortFieldMap: Record<string, 'name' | 'size' | 'createdAt' | 'type'> = {
+    name: 'name',
+    sizeBytes: 'size',
+    extension: 'type',
+    createdAt: 'createdAt'
+  }
+  
+  const sortField = sortFieldMap[prop] || 'name'
+  const isDesc = order === 'descending'
+  
+  // 如果当前排序字段相同，只切换方向
+  if (fileStore.sortBy === sortField) {
+    if (fileStore.sortDesc !== isDesc) {
+      fileStore.setSort(sortField) // 这会切换方向
+    }
+  } else {
+    // 设置新的排序字段
+    fileStore.sortBy = sortField
+    fileStore.sortDesc = isDesc
+  }
+}
+
 // 获取预览 URL
 function getPreviewUrl(item: FileItem): string {
   const token = localStorage.getItem('token')
@@ -614,6 +868,12 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
           <el-tooltip content="刷新" placement="bottom">
             <el-button @click="handleRefresh" :loading="fileStore.isLoading">
               <el-icon><Refresh /></el-icon>
+            </el-button>
+          </el-tooltip>
+          <el-tooltip content="扫描同步（以物理文件为准）" placement="bottom">
+            <el-button @click="handleScanSync" :loading="scanning" type="warning">
+              <el-icon><Refresh /></el-icon>
+              扫描
             </el-button>
           </el-tooltip>
         </el-button-group>
@@ -712,14 +972,18 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
       v-loading="fileStore.isLoading"
       :data="fileStore.sortedFiles"
       style="width: 100%"
+      row-key="id"
       @row-click="handleRowClick"
       @row-dblclick="handleRowDblClick"
       @selection-change="handleSelectionChange"
+      @sort-change="handleSortChange"
       :row-class-name="getRowClassName"
+      :default-sort="{ prop: fileStore.sortBy === 'type' ? 'extension' : (fileStore.sortBy === 'size' ? 'sizeBytes' : fileStore.sortBy), order: fileStore.sortDesc ? 'descending' : 'ascending' }"
+      ref="fileTableRef"
     >
       <el-table-column type="selection" width="50" />
       
-      <el-table-column prop="name" label="名称" min-width="300" sortable>
+      <el-table-column prop="name" label="名称" min-width="300" sortable="custom">
         <template #default="{ row }">
           <div class="file-name">
             <el-icon :size="20" :color="getFileIconColor(row)">
@@ -731,19 +995,19 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
         </template>
       </el-table-column>
       
-      <el-table-column prop="sizeBytes" label="大小" width="120" sortable>
+      <el-table-column prop="sizeBytes" label="大小" width="120" sortable="custom">
         <template #default="{ row }">
           {{ row.isFolder ? '-' : formatSize(row.sizeBytes) }}
         </template>
       </el-table-column>
       
-      <el-table-column prop="extension" label="类型" width="100">
+      <el-table-column prop="extension" label="类型" width="100" sortable="custom">
         <template #default="{ row }">
           {{ row.isFolder ? '文件夹' : (row.extension || '-') }}
         </template>
       </el-table-column>
       
-      <el-table-column prop="createdAt" label="修改时间" width="180" sortable>
+      <el-table-column prop="createdAt" label="修改时间" width="180" sortable="custom">
         <template #default="{ row }">
           {{ formatDate(row.updatedAt || row.createdAt) }}
         </template>
@@ -874,18 +1138,44 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
     </el-dialog>
 
     <!-- 搜索对话框 -->
-    <el-dialog v-model="searchDialogVisible" title="搜索文件" width="600">
-      <el-input
-        v-model="searchQuery"
-        placeholder="输入文件名搜索"
-        @keyup.enter="handleSearch"
-        clearable
-      >
-        <template #append>
-          <el-button @click="handleSearch" :loading="searchLoading">搜索</el-button>
-        </template>
-      </el-input>
+    <el-dialog v-model="searchDialogVisible" title="搜索文件" width="650" @close="resetSearch">
+      <div class="search-form">
+        <el-input
+          v-model="searchQuery"
+          placeholder="输入文件名搜索"
+          @keyup.enter="handleSearch"
+          clearable
+          class="search-input"
+        >
+          <template #append>
+            <el-button @click="handleSearch" :loading="searchLoading">搜索</el-button>
+          </template>
+        </el-input>
+        
+        <div class="search-filters">
+          <el-select v-model="searchItemType" placeholder="类型" clearable style="width: 120px">
+            <el-option label="全部" value="" />
+            <el-option label="文件" value="file" />
+            <el-option label="文件夹" value="folder" />
+          </el-select>
+          
+          <el-select v-model="searchExtension" placeholder="扩展名" clearable style="width: 120px">
+            <el-option label="全部" value="" />
+            <el-option label="图片" value=".jpg,.jpeg,.png,.gif,.webp" />
+            <el-option label="视频" value=".mp4,.avi,.mkv,.mov" />
+            <el-option label="音频" value=".mp3,.wav,.flac" />
+            <el-option label="文档" value=".pdf,.doc,.docx,.txt,.md" />
+            <el-option label="压缩包" value=".zip,.rar,.7z,.tar" />
+          </el-select>
+          
+          <el-checkbox v-model="searchInCurrentDir">仅当前目录</el-checkbox>
+        </div>
+      </div>
+      
       <div class="search-results" v-loading="searchLoading">
+        <div v-if="searchResults.length > 0" class="results-header">
+          找到 {{ searchResults.length }} 个结果
+        </div>
         <div v-if="searchResults.length > 0" class="results-list">
           <div
             v-for="item in searchResults"
@@ -893,12 +1183,15 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
             class="result-item"
             @click="goToSearchResult(item)"
           >
-            <el-icon :color="getFileIconColor(item)">
+            <el-icon :color="getFileIconColor(item)" :size="20">
               <component :is="getFileIcon(item)" />
             </el-icon>
             <div class="result-info">
               <div class="result-name">{{ item.name }}</div>
-              <div class="result-path">{{ item.path }}</div>
+              <div class="result-meta">
+                <span class="result-path">{{ item.path }}</span>
+                <span class="result-size" v-if="!item.isFolder">{{ formatSize(item.sizeBytes) }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -996,6 +1289,33 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
       <template #footer>
         <el-button @click="previewDialogVisible = false">关闭</el-button>
         <el-button type="primary" @click="downloadFile(previewItem!)" v-if="previewItem">下载</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 操作进度对话框 -->
+    <el-dialog 
+      v-model="operationDialogVisible" 
+      :title="operationTitle"
+      width="400"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="false"
+    >
+      <div class="operation-progress">
+        <el-progress 
+          :percentage="operationTotal > 0 ? Math.round((operationCurrent / operationTotal) * 100) : 0" 
+          :stroke-width="20"
+          :text-inside="true"
+        />
+        <div class="operation-info">
+          <span class="current-item" :title="operationCurrentItem">{{ operationCurrentItem }}</span>
+          <span class="progress-text">{{ operationCurrent }} / {{ operationTotal }}</span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="cancelOperation" :disabled="operationCancelled">
+          {{ operationCancelled ? '正在取消...' : '取消' }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -1129,6 +1449,14 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
   max-height: 400px;
   overflow: auto;
   
+  .results-header {
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+  }
+  
   .results-list {
     .result-item {
       display: flex;
@@ -1150,15 +1478,43 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
           font-weight: 500;
         }
         
+        .result-meta {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 4px;
+        }
+        
         .result-path {
           font-size: 12px;
           color: var(--el-text-color-secondary);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+          flex: 1;
+        }
+        
+        .result-size {
+          font-size: 12px;
+          color: var(--el-text-color-secondary);
+          margin-left: 12px;
+          flex-shrink: 0;
         }
       }
     }
+  }
+}
+
+.search-form {
+  .search-input {
+    margin-bottom: 12px;
+  }
+  
+  .search-filters {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
   }
 }
 
@@ -1241,6 +1597,29 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
     
     p {
       margin: 16px 0;
+    }
+  }
+}
+
+.operation-progress {
+  .operation-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    
+    .current-item {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-right: 16px;
+    }
+    
+    .progress-text {
+      flex-shrink: 0;
     }
   }
 }

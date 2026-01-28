@@ -10,9 +10,10 @@ export const useFileStore = defineStore('file', () => {
   const selectedItems = ref<FileItem[]>([])
   const isLoading = ref(false)
   const viewMode = ref<'list' | 'grid'>('list')
-  const sortBy = ref<'name' | 'size' | 'createdAt'>('name')
+  const sortBy = ref<'name' | 'size' | 'createdAt' | 'type'>('name')
   const sortDesc = ref(false)
   const showHidden = ref(false)
+  const focusItemId = ref<string | null>(null)  // 用于聚焦特定文件
 
   // 计算属性
   const files = computed(() => directoryContent.value?.items || [])
@@ -44,6 +45,12 @@ export const useFileStore = defineStore('file', () => {
           break
         case 'createdAt':
           comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          break
+        case 'type':
+          // 按扩展名排序
+          const extA = a.extension?.toLowerCase() || ''
+          const extB = b.extension?.toLowerCase() || ''
+          comparison = extA.localeCompare(extB, 'zh-CN')
           break
       }
       
@@ -93,13 +100,17 @@ export const useFileStore = defineStore('file', () => {
     viewMode.value = viewMode.value === 'list' ? 'grid' : 'list'
   }
 
-  function setSort(field: 'name' | 'size' | 'createdAt') {
+  function setSort(field: 'name' | 'size' | 'createdAt' | 'type') {
     if (sortBy.value === field) {
       sortDesc.value = !sortDesc.value
     } else {
       sortBy.value = field
       sortDesc.value = false
     }
+  }
+
+  function setFocusItem(itemId: string | null) {
+    focusItemId.value = itemId
   }
 
   async function createFolder(name: string) {
@@ -136,6 +147,7 @@ export const useFileStore = defineStore('file', () => {
     sortBy,
     sortDesc,
     showHidden,
+    focusItemId,
     files,
     sortedFiles,
     breadcrumbs,
@@ -147,6 +159,7 @@ export const useFileStore = defineStore('file', () => {
     clearSelection,
     toggleViewMode,
     setSort,
+    setFocusItem,
     createFolder,
     deleteSelected,
     rename

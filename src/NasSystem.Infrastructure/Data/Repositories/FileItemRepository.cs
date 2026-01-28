@@ -65,6 +65,15 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<FileItem>> GetAllAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await QueryNoTracking()
+            .Where(f => !f.IsDeleted)
+            .OrderBy(f => f.Path)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<FileItem>> GetDeletedItemsAsync(
         Guid? ownerId = null,
         CancellationToken cancellationToken = default)
@@ -84,6 +93,9 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
         string searchTerm,
         Guid? ownerId = null,
         Guid? storagePoolId = null,
+        string? basePath = null,
+        string? extension = null,
+        bool? isFolder = null,
         CancellationToken cancellationToken = default)
     {
         var query = QueryNoTracking()
@@ -95,10 +107,76 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
         if (storagePoolId.HasValue)
             query = query.Where(f => f.StoragePoolId == storagePoolId.Value);
 
-        return await query
-            .OrderBy(f => f.Name)
-            .Take(100)
+        if (!string.IsNullOrEmpty(basePath))
+        {
+            var normalizedBasePath = NormalizePath(basePath);
+            query = query.Where(f => f.Path.StartsWith(normalizedBasePath));
+        }
+
+        if (isFolder.HasValue)
+        {
+            query = isFolder.Value
+                ? query.Where(f => f.ItemType == Domain.Enums.FileItemType.Folder)
+                : query.Where(f => f.ItemType == Domain.Enums.FileItemType.File);
+        }
+
+        // 先获取结果，再在内存中过滤扩展名（因为 EF Core 对复杂扩展名过滤支持有限）
+        var items = await query
+            .OrderByDescending(f => f.ItemType)
+            .ThenBy(f => f.Name)
+            .Take(500)
             .ToListAsync(cancellationToken);
+
+        // 扩展名过滤（支持多个扩展名，用逗号分隔）
+        if (!string.IsNullOrEmpty(extension))
+        {
+            var extensions = extension.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(e => e.Trim().StartsWith('.') ? e.Trim().ToLowerInvariant() : "." + e.Trim().ToLowerInvariant())
+                .ToHashSet();
+            
+            items = items.Where(f => f.Extension != null && extensions.Contains(f.Extension.ToLowerInvariant())).ToList();
+        }
+
+        return items.Take(200).ToList();
+    }
+
+    public async Task<FileStatistics> GetStatisticsAsync(
+        Guid? ownerId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = QueryNoTracking().Where(f => !f.IsDeleted);
+
+        if (ownerId.HasValue)
+            query = query.Where(f => f.OwnerId == ownerId.Value);
+
+        var items = await query.ToListAsync(cancellationToken);
+        
+        var files = items.Where(f => f.IsFile).ToList();
+        var folders = items.Where(f => f.IsFolder).ToList();
+
+        // 按扩展名分类
+        var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".ico" };
+        var videoExtensions = new[] { ".mp4", ".avi", ".mkv", ".mov", ".webm", ".wmv", ".flv" };
+        var audioExtensions = new[] { ".mp3", ".wav", ".flac", ".ogg", ".aac", ".wma" };
+        var documentExtensions = new[] { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".json", ".xml" };
+
+        var recentDate = DateTime.UtcNow.AddDays(-7);
+
+        return new FileStatistics
+        {
+            TotalFiles = files.Count,
+            TotalFolders = folders.Count,
+            TotalSizeBytes = files.Sum(f => f.SizeBytes),
+            ImageCount = files.Count(f => imageExtensions.Contains(f.Extension?.ToLower())),
+            VideoCount = files.Count(f => videoExtensions.Contains(f.Extension?.ToLower())),
+            AudioCount = files.Count(f => audioExtensions.Contains(f.Extension?.ToLower())),
+            DocumentCount = files.Count(f => documentExtensions.Contains(f.Extension?.ToLower())),
+            OtherCount = files.Count(f => !imageExtensions.Contains(f.Extension?.ToLower()) 
+                && !videoExtensions.Contains(f.Extension?.ToLower())
+                && !audioExtensions.Contains(f.Extension?.ToLower())
+                && !documentExtensions.Contains(f.Extension?.ToLower())),
+            RecentFilesCount = files.Count(f => f.CreatedAt >= recentDate)
+        };
     }
 
     public async Task<IReadOnlyList<FileItem>> GetDescendantsAsync(

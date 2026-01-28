@@ -264,21 +264,55 @@ public sealed class FileService : IFileService
         var results = new List<FileItemDto>();
         var destPath = NormalizePath(request.DestinationPath);
 
+        // 获取默认存储池
+        var defaultPool = await _storagePoolRepository.GetDefaultAsync(cancellationToken);
+        if (defaultPool is null)
+            return Result<IReadOnlyList<FileItemDto>>.Failure(StorageErrors.PoolNotFound(Guid.Empty));
+
+        // 获取目标父目录 ID（根目录时为 null）
+        Guid? destParentId = null;
+        if (destPath != "/")
+        {
+            var destParent = await _fileRepository.GetByPathAsync(destPath, cancellationToken);
+            // 目标目录不存在且不是根目录，返回错误
+            if (destParent is null)
+                return Result<IReadOnlyList<FileItemDto>>.Failure(FileErrors.NotFound(destPath));
+            destParentId = destParent.Id;
+        }
+
         foreach (var sourcePath in request.SourcePaths)
         {
             var normalized = NormalizePath(sourcePath);
             var item = await _fileRepository.GetByPathAsync(normalized, cancellationToken);
             if (item is null) continue;
 
+            // 检查是否移动到自身或子目录
+            if (destPath.StartsWith(normalized + "/") || destPath == normalized)
+                continue;
+
             var newPath = CombinePath(destPath, item.Name);
-            var destParent = await _fileRepository.GetByPathAsync(destPath, cancellationToken);
-            var newPhysicalPath = GetPhysicalPath(newPath, Path.GetDirectoryName(item.PhysicalPath)!.Split(Path.DirectorySeparatorChar)[0]);
+            var newPhysicalPath = GetPhysicalPath(newPath, defaultPool.MountPath);
 
-            _fileSystemService.Move(item.PhysicalPath, newPhysicalPath);
-            item.MoveTo(newPath, newPhysicalPath, destParent?.Id);
+            try
+            {
+                // 确保目标目录存在
+                var targetDir = Path.GetDirectoryName(newPhysicalPath)!;
+                _fileSystemService.CreateDirectory(targetDir);
 
-            await _fileRepository.UpdateAsync(item, cancellationToken);
-            results.Add(MapToDto(item));
+                // 移动物理文件/目录
+                _fileSystemService.Move(item.PhysicalPath, newPhysicalPath);
+                
+                // 更新数据库记录
+                item.MoveTo(newPath, newPhysicalPath, destParentId);
+                await _fileRepository.UpdateAsync(item, cancellationToken);
+                
+                results.Add(MapToDto(item));
+            }
+            catch (Exception)
+            {
+                // 移动失败，跳过此项
+                continue;
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -591,10 +625,21 @@ public sealed class FileService : IFileService
         Guid userId,
         CancellationToken cancellationToken = default)
     {
+        // 确定是否只搜索文件夹
+        bool? isFolder = request.ItemType switch
+        {
+            FileItemType.Folder => true,
+            FileItemType.File => false,
+            _ => null
+        };
+
         var items = await _fileRepository.SearchAsync(
             request.Query,
             ownerId: userId,
             storagePoolId: null,
+            basePath: request.Path,
+            extension: request.Extension,
+            isFolder: isFolder,
             cancellationToken: cancellationToken);
 
         // 客户端分页 (简化实现)
@@ -606,6 +651,216 @@ public sealed class FileService : IFileService
         var dtos = paged.Select(MapToDto).ToList();
         return Result<PagedResult<FileItemDto>>.Success(
             PagedResult<FileItemDto>.Create(dtos, request.Page, request.PageSize, items.Count));
+    }
+
+    public async Task<Result<FileStatisticsDto>> GetStatisticsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var stats = await _fileRepository.GetStatisticsAsync(userId, cancellationToken);
+        
+        return Result<FileStatisticsDto>.Success(new FileStatisticsDto
+        {
+            TotalFiles = stats.TotalFiles,
+            TotalFolders = stats.TotalFolders,
+            TotalSizeBytes = stats.TotalSizeBytes,
+            TotalSizeDisplay = FormatSize(stats.TotalSizeBytes),
+            ImageCount = stats.ImageCount,
+            VideoCount = stats.VideoCount,
+            AudioCount = stats.AudioCount,
+            DocumentCount = stats.DocumentCount,
+            OtherCount = stats.OtherCount,
+            RecentFilesCount = stats.RecentFilesCount
+        });
+    }
+
+    public async Task<Result<ScanResultDto>> ScanAndSyncAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var startTime = DateTime.UtcNow;
+        var counters = new ScanCounters();
+
+        try
+        {
+            // 获取默认存储池
+            var defaultPool = await _storagePoolRepository.GetDefaultAsync(cancellationToken);
+            if (defaultPool is null)
+                return Result<ScanResultDto>.Failure(StorageErrors.PoolNotFound(Guid.Empty));
+
+            var storagePath = defaultPool.MountPath;
+            
+            if (!Directory.Exists(storagePath))
+            {
+                Directory.CreateDirectory(storagePath);
+            }
+
+            // 获取数据库中所有文件记录（不限制用户，因为扫描是全局的）
+            var dbItems = await _fileRepository.GetAllAsync(cancellationToken);
+            var dbPathMap = dbItems.ToDictionary(x => x.Path, x => x);
+
+            // 扫描物理文件系统
+            var physicalPaths = new HashSet<string>();
+            await ScanDirectoryAsync(
+                storagePath, 
+                "/", 
+                defaultPool.Id, 
+                userId, 
+                dbPathMap, 
+                physicalPaths,
+                counters,
+                null,  // 根目录的 parentId 为 null
+                cancellationToken);
+
+            // 删除数据库中存在但物理文件不存在的记录
+            var itemsToRemove = dbItems.Where(item => !physicalPaths.Contains(item.Path)).ToList();
+            foreach (var item in itemsToRemove)
+            {
+                if (item.IsFolder)
+                    counters.RemovedFolders++;
+                else
+                    counters.RemovedFiles++;
+            }
+
+            if (itemsToRemove.Count > 0)
+            {
+                await _fileRepository.DeleteRangeAsync(itemsToRemove, cancellationToken);
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            var duration = DateTime.UtcNow - startTime;
+            return Result<ScanResultDto>.Success(new ScanResultDto
+            {
+                AddedFiles = counters.AddedFiles,
+                AddedFolders = counters.AddedFolders,
+                RemovedFiles = counters.RemovedFiles,
+                RemovedFolders = counters.RemovedFolders,
+                UpdatedFiles = counters.UpdatedFiles,
+                TotalSizeBytes = counters.TotalSize,
+                TotalSizeDisplay = FormatSize(counters.TotalSize),
+                Duration = duration,
+                Message = $"扫描完成：新增 {counters.AddedFiles} 个文件、{counters.AddedFolders} 个文件夹，删除 {counters.RemovedFiles} 个文件、{counters.RemovedFolders} 个文件夹，更新 {counters.UpdatedFiles} 个文件"
+            });
+        }
+        catch (Exception ex)
+        {
+            return Result<ScanResultDto>.Failure(new Error("Scan.Failed", $"扫描失败: {ex.Message}"));
+        }
+    }
+
+    private sealed class ScanCounters
+    {
+        public int AddedFiles { get; set; }
+        public int AddedFolders { get; set; }
+        public int RemovedFiles { get; set; }
+        public int RemovedFolders { get; set; }
+        public int UpdatedFiles { get; set; }
+        public long TotalSize { get; set; }
+    }
+
+    private async Task ScanDirectoryAsync(
+        string physicalDir,
+        string virtualPath,
+        Guid storagePoolId,
+        Guid userId,
+        Dictionary<string, FileItem> dbPathMap,
+        HashSet<string> physicalPaths,
+        ScanCounters counters,
+        Guid? currentDirId,  // 当前目录的 ID，作为子项的 parentId
+        CancellationToken cancellationToken)
+    {
+        // 扫描子目录
+        foreach (var dir in Directory.GetDirectories(physicalDir))
+        {
+            var dirName = Path.GetFileName(dir);
+            var dirVirtualPath = CombinePath(virtualPath, dirName);
+            physicalPaths.Add(dirVirtualPath);
+
+            FileItem folder;
+            if (!dbPathMap.TryGetValue(dirVirtualPath, out var existingFolder))
+            {
+                // 新文件夹，添加到数据库
+                folder = FileItem.CreateFolder(
+                    name: dirName,
+                    path: dirVirtualPath,
+                    physicalPath: dir,
+                    storagePoolId: storagePoolId,
+                    ownerId: userId,
+                    parentId: currentDirId);
+
+                await _fileRepository.AddAsync(folder, cancellationToken);
+                dbPathMap[dirVirtualPath] = folder;
+                counters.AddedFolders++;
+            }
+            else
+            {
+                folder = existingFolder;
+                // 修复 parentId 如果不正确
+                if (existingFolder.ParentId != currentDirId)
+                {
+                    existingFolder.MoveTo(existingFolder.Path, existingFolder.PhysicalPath, currentDirId);
+                    await _fileRepository.UpdateAsync(existingFolder, cancellationToken);
+                }
+            }
+
+            // 递归扫描子目录，传递文件夹的 ID 作为子项的 parentId
+            await ScanDirectoryAsync(
+                dir, 
+                dirVirtualPath, 
+                storagePoolId, 
+                userId, 
+                dbPathMap, 
+                physicalPaths,
+                counters,
+                folder.Id,
+                cancellationToken);
+        }
+
+        // 扫描文件
+        foreach (var file in Directory.GetFiles(physicalDir))
+        {
+            var fileName = Path.GetFileName(file);
+            var fileVirtualPath = CombinePath(virtualPath, fileName);
+            physicalPaths.Add(fileVirtualPath);
+
+            var fileInfo = new FileInfo(file);
+            counters.TotalSize += fileInfo.Length;
+
+            if (!dbPathMap.TryGetValue(fileVirtualPath, out var existingFile))
+            {
+                // 新文件，添加到数据库
+                var newFile = FileItem.CreateFile(
+                    name: fileName,
+                    path: fileVirtualPath,
+                    physicalPath: file,
+                    sizeBytes: fileInfo.Length,
+                    mimeType: GetMimeType(fileName),
+                    storagePoolId: storagePoolId,
+                    ownerId: userId,
+                    parentId: currentDirId);
+
+                await _fileRepository.AddAsync(newFile, cancellationToken);
+                dbPathMap[fileVirtualPath] = newFile;
+                counters.AddedFiles++;
+            }
+            else
+            {
+                // 修复 parentId 如果不正确
+                if (existingFile.ParentId != currentDirId)
+                {
+                    existingFile.MoveTo(existingFile.Path, existingFile.PhysicalPath, currentDirId);
+                    await _fileRepository.UpdateAsync(existingFile, cancellationToken);
+                    counters.UpdatedFiles++;
+                }
+                else if (existingFile.SizeBytes != fileInfo.Length)
+                {
+                    // 文件大小变化，更新
+                    existingFile.UpdateSize(fileInfo.Length);
+                    counters.UpdatedFiles++;
+                }
+            }
+        }
     }
 
     public Task<Result<Stream>> GetThumbnailAsync(

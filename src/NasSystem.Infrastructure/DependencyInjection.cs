@@ -115,7 +115,7 @@ public static class DependencyInjection
 
         // 创建默认管理员
         var passwordHasher = new PasswordHasher();
-        var (hash, salt) = passwordHasher.HashPassword("Admin@123");
+        var (hash, salt) = passwordHasher.HashPassword("admin123");
 
         var adminUser = Domain.Entities.User.Create(
             username: "admin",

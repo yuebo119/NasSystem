@@ -2,11 +2,12 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { storageApi } from '@/api/storage'
+import { fileApi } from '@/api/file'
 import http from '@/api/http'
 import { 
-  Files, User, Box, Share, Odometer, 
+  Files, User, Box, Share,
   Monitor, Timer, Cpu, Connection, Refresh,
-  SuccessFilled, WarningFilled, CircleCloseFilled
+  Picture, VideoPlay, Headset, Document, FolderOpened
 } from '@element-plus/icons-vue'
 
 const userStore = useUserStore()
@@ -24,6 +25,20 @@ const storageOverview = ref({
 
 // 存储池列表
 const storagePools = ref<any[]>([])
+
+// 文件统计
+const fileStats = ref({
+  totalFiles: 0,
+  totalFolders: 0,
+  totalSizeBytes: 0,
+  totalSizeDisplay: '0 B',
+  imageCount: 0,
+  videoCount: 0,
+  audioCount: 0,
+  documentCount: 0,
+  otherCount: 0,
+  recentFilesCount: 0
+})
 
 // 系统状态
 const systemStatus = ref({
@@ -110,12 +125,6 @@ const getRaidLevelName = (level: number): string => {
   }
 }
 
-// 磁盘健康状态统计
-const diskHealthStats = computed(() => {
-  const total = storageOverview.value.diskCount
-  return { total, healthy: total, warning: 0, critical: 0 }
-})
-
 // 加载存储概览
 const loadStorageOverview = async () => {
   try {
@@ -137,6 +146,18 @@ const loadStoragePools = async () => {
     }
   } catch (e) {
     console.error('加载存储池失败', e)
+  }
+}
+
+// 加载文件统计
+const loadFileStats = async () => {
+  try {
+    const response = await fileApi.getStatistics() as any
+    if (response.success && response.data) {
+      fileStats.value = response.data
+    }
+  } catch (e) {
+    console.error('加载文件统计失败', e)
   }
 }
 
@@ -171,6 +192,7 @@ const loadAllData = async () => {
     await Promise.all([
       loadStorageOverview(),
       loadStoragePools(),
+      loadFileStats(),
       loadSystemStatus(),
       loadSystemInfo()
     ])
@@ -200,6 +222,7 @@ const startAutoRefresh = () => {
   if (refreshTimer) return
   refreshTimer = setInterval(() => {
     loadStorageOverview()
+    loadFileStats()
     loadSystemStatus()
     lastUpdateTime.value = new Date()
   }, 5000) // 每5秒刷新
@@ -313,7 +336,7 @@ onUnmounted(() => {
 
     <!-- 存储概览 -->
     <el-row :gutter="16">
-      <el-col :xs="24" :md="16">
+      <el-col :xs="24" :md="12">
         <el-card class="storage-overview-card">
           <template #header>
             <div class="card-header">
@@ -329,7 +352,7 @@ onUnmounted(() => {
               <el-progress 
                 type="dashboard" 
                 :percentage="storageOverview.usagePercentage" 
-                :width="180"
+                :width="160"
                 :stroke-width="12"
                 :color="[
                   { color: '#67C23A', percentage: 60 },
@@ -382,53 +405,96 @@ onUnmounted(() => {
         </el-card>
       </el-col>
       
-      <el-col :xs="24" :md="8">
-        <el-card class="disk-health-card">
+      <el-col :xs="24" :md="12">
+        <el-card class="file-stats-card">
           <template #header>
-            <span><el-icon><Odometer /></el-icon> 磁盘健康状态</span>
+            <div class="card-header">
+              <span><el-icon><Files /></el-icon> 文件统计</span>
+              <el-tag type="info">
+                共 {{ fileStats.totalFiles + fileStats.totalFolders }} 项
+              </el-tag>
+            </div>
           </template>
           
-          <div class="health-stats">
-            <div class="health-item healthy">
-              <el-icon :size="24"><SuccessFilled /></el-icon>
-              <div class="health-info">
-                <span class="count">{{ diskHealthStats.healthy }}</span>
-                <span class="label">健康</span>
+          <div class="file-stats-main">
+            <div class="file-stats-summary">
+              <div class="summary-item">
+                <el-icon :size="24" color="#409EFF"><FolderOpened /></el-icon>
+                <div class="summary-info">
+                  <span class="count">{{ fileStats.totalFolders }}</span>
+                  <span class="label">文件夹</span>
+                </div>
+              </div>
+              <div class="summary-item">
+                <el-icon :size="24" color="#67C23A"><Document /></el-icon>
+                <div class="summary-info">
+                  <span class="count">{{ fileStats.totalFiles }}</span>
+                  <span class="label">文件</span>
+                </div>
+              </div>
+              <div class="summary-item">
+                <el-icon :size="24" color="#E6A23C"><Timer /></el-icon>
+                <div class="summary-info">
+                  <span class="count">{{ fileStats.recentFilesCount }}</span>
+                  <span class="label">近7天新增</span>
+                </div>
               </div>
             </div>
-            <div class="health-item warning">
-              <el-icon :size="24"><WarningFilled /></el-icon>
-              <div class="health-info">
-                <span class="count">{{ diskHealthStats.warning }}</span>
-                <span class="label">警告</span>
+            
+            <el-divider />
+            
+            <div class="file-type-stats">
+              <div class="type-item">
+                <div class="type-icon" style="background: #67C23A">
+                  <el-icon><Picture /></el-icon>
+                </div>
+                <div class="type-info">
+                  <span class="type-name">图片</span>
+                  <span class="type-count">{{ fileStats.imageCount }}</span>
+                </div>
+              </div>
+              <div class="type-item">
+                <div class="type-icon" style="background: #409EFF">
+                  <el-icon><VideoPlay /></el-icon>
+                </div>
+                <div class="type-info">
+                  <span class="type-name">视频</span>
+                  <span class="type-count">{{ fileStats.videoCount }}</span>
+                </div>
+              </div>
+              <div class="type-item">
+                <div class="type-icon" style="background: #E6A23C">
+                  <el-icon><Headset /></el-icon>
+                </div>
+                <div class="type-info">
+                  <span class="type-name">音频</span>
+                  <span class="type-count">{{ fileStats.audioCount }}</span>
+                </div>
+              </div>
+              <div class="type-item">
+                <div class="type-icon" style="background: #909399">
+                  <el-icon><Document /></el-icon>
+                </div>
+                <div class="type-info">
+                  <span class="type-name">文档</span>
+                  <span class="type-count">{{ fileStats.documentCount }}</span>
+                </div>
+              </div>
+              <div class="type-item">
+                <div class="type-icon" style="background: #C0C4CC">
+                  <el-icon><Files /></el-icon>
+                </div>
+                <div class="type-info">
+                  <span class="type-name">其他</span>
+                  <span class="type-count">{{ fileStats.otherCount }}</span>
+                </div>
               </div>
             </div>
-            <div class="health-item critical">
-              <el-icon :size="24"><CircleCloseFilled /></el-icon>
-              <div class="health-info">
-                <span class="count">{{ diskHealthStats.critical }}</span>
-                <span class="label">危险</span>
-              </div>
+            
+            <div class="total-size">
+              <span class="label">文件总大小:</span>
+              <span class="value">{{ fileStats.totalSizeDisplay || formatSize(fileStats.totalSizeBytes) }}</span>
             </div>
-          </div>
-          
-          <el-divider />
-          
-          <div class="health-progress">
-            <div class="progress-label">
-              <span>整体健康度</span>
-              <span>{{ diskHealthStats.total > 0 ? Math.round(diskHealthStats.healthy / diskHealthStats.total * 100) : 100 }}%</span>
-            </div>
-            <el-progress 
-              :percentage="diskHealthStats.total > 0 ? Math.round(diskHealthStats.healthy / diskHealthStats.total * 100) : 100"
-              :stroke-width="10"
-              :show-text="false"
-              :color="[
-                { color: '#F56C6C', percentage: 50 },
-                { color: '#E6A23C', percentage: 80 },
-                { color: '#67C23A', percentage: 100 }
-              ]"
-            />
           </div>
         </el-card>
       </el-col>
@@ -707,6 +773,105 @@ onUnmounted(() => {
           font-weight: 500;
           color: var(--el-text-color-primary);
         }
+      }
+    }
+  }
+}
+
+.file-stats-card {
+  margin-bottom: 16px;
+  
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .file-stats-main {
+    .file-stats-summary {
+      display: flex;
+      justify-content: space-around;
+      
+      .summary-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        
+        .summary-info {
+          text-align: center;
+          
+          .count {
+            display: block;
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--el-text-color-primary);
+          }
+          
+          .label {
+            font-size: 12px;
+            color: var(--el-text-color-secondary);
+          }
+        }
+      }
+    }
+    
+    .file-type-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      
+      .type-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: var(--el-fill-color-light);
+        border-radius: 8px;
+        min-width: 80px;
+        
+        .type-icon {
+          width: 28px;
+          height: 28px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #fff;
+        }
+        
+        .type-info {
+          .type-name {
+            display: block;
+            font-size: 12px;
+            color: var(--el-text-color-secondary);
+          }
+          
+          .type-count {
+            display: block;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--el-text-color-primary);
+          }
+        }
+      }
+    }
+    
+    .total-size {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--el-border-color-lighter);
+      display: flex;
+      justify-content: space-between;
+      
+      .label {
+        color: var(--el-text-color-secondary);
+      }
+      
+      .value {
+        font-weight: 600;
+        color: var(--el-color-primary);
       }
     }
   }

@@ -125,4 +125,18 @@ public interface IFileService
         int size,
         Guid userId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 获取文件统计信息
+    /// </summary>
+    Task<Result<FileStatisticsDto>> GetStatisticsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 扫描存储目录并同步到数据库
+    /// </summary>
+    Task<Result<ScanResultDto>> ScanAndSyncAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
 }

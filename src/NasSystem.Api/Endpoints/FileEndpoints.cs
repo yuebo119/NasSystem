@@ -113,14 +113,28 @@ public static class FileEndpoints
              .WithDescription("永久删除回收站中的所有文件")
              .RequireAuthorization();
 
+        // 文件统计
+        files.MapGet("/statistics", GetFileStatistics)
+             .WithName("GetFileStatistics")
+             .WithSummary("获取文件统计")
+             .WithDescription("获取当前用户的文件统计信息，包括文件数量、类型分布等")
+             .RequireAuthorization();
+
+        // 扫描同步
+        files.MapPost("/scan", ScanAndSync)
+             .WithName("ScanAndSync")
+             .WithSummary("扫描并同步文件")
+             .WithDescription("扫描存储目录下的物理文件，并同步到数据库。以物理文件为准，数据库为辅。")
+             .RequireAuthorization();
+
         return group;
     }
 
     private static async Task<IResult> GetDirectoryContents(
         string? path,
-        bool includeHidden,
-        IFileService fileService,
-        ClaimsPrincipal user)
+        bool includeHidden = false,
+        IFileService fileService = null!,
+        ClaimsPrincipal user = null!)
     {
         var userId = GetUserId(user);
         var result = await fileService.GetDirectoryContentsAsync(path ?? "/", userId, includeHidden);
@@ -234,16 +248,29 @@ public static class FileEndpoints
     private static async Task<IResult> SearchFiles(
         string query,
         string? path,
-        int page,
-        int pageSize,
-        IFileService fileService,
-        ClaimsPrincipal user)
+        string? extension,
+        string? itemType,
+        int page = 1,
+        int pageSize = 50,
+        IFileService fileService = null!,
+        ClaimsPrincipal user = null!)
     {
         var userId = GetUserId(user);
+        
+        // 解析文件类型
+        NasSystem.Domain.Enums.FileItemType? fileItemType = itemType?.ToLower() switch
+        {
+            "file" => NasSystem.Domain.Enums.FileItemType.File,
+            "folder" => NasSystem.Domain.Enums.FileItemType.Folder,
+            _ => null
+        };
+        
         var request = new SearchFilesRequest
         {
             Query = query,
             Path = path,
+            Extension = extension,
+            ItemType = fileItemType,
             Page = page > 0 ? page : 1,
             PageSize = pageSize > 0 ? pageSize : 50
         };
@@ -276,6 +303,24 @@ public static class FileEndpoints
     {
         var userId = GetUserId(user);
         var result = await fileService.EmptyRecycleBinAsync(userId);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> GetFileStatistics(
+        IFileService fileService,
+        ClaimsPrincipal user)
+    {
+        var userId = GetUserId(user);
+        var result = await fileService.GetStatisticsAsync(userId);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> ScanAndSync(
+        IFileService fileService,
+        ClaimsPrincipal user)
+    {
+        var userId = GetUserId(user);
+        var result = await fileService.ScanAndSyncAsync(userId);
         return result.ToHttpResult();
     }
 

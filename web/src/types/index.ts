@@ -228,3 +228,30 @@ export interface UploadProgress {
   status: 'pending' | 'uploading' | 'completed' | 'failed'
   errorMessage?: string
 }
+
+// 文件统计
+export interface FileStatistics {
+  totalFiles: number
+  totalFolders: number
+  totalSizeBytes: number
+  totalSizeDisplay?: string
+  imageCount: number
+  videoCount: number
+  audioCount: number
+  documentCount: number
+  otherCount: number
+  recentFilesCount: number
+}
+
+// 扫描结果
+export interface ScanResult {
+  addedFiles: number
+  addedFolders: number
+  removedFiles: number
+  removedFolders: number
+  updatedFiles: number
+  totalSizeBytes: number
+  totalSizeDisplay?: string
+  duration: string
+  message?: string
+}

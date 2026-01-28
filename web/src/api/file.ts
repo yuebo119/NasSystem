@@ -3,7 +3,9 @@ import type {
   ApiResponse,
   FileItem,
   DirectoryContent,
-  PagedResult
+  PagedResult,
+  FileStatistics,
+  ScanResult
 } from '@/types'
 
 export const fileApi = {
@@ -67,12 +69,23 @@ export const fileApi = {
   async search(query: string, options?: {
     path?: string
     itemType?: string
+    extension?: string
     page?: number
     pageSize?: number
   }): Promise<ApiResponse<PagedResult<FileItem>>> {
     return http.get('/files/search', {
       params: { query, ...options }
     })
+  },
+
+  // 获取文件统计
+  async getStatistics(): Promise<ApiResponse<FileStatistics>> {
+    return http.get('/files/statistics')
+  },
+
+  // 扫描并同步文件
+  async scanAndSync(): Promise<ApiResponse<ScanResult>> {
+    return http.post('/files/scan')
   },
 
   // 获取下载 URL
