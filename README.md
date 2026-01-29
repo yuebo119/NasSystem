@@ -5,40 +5,49 @@
 ## 📋 功能特性
 
 ### 文件管理
-- ✅ 文件浏览和导航
+- ✅ 文件浏览和目录导航
 - ✅ 文件上传/下载
 - ✅ 创建文件夹
 - ✅ 重命名/移动/复制
 - ✅ 软删除和回收站
-- ✅ 文件搜索
+- ✅ 文件搜索（支持类型、扩展名过滤）
 - ✅ 缩略图生成
 - ✅ 文件版本控制
+- ✅ 文件扫描同步
+
+### 文件分享
+- ✅ 创建分享链接
+- ✅ 公开/密码保护分享
+- ✅ 设置过期时间
+- ✅ 设置下载次数限制
+- ✅ 文件夹分享浏览
 
 ### 存储管理
 - ✅ 存储池管理
-- ✅ RAID 支持 (0, 1, 5, 6, 10)
-- ✅ 磁盘健康监控
-- ✅ 容量统计
-
-### 共享管理
-- ✅ SMB/CIFS 共享
-- ✅ NFS 共享
-- ✅ WebDAV 支持
-- ✅ 权限控制
+- ✅ 容量监控
+- ✅ 容量限制设置
+- ✅ 默认存储池设置
 
 ### 用户管理
 - ✅ 用户认证 (JWT)
-- ✅ 角色权限管理
-- ✅ 配额管理
+- ✅ 角色权限管理（SuperAdmin/Admin/PowerUser/User）
+- ✅ 用户配额管理
 - ✅ 多用户支持
+
+### 系统管理
+- ✅ 系统状态监控
+- ✅ 健康检查
+- ✅ 目录浏览
+- ✅ 驱动器信息
 
 ## 🛠 技术栈
 
 ### 后端
-- .NET 10 (ASP.NET Core)
+- .NET 10 (ASP.NET Core Minimal API)
 - Entity Framework Core + SQLite
 - Clean Architecture
 - SignalR (实时通信)
+- JWT 认证
 
 ### 前端
 - Vue 3 + TypeScript
@@ -53,7 +62,7 @@
 ## 📁 项目结构
 
 ```
-NAS/
+NasSystem/
 ├── src/
 │   ├── NasSystem.Api/           # Web API 入口
 │   ├── NasSystem.Application/   # 应用服务层
@@ -65,6 +74,11 @@ NAS/
 │   ├── NasSystem.UnitTests/     # 单元测试
 │   └── NasSystem.IntegrationTests/ # 集成测试
 ├── docs/                        # 文档
+│   ├── REQUIREMENTS.md          # 需求文档
+│   ├── DESIGN.md                # 设计文档
+│   ├── API_REFERENCE.md         # API 接口文档
+│   ├── TESTING.md               # 测试文档
+│   └── USER_MANUAL.md           # 使用手册
 ├── Dockerfile
 └── docker-compose.yml
 ```
@@ -102,6 +116,14 @@ npm run dev
 # 前端运行在 http://localhost:6060
 ```
 
+### 默认账户
+
+| 用户名 | 密码 | 角色 |
+|--------|------|------|
+| admin | admin123 | SuperAdmin |
+
+> ⚠️ 首次登录后请立即修改默认密码
+
 ## 🧪 测试
 
 ```bash
@@ -115,15 +137,6 @@ dotnet test tests/NasSystem.UnitTests
 dotnet test tests/NasSystem.IntegrationTests
 ```
 
-## 📊 测试覆盖
-
-| 类型 | 数量 | 状态 |
-|------|------|------|
-| 单元测试 | 189 | ✅ 全部通过 |
-| 集成测试 | 59 | ✅ 全部通过 |
-| **总计** | **248** | ✅ **100%** |
-
-
 ## 🔧 配置
 
 主要配置项 (`appsettings.json`):
@@ -131,14 +144,15 @@ dotnet test tests/NasSystem.IntegrationTests
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Data Source=nas.db"
+    "DefaultConnection": "Data Source=data/nas.db"
   },
   "NasSystem": {
-    "StoragePath": "/mnt/storage"
+    "StoragePath": "/app/storage"
   },
   "Jwt": {
-    "Secret": "your-secret-key",
+    "Secret": "your-secret-key-at-least-32-characters",
     "Issuer": "NasSystem",
+    "Audience": "NasSystemUsers",
     "ExpirationMinutes": 60
   }
 }
@@ -150,13 +164,55 @@ dotnet test tests/NasSystem.IntegrationTests
 
 ### 主要端点
 
-| 端点 | 描述 |
+| 模块 | 端点 | 描述 |
+|------|------|------|
+| 用户 | `POST /api/v1/users/login` | 用户登录 |
+| 用户 | `GET /api/v1/users/me` | 获取当前用户 |
+| 文件 | `GET /api/v1/files/browse/{path}` | 浏览目录 |
+| 文件 | `POST /api/v1/files/upload` | 上传文件 |
+| 文件 | `GET /api/v1/files/download/{path}` | 下载文件 |
+| 分享 | `POST /api/v1/file-shares` | 创建分享 |
+| 分享 | `GET /api/v1/public-shares/{code}` | 访问分享 |
+| 存储 | `GET /api/v1/storage/overview` | 存储概览 |
+| 系统 | `GET /api/v1/system/health` | 健康检查 |
+
+详细 API 文档请参阅 [API_REFERENCE.md](docs/API_REFERENCE.md)
+
+## 📚 文档
+
+| 文档 | 描述 |
 |------|------|
-| `POST /api/users/login` | 用户登录 |
-| `GET /api/files/directory` | 获取目录内容 |
-| `POST /api/files/upload` | 上传文件 |
-| `GET /api/storage/pools` | 获取存储池 |
-| `GET /api/shares` | 获取共享列表 |
+| [需求文档](docs/REQUIREMENTS.md) | 系统功能需求说明 |
+| [设计文档](docs/DESIGN.md) | 系统架构和设计说明 |
+| [API 文档](docs/API_REFERENCE.md) | 完整的 API 接口参考 |
+| [测试文档](docs/TESTING.md) | 测试策略和用例 |
+| [使用手册](docs/USER_MANUAL.md) | 用户操作指南 |
+
+## 🐳 Docker 部署
+
+### 环境变量
+
+| 变量 | 描述 | 默认值 |
+|------|------|--------|
+| `ASPNETCORE_ENVIRONMENT` | 运行环境 | Production |
+| `JWT_SECRET` | JWT 密钥 | - |
+| `ConnectionStrings__DefaultConnection` | 数据库连接 | - |
+| `NasSystem__StoragePath` | 存储路径 | /app/storage |
+
+### 数据卷
+
+| 卷 | 描述 |
+|------|------|
+| `nas-data` | SQLite 数据库 |
+| `nas-storage` | 文件存储 |
+| `nas-logs` | 应用日志 |
+
+## 🔒 安全说明
+
+- 密码使用 PBKDF2-SHA256 加密存储
+- API 使用 JWT Bearer Token 认证
+- 支持 HTTPS 传输加密
+- 输入验证防止注入攻击
 
 ## 📜 许可证
 
@@ -165,3 +221,17 @@ MIT License
 ## 🤝 贡献
 
 欢迎提交 Pull Request 和 Issue!
+
+1. Fork 项目
+2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 创建 Pull Request
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 说明 |
+|------|------|------|
+| 1.0.0 | 2026-01-29 | 初始版本 |
