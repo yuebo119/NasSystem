@@ -1,18 +1,17 @@
 // =============================================================================
 // NasSystem.UnitTests - StoragePoolTests.cs
-// 存储池实体单元测试
+// 存储池实体单元测试（简化版）
 // =============================================================================
 
 namespace NasSystem.UnitTests.Domain;
 
 using FluentAssertions;
 using NasSystem.Domain.Entities;
-using NasSystem.Domain.Enums;
 using NasSystem.Domain.Events;
 using Xunit;
 
 /// <summary>
-/// StoragePool 实体单元测试
+/// StoragePool 实体单元测试（简化版）
 /// </summary>
 public class StoragePoolTests
 {
@@ -25,16 +24,13 @@ public class StoragePoolTests
         var pool = StoragePool.Create(
             name: "MainPool",
             mountPath: "/mnt/storage",
-            raidLevel: RaidLevel.Raid5,
             description: "Main storage pool");
 
         // Assert
         pool.Should().NotBeNull();
         pool.Name.Should().Be("MainPool");
         pool.MountPath.Should().Be("/mnt/storage");
-        pool.RaidLevel.Should().Be(RaidLevel.Raid5);
         pool.Description.Should().Be("Main storage pool");
-        pool.Status.Should().Be(StoragePoolStatus.Initializing);
         pool.IsEnabled.Should().BeTrue();
         pool.IsDefault.Should().BeFalse();
     }
@@ -50,71 +46,67 @@ public class StoragePoolTests
         pool.DomainEvents.First().Should().BeOfType<StoragePoolCreatedEvent>();
     }
 
-    #endregion
-
-    #region UpdateStatus Tests
-
     [Fact]
-    public void UpdateStatus_ChangesStatus()
+    public void Create_WithMaxCapacity_SetsMaxCapacityBytes()
     {
-        // Arrange
-        var pool = StoragePool.Create("TestPool", "/mnt/test");
-        pool.ClearDomainEvents();
-
         // Act
-        pool.UpdateStatus(StoragePoolStatus.Healthy);
+        var pool = StoragePool.Create(
+            name: "LimitedPool",
+            mountPath: "/mnt/limited",
+            maxCapacityBytes: 1024L * 1024 * 1024 * 100); // 100GB
 
         // Assert
-        pool.Status.Should().Be(StoragePoolStatus.Healthy);
-    }
-
-    [Fact]
-    public void UpdateStatus_WhenStatusChanges_AddsStatusChangedEvent()
-    {
-        // Arrange
-        var pool = StoragePool.Create("TestPool", "/mnt/test");
-        pool.ClearDomainEvents();
-
-        // Act
-        pool.UpdateStatus(StoragePoolStatus.Healthy);
-
-        // Assert
-        pool.DomainEvents.Should().ContainSingle();
-        var evt = pool.DomainEvents.First() as StoragePoolStatusChangedEvent;
-        evt.Should().NotBeNull();
-        evt!.OldStatus.Should().Be(StoragePoolStatus.Initializing);
-        evt.NewStatus.Should().Be(StoragePoolStatus.Healthy);
-    }
-
-    [Fact]
-    public void UpdateStatus_WhenSameStatus_DoesNotAddEvent()
-    {
-        // Arrange
-        var pool = StoragePool.Create("TestPool", "/mnt/test");
-        pool.UpdateStatus(StoragePoolStatus.Healthy);
-        pool.ClearDomainEvents();
-
-        // Act
-        pool.UpdateStatus(StoragePoolStatus.Healthy);
-
-        // Assert
-        pool.DomainEvents.Should().BeEmpty();
+        pool.MaxCapacityBytes.Should().Be(1024L * 1024 * 1024 * 100);
     }
 
     #endregion
 
-    #region UpdateUsage Tests
+    #region Update Tests
 
     [Fact]
-    public void UpdateUsage_SetsUsedBytes()
+    public void Update_ChangesNameAndDescription()
     {
         // Arrange
         var pool = StoragePool.Create("TestPool", "/mnt/test");
 
         // Act
-        pool.UpdateUsage(1024L * 1024 * 1024 * 50); // 50GB
+        pool.Update("UpdatedPool", "Updated description");
 
         // Assert
+        pool.Name.Should().Be("UpdatedPool");
+        pool.Description.Should().Be("Updated description");
+    }
+
+    [Fact]
+    public void Update_WithMaxCapacity_SetsMaxCapacityBytes()
+    {
+        // Arrange
+        var pool = StoragePool.Create("TestPool", "/mnt/test");
+
+        // Act
+        pool.Update("TestPool", null, 1024L * 1024 * 1024 * 50); // 50GB
+
+        // Assert
+        pool.MaxCapacityBytes.Should().Be(1024L * 1024 * 1024 * 50);
+    }
+
+    #endregion
+
+    #region UpdateCapacity Tests
+
+    [Fact]
+    public void UpdateCapacity_SetsTotalAndUsedBytes()
+    {
+        // Arrange
+        var pool = StoragePool.Create("TestPool", "/mnt/test");
+
+        // Act
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100, // 100GB
+            usedBytes: 1024L * 1024 * 1024 * 50);  // 50GB
+
+        // Assert
+        pool.TotalBytes.Should().Be(1024L * 1024 * 1024 * 100);
         pool.UsedBytes.Should().Be(1024L * 1024 * 1024 * 50);
     }
 
@@ -154,24 +146,6 @@ public class StoragePoolTests
 
     #endregion
 
-    #region SetOptimization Tests
-
-    [Fact]
-    public void SetOptimization_SetsDeduplicationAndCompression()
-    {
-        // Arrange
-        var pool = StoragePool.Create("TestPool", "/mnt/test");
-
-        // Act
-        pool.SetOptimization(enableDeduplication: true, enableCompression: true);
-
-        // Assert
-        pool.EnableDeduplication.Should().BeTrue();
-        pool.EnableCompression.Should().BeTrue();
-    }
-
-    #endregion
-
     #region Capacity Calculations Tests
 
     [Fact]
@@ -179,11 +153,25 @@ public class StoragePoolTests
     {
         // Arrange
         var pool = StoragePool.Create("TestPool", "/mnt/test");
-        // 注意：TotalBytes 默认为 0，需要通过 AddDisk 来设置
-        // 这里我们只测试公式逻辑
-        
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100, // 100GB
+            usedBytes: 1024L * 1024 * 1024 * 30);  // 30GB
+
         // Assert
-        pool.AvailableBytes.Should().Be(pool.TotalBytes - pool.UsedBytes);
+        pool.AvailableBytes.Should().Be(1024L * 1024 * 1024 * 70); // 70GB
+    }
+
+    [Fact]
+    public void EffectiveTotalBytes_WithMaxCapacity_ReturnsMaxCapacity()
+    {
+        // Arrange
+        var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 50); // 50GB limit
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100, // 100GB actual
+            usedBytes: 0);
+
+        // Assert
+        pool.EffectiveTotalBytes.Should().Be(1024L * 1024 * 1024 * 50); // Should be limited to 50GB
     }
 
     [Fact]
@@ -197,13 +185,68 @@ public class StoragePoolTests
     }
 
     [Fact]
+    public void UsagePercentage_CalculatesCorrectly()
+    {
+        // Arrange
+        var pool = StoragePool.Create("TestPool", "/mnt/test");
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100, // 100GB
+            usedBytes: 1024L * 1024 * 1024 * 50);  // 50GB
+
+        // Assert
+        pool.UsagePercentage.Should().Be(50);
+    }
+
+    [Fact]
     public void IsNearlyFull_WhenUnder90Percent_ReturnsFalse()
     {
         // Arrange
         var pool = StoragePool.Create("TestPool", "/mnt/test");
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100, // 100GB
+            usedBytes: 1024L * 1024 * 1024 * 50);  // 50GB
 
         // Assert
         pool.IsNearlyFull.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsNearlyFull_WhenOver90Percent_ReturnsTrue()
+    {
+        // Arrange
+        var pool = StoragePool.Create("TestPool", "/mnt/test");
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100, // 100GB
+            usedBytes: 1024L * 1024 * 1024 * 95);  // 95GB
+
+        // Assert
+        pool.IsNearlyFull.Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasEnoughSpace_WhenSufficientSpace_ReturnsTrue()
+    {
+        // Arrange
+        var pool = StoragePool.Create("TestPool", "/mnt/test");
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100, // 100GB
+            usedBytes: 1024L * 1024 * 1024 * 50);  // 50GB
+
+        // Assert
+        pool.HasEnoughSpace(1024L * 1024 * 1024 * 10).Should().BeTrue(); // 10GB file
+    }
+
+    [Fact]
+    public void HasEnoughSpace_WhenInsufficientSpace_ReturnsFalse()
+    {
+        // Arrange
+        var pool = StoragePool.Create("TestPool", "/mnt/test");
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100, // 100GB
+            usedBytes: 1024L * 1024 * 1024 * 95);  // 95GB
+
+        // Assert
+        pool.HasEnoughSpace(1024L * 1024 * 1024 * 10).Should().BeFalse(); // 10GB file won't fit
     }
 
     #endregion

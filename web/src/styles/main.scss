@@ -11,11 +11,35 @@ html,
 body {
   width: 100%;
   height: 100%;
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+  font-family: 'Inter', 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
   font-size: 14px;
   color: var(--el-text-color-primary);
   background-color: var(--el-bg-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+// 暗色模式全局变量
+html.dark {
+  --el-bg-color-page: #0f172a;
+  --el-bg-color: #1e293b;
+  --el-bg-color-overlay: #1e293b;
+  --el-fill-color-light: rgba(255, 255, 255, 0.05);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.03);
+  --el-border-color-lighter: rgba(255, 255, 255, 0.08);
+  --el-border-color-light: rgba(255, 255, 255, 0.1);
+  --el-border-color: rgba(255, 255, 255, 0.12);
+  
+  // 卡片阴影
+  --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  --card-shadow-hover: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+// 亮色模式变量
+html:not(.dark) {
+  --el-bg-color-page: #f5f7fa;
+  --card-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --card-shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
 // 滚动条样式
@@ -32,6 +56,7 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--el-border-color);
   border-radius: 4px;
+  transition: background 0.2s ease;
 
   &:hover {
     background: var(--el-border-color-darker);
@@ -64,11 +89,110 @@ body {
 // NProgress 自定义样式
 #nprogress {
   .bar {
-    background: var(--el-color-primary) !important;
+    background: linear-gradient(90deg, #6366f1, #8b5cf6) !important;
     height: 3px !important;
   }
 
   .peg {
-    box-shadow: 0 0 10px var(--el-color-primary), 0 0 5px var(--el-color-primary) !important;
+    box-shadow: 0 0 10px #6366f1, 0 0 5px #8b5cf6 !important;
+  }
+}
+
+// Element Plus 组件覆盖样式
+.el-card {
+  border-radius: 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  box-shadow: var(--card-shadow);
+  transition: all 0.3s ease;
+  
+  &:hover {
+    box-shadow: var(--card-shadow-hover);
+  }
+  
+  .el-card__header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+    font-weight: 600;
+  }
+  
+  .el-card__body {
+    padding: 20px;
+  }
+}
+
+.el-button {
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.el-input {
+  --el-input-border-radius: 8px;
+}
+
+.el-select {
+  --el-select-border-radius: 8px;
+}
+
+.el-tag {
+  border-radius: 6px;
+}
+
+.el-table {
+  --el-table-border-color: var(--el-border-color-lighter);
+  
+  th.el-table__cell {
+    background: var(--el-fill-color-lighter) !important;
+    font-weight: 600;
+  }
+}
+
+.el-dialog {
+  border-radius: 16px;
+  
+  .el-dialog__header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+  }
+  
+  .el-dialog__body {
+    padding: 24px;
+  }
+  
+  .el-dialog__footer {
+    padding: 16px 24px 20px;
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+}
+
+.el-message-box {
+  border-radius: 16px;
+}
+
+.el-dropdown-menu {
+  border-radius: 12px;
+  padding: 6px;
+  
+  .el-dropdown-menu__item {
+    border-radius: 8px;
+    padding: 8px 16px;
+  }
+}
+
+// 页面标题通用样式
+.page-header {
+  margin-bottom: 24px;
+  
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    color: var(--el-text-color-primary);
+  }
+  
+  p {
+    margin: 0;
+    color: var(--el-text-color-secondary);
+    font-size: 14px;
   }
 }

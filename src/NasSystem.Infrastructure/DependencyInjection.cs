@@ -47,8 +47,6 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IFileItemRepository, FileItemRepository>();
         services.AddScoped<IFileVersionRepository, FileVersionRepository>();
-        services.AddScoped<IShareRepository, ShareRepository>();
-        services.AddScoped<ISharePermissionRepository, SharePermissionRepository>();
         services.AddScoped<IStoragePoolRepository, StoragePoolRepository>();
         services.AddScoped<IFileShareRepository, FileShareRepository>();
         services.AddScoped<IFilePermissionRepository, FilePermissionRepository>();

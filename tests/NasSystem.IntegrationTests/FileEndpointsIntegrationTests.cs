@@ -381,7 +381,7 @@ public class FileEndpointsIntegrationTests : ApiTestBase
         context.Users.Add(user);
         await context.SaveChangesAsync();
 
-        var loginRequest = new LoginDto(Username: username, Password: "password123");
+        var loginRequest = new LoginDto { Username = username, Password = "password123" };
         var response = await Client.PostAsJsonAsync("/api/v1/users/login", loginRequest);
         
         var result = await response.Content.ReadFromJsonAsync<ApiResponse<LoginResultDto>>(JsonOptions);
@@ -397,7 +397,7 @@ public class FileEndpointsIntegrationTests : ApiTestBase
         {
             var pool = StoragePool.Create("DefaultPool", "/mnt/storage");
             pool.SetAsDefault(true);
-            pool.UpdateStatus(StoragePoolStatus.Healthy);
+            pool.UpdateCapacity(1024L * 1024 * 1024 * 100, 0); // 100GB total, 0 used
             context.StoragePools.Add(pool);
             await context.SaveChangesAsync();
         }

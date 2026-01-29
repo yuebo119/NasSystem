@@ -24,16 +24,6 @@ public sealed class NasDbContext(DbContextOptions<NasDbContext> options) : DbCon
     public DbSet<FileItem> FileItems => Set<FileItem>();
 
     /// <summary>
-    /// 共享表
-    /// </summary>
-    public DbSet<Share> Shares => Set<Share>();
-
-    /// <summary>
-    /// 共享权限表
-    /// </summary>
-    public DbSet<SharePermission> SharePermissions => Set<SharePermission>();
-
-    /// <summary>
     /// 存储池表
     /// </summary>
     public DbSet<StoragePool> StoragePools => Set<StoragePool>();

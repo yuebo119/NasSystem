@@ -34,9 +34,11 @@ public class UserEndpointsIntegrationTests : ApiTestBase
         // Arrange
         await SeedTestUserAsync("loginuser", "password123");
 
-        var loginRequest = new LoginDto(
-            Username: "loginuser",
-            Password: "password123");
+        var loginRequest = new LoginDto
+        {
+            Username = "loginuser",
+            Password = "password123"
+        };
 
         // Act
         var response = await Client.PostAsJsonAsync("/api/v1/users/login", loginRequest);
@@ -57,9 +59,11 @@ public class UserEndpointsIntegrationTests : ApiTestBase
     public async Task Login_WithInvalidUsername_ReturnsUnauthorized()
     {
         // Arrange
-        var loginRequest = new LoginDto(
-            Username: "nonexistentuser",
-            Password: "password123");
+        var loginRequest = new LoginDto
+        {
+            Username = "nonexistentuser",
+            Password = "password123"
+        };
 
         // Act
         var response = await Client.PostAsJsonAsync("/api/v1/users/login", loginRequest);
@@ -74,9 +78,11 @@ public class UserEndpointsIntegrationTests : ApiTestBase
         // Arrange
         await SeedTestUserAsync("testuser", "correctpassword");
 
-        var loginRequest = new LoginDto(
-            Username: "testuser",
-            Password: "wrongpassword");
+        var loginRequest = new LoginDto
+        {
+            Username = "testuser",
+            Password = "wrongpassword"
+        };
 
         // Act
         var response = await Client.PostAsJsonAsync("/api/v1/users/login", loginRequest);
@@ -91,9 +97,11 @@ public class UserEndpointsIntegrationTests : ApiTestBase
         // Arrange
         await SeedTestUserAsync("disableduser", "password123", isEnabled: false);
 
-        var loginRequest = new LoginDto(
-            Username: "disableduser",
-            Password: "password123");
+        var loginRequest = new LoginDto
+        {
+            Username = "disableduser",
+            Password = "password123"
+        };
 
         // Act
         var response = await Client.PostAsJsonAsync("/api/v1/users/login", loginRequest);
@@ -386,7 +394,7 @@ public class UserEndpointsIntegrationTests : ApiTestBase
     {
         await SeedTestUserAsync(username, password, role);
 
-        var loginRequest = new LoginDto(Username: username, Password: password);
+        var loginRequest = new LoginDto { Username = username, Password = password };
         var response = await Client.PostAsJsonAsync("/api/v1/users/login", loginRequest);
         
         if (!response.IsSuccessStatusCode)

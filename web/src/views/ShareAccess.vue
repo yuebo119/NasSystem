@@ -653,8 +653,8 @@ onMounted(() => {
     justify-content: space-between;
     align-items: center;
     padding: 24px 28px;
-    border-bottom: 1px solid #e5e7eb;
-    background: #fafafa;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+    background: var(--el-fill-color-lighter);
     gap: 16px;
     flex-wrap: wrap;
     
@@ -719,14 +719,14 @@ onMounted(() => {
         cursor: pointer;
         
         &:hover {
-          background: #f3f4f6;
+          background: var(--el-fill-color-light);
         }
       }
       
       .item-icon {
         width: 44px;
         height: 44px;
-        background: #f3f4f6;
+        background: var(--el-fill-color-light);
         border-radius: 10px;
         display: flex;
         align-items: center;

@@ -10,7 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Application.Files;
 using NasSystem.Application.FileShares;
 using NasSystem.Application.FileVersions;
-using NasSystem.Application.Shares;
 using NasSystem.Application.Storage;
 using NasSystem.Application.Users;
 
@@ -33,7 +32,6 @@ public static class DependencyInjection
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IFileService, FileService>();
         services.AddScoped<IFileVersionService, FileVersionService>();
-        services.AddScoped<IShareService, ShareService>();
         services.AddScoped<IStorageService, StorageService>();
         services.AddScoped<IFileShareService, FileShareService>();
 

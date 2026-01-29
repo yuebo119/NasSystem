@@ -792,7 +792,7 @@ public class FileServiceTests
 
     private static StoragePool CreateStoragePool(Guid id, string name, string mountPath)
     {
-        return StoragePool.Create(name, mountPath, RaidLevel.None); // 无 RAID
+        return StoragePool.Create(name, mountPath);
     }
 
     #endregion

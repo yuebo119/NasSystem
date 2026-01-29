@@ -1,6 +1,6 @@
 // =============================================================================
 // NasSystem.UnitTests - StorageServiceTests.cs
-// 存储服务单元测试
+// 存储服务单元测试（简化版）
 // =============================================================================
 
 namespace NasSystem.UnitTests.Services;
@@ -11,18 +11,17 @@ using NasSystem.Application.Storage;
 using NasSystem.Application.Storage.Dtos;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
-using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
 using NasSystem.Domain.Services;
 using Xunit;
 
 /// <summary>
-/// StorageService 单元测试
+/// StorageService 单元测试（简化版）
 /// </summary>
 public class StorageServiceTests
 {
     private readonly Mock<IStoragePoolRepository> _poolRepositoryMock;
-    private readonly Mock<IShareRepository> _shareRepositoryMock;
+    private readonly Mock<IFileItemRepository> _fileItemRepositoryMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IFileSystemService> _fileSystemServiceMock;
     private readonly StorageService _sut;
@@ -30,13 +29,13 @@ public class StorageServiceTests
     public StorageServiceTests()
     {
         _poolRepositoryMock = new Mock<IStoragePoolRepository>();
-        _shareRepositoryMock = new Mock<IShareRepository>();
+        _fileItemRepositoryMock = new Mock<IFileItemRepository>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _fileSystemServiceMock = new Mock<IFileSystemService>();
 
         _sut = new StorageService(
             _poolRepositoryMock.Object,
-            _shareRepositoryMock.Object,
+            _fileItemRepositoryMock.Object,
             _unitOfWorkMock.Object,
             _fileSystemServiceMock.Object);
     }
@@ -49,13 +48,17 @@ public class StorageServiceTests
         // Arrange
         var pools = new List<StoragePool>
         {
-            CreateTestPool("Pool1", "/mnt/pool1", 1000L * 1024 * 1024 * 1024, 500L * 1024 * 1024 * 1024),
-            CreateTestPool("Pool2", "/mnt/pool2", 2000L * 1024 * 1024 * 1024, 1000L * 1024 * 1024 * 1024)
+            CreateTestPool("Pool1", "/mnt/pool1"),
+            CreateTestPool("Pool2", "/mnt/pool2")
         };
 
         _poolRepositoryMock
             .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(pools);
+
+        _fileSystemServiceMock
+            .Setup(x => x.DirectoryExists(It.IsAny<string>()))
+            .Returns(false);
 
         // Act
         var result = await _sut.GetOverviewAsync();
@@ -63,8 +66,6 @@ public class StorageServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.PoolCount.Should().Be(2);
-        result.Value.TotalBytes.Should().Be(3000L * 1024 * 1024 * 1024);
-        result.Value.UsedBytes.Should().Be(1500L * 1024 * 1024 * 1024);
     }
 
     [Fact]
@@ -103,6 +104,10 @@ public class StorageServiceTests
         _poolRepositoryMock
             .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(pools);
+
+        _fileSystemServiceMock
+            .Setup(x => x.DirectoryExists(It.IsAny<string>()))
+            .Returns(false);
 
         // Act
         var result = await _sut.GetPoolsAsync();
@@ -144,6 +149,10 @@ public class StorageServiceTests
             .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(pool);
 
+        _fileSystemServiceMock
+            .Setup(x => x.DirectoryExists(It.IsAny<string>()))
+            .Returns(false);
+
         // Act
         var result = await _sut.GetPoolByIdAsync(poolId);
 
@@ -183,14 +192,15 @@ public class StorageServiceTests
         {
             Name = "NewPool",
             MountPath = "/mnt/newpool",
-            RaidLevel = RaidLevel.Raid5,
-            DiskDevicePaths = new List<string> { "/dev/sda", "/dev/sdb" },
-            EnableDeduplication = true,
-            EnableCompression = true
+            Description = "Test pool"
         };
 
         _poolRepositoryMock
             .Setup(x => x.NameExistsAsync("NewPool", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _poolRepositoryMock
+            .Setup(x => x.MountPathExistsAsync("/mnt/newpool", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         _fileSystemServiceMock
@@ -203,9 +213,6 @@ public class StorageServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.Name.Should().Be("NewPool");
-        result.Value.RaidLevel.Should().Be(RaidLevel.Raid5);
-        result.Value.EnableDeduplication.Should().BeTrue();
-        result.Value.EnableCompression.Should().BeTrue();
 
         _fileSystemServiceMock.Verify(x => x.CreateDirectory("/mnt/newpool"), Times.Once);
         _poolRepositoryMock.Verify(x => x.AddAsync(It.IsAny<StoragePool>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -218,8 +225,7 @@ public class StorageServiceTests
         var request = new CreateStoragePoolRequest
         {
             Name = "ExistingPool",
-            MountPath = "/mnt/existing",
-            DiskDevicePaths = new List<string>()
+            MountPath = "/mnt/existing"
         };
 
         _poolRepositoryMock
@@ -243,12 +249,15 @@ public class StorageServiceTests
         var request = new CreateStoragePoolRequest
         {
             Name = "NewPool",
-            MountPath = "/mnt/existing",
-            DiskDevicePaths = new List<string>()
+            MountPath = "/mnt/existing"
         };
 
         _poolRepositoryMock
             .Setup(x => x.NameExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _poolRepositoryMock
+            .Setup(x => x.MountPathExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         _fileSystemServiceMock
@@ -277,21 +286,24 @@ public class StorageServiceTests
 
         var request = new UpdateStoragePoolRequest
         {
-            EnableDeduplication = true,
-            EnableCompression = true
+            Name = "NewName",
+            Description = "Updated description"
         };
 
         _poolRepositoryMock
             .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(pool);
 
+        _fileSystemServiceMock
+            .Setup(x => x.DirectoryExists(It.IsAny<string>()))
+            .Returns(false);
+
         // Act
         var result = await _sut.UpdatePoolAsync(poolId, request);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        result.Value.EnableDeduplication.Should().BeTrue();
-        result.Value.EnableCompression.Should().BeTrue();
+        result.Value.Name.Should().Be("NewName");
     }
 
     [Fact]
@@ -327,6 +339,10 @@ public class StorageServiceTests
             .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(pool);
 
+        _fileSystemServiceMock
+            .Setup(x => x.DirectoryExists(It.IsAny<string>()))
+            .Returns(false);
+
         // Act
         var result = await _sut.UpdatePoolAsync(poolId, request);
 
@@ -350,10 +366,6 @@ public class StorageServiceTests
         _poolRepositoryMock
             .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(pool);
-
-        _shareRepositoryMock
-            .Setup(x => x.GetByStoragePoolAsync(poolId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Share>());
 
         // Act
         var result = await _sut.DeletePoolAsync(poolId);
@@ -379,6 +391,27 @@ public class StorageServiceTests
         // Assert
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Contain("NotFound");
+    }
+
+    [Fact]
+    public async Task DeletePoolAsync_WithDefaultPool_ReturnsError()
+    {
+        // Arrange
+        var poolId = Guid.NewGuid();
+        var pool = CreateTestPool("DefaultPool", "/mnt/pool");
+        SetEntityId(pool, poolId);
+        pool.SetAsDefault(true);
+
+        _poolRepositoryMock
+            .Setup(x => x.GetByIdAsync(poolId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+
+        // Act
+        var result = await _sut.DeletePoolAsync(poolId);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Contain("CannotDeleteDefault");
     }
 
     #endregion
@@ -434,23 +467,9 @@ public class StorageServiceTests
 
     #region Helper Methods
 
-    private static StoragePool CreateTestPool(string name, string mountPath, long totalBytes = 0, long usedBytes = 0)
+    private static StoragePool CreateTestPool(string name, string mountPath)
     {
-        var pool = StoragePool.Create(name, mountPath);
-        
-        // Use reflection to set capacity for testing
-        if (totalBytes > 0)
-        {
-            var totalProperty = typeof(StoragePool).GetProperty("TotalBytes");
-            totalProperty?.SetValue(pool, totalBytes);
-        }
-        
-        if (usedBytes > 0)
-        {
-            pool.UpdateUsage(usedBytes);
-        }
-        
-        return pool;
+        return StoragePool.Create(name, mountPath);
     }
 
     private static void SetEntityId<T>(T entity, Guid id) where T : Entity

@@ -173,9 +173,6 @@ public static class ServiceCollectionExtensions
         // 用户管理端点
         apiGroup.MapUserEndpoints();
         
-        // 共享管理端点
-        apiGroup.MapShareEndpoints();
-        
         // 文件分享端点
         apiGroup.MapFileShareEndpoints();
         

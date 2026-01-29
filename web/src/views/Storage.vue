@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Plus, Refresh, Delete, Check, FolderOpened, Box, InfoFilled, Edit, Warning, Back, Folder } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storageApi, type StoragePool, type StorageOverview, type DirectoryItem } from '@/api/storage'
 
+const { t } = useI18n()
 const loading = ref(false)
 const overview = ref<StorageOverview | null>(null)
 const pools = ref<StoragePool[]>([])
@@ -44,20 +46,20 @@ const getUsageGradient = (percentage: number): string => {
 
 const getStatusInfo = (status: number) => {
   const map: Record<number, { text: string; type: 'success' | 'warning' | 'danger' | 'info'; color: string }> = {
-    1: { text: '正常', type: 'success', color: '#10b981' },
-    2: { text: '警告', type: 'warning', color: '#f59e0b' },
-    3: { text: '错误', type: 'danger', color: '#ef4444' },
-    4: { text: '离线', type: 'info', color: '#6b7280' },
+    1: { text: t('storage.healthy'), type: 'success', color: '#10b981' },
+    2: { text: t('common.warning'), type: 'warning', color: '#f59e0b' },
+    3: { text: t('common.error'), type: 'danger', color: '#ef4444' },
+    4: { text: t('dashboard.offline'), type: 'info', color: '#6b7280' },
   }
-  return map[status] || { text: '正常', type: 'success', color: '#10b981' }
+  return map[status] || { text: t('storage.healthy'), type: 'success', color: '#10b981' }
 }
 
 const healthStatus = computed(() => {
-  if (!overview.value) return { text: '未知', color: '#6b7280' }
+  if (!overview.value) return { text: t('dashboard.unknown'), color: '#6b7280' }
   const status = overview.value.healthStatus
-  if (status === 'Healthy' || status === '正常') return { text: '良好', color: '#10b981' }
-  if (status === 'Warning') return { text: '警告', color: '#f59e0b' }
-  return { text: status || '未知', color: '#6b7280' }
+  if (status === 'Healthy' || status === '正常') return { text: t('storage.healthy'), color: '#10b981' }
+  if (status === 'Warning') return { text: t('common.warning'), color: '#f59e0b' }
+  return { text: status || t('dashboard.unknown'), color: '#6b7280' }
 })
 
 const loadData = async () => {
@@ -108,13 +110,13 @@ const confirmPath = () => {
     poolForm.value.mountPath = browsingPath.value
     pathDialogVisible.value = false
   } else {
-    ElMessage.warning('请选择一个目录')
+    ElMessage.warning(t('storage.pathRequired'))
   }
 }
 
 const handleCreate = async () => {
-  if (!poolForm.value.name.trim()) { ElMessage.warning('请输入存储池名称'); return }
-  if (!poolForm.value.mountPath.trim()) { ElMessage.warning('请选择存储路径'); return }
+  if (!poolForm.value.name.trim()) { ElMessage.warning(t('storage.nameRequired')); return }
+  if (!poolForm.value.mountPath.trim()) { ElMessage.warning(t('storage.pathRequired')); return }
   creating.value = true
   try {
     const maxCapacityBytes = poolForm.value.maxCapacityGB > 0 
@@ -128,11 +130,11 @@ const handleCreate = async () => {
       maxCapacityBytes
     }) as any
     if (result.success) {
-      ElMessage.success('创建成功')
+      ElMessage.success(t('storage.createSuccess'))
       createDialogVisible.value = false
       await loadData()
-    } else { ElMessage.error(result.message || '创建失败') }
-  } catch (e: any) { ElMessage.error(e.message || '创建失败') }
+    } else { ElMessage.error(result.message || t('common.failed')) }
+  } catch (e: any) { ElMessage.error(e.message || t('common.failed')) }
   finally { creating.value = false }
 }
 
@@ -145,7 +147,7 @@ const openEditDialog = (pool: StoragePool) => {
 
 const handleUpdate = async () => {
   if (!editingPool.value) return
-  if (!poolForm.value.name.trim()) { ElMessage.warning('请输入存储池名称'); return }
+  if (!poolForm.value.name.trim()) { ElMessage.warning(t('storage.nameRequired')); return }
   updating.value = true
   try {
     const maxCapacityBytes = poolForm.value.maxCapacityGB > 0 
@@ -157,11 +159,11 @@ const handleUpdate = async () => {
       maxCapacityBytes
     }) as any
     if (result.success) {
-      ElMessage.success('更新成功')
+      ElMessage.success(t('storage.updateSuccess'))
       editDialogVisible.value = false
       await loadData()
-    } else { ElMessage.error(result.message || '更新失败') }
-  } catch (e: any) { ElMessage.error(e.message || '更新失败') }
+    } else { ElMessage.error(result.message || t('common.failed')) }
+  } catch (e: any) { ElMessage.error(e.message || t('common.failed')) }
   finally { updating.value = false }
 }
 
@@ -169,20 +171,20 @@ const handleSetDefault = async (pool: StoragePool) => {
   try {
     const result = await storageApi.setDefault(pool.id) as any
     if (result.success) {
-      ElMessage.success(`已将 "${pool.name}" 设为默认`)
+      ElMessage.success(t('common.success'))
       await loadData()
-    } else { ElMessage.error(result.message || '设置失败') }
-  } catch (e: any) { ElMessage.error(e.message || '设置失败') }
+    } else { ElMessage.error(result.message || t('common.failed')) }
+  } catch (e: any) { ElMessage.error(e.message || t('common.failed')) }
 }
 
 const handleDelete = async (pool: StoragePool) => {
-  if (pool.isDefault) { ElMessage.warning('默认存储池不能删除'); return }
+  if (pool.isDefault) { ElMessage.warning(t('storage.cannotDeleteDefault')); return }
   try {
-    await ElMessageBox.confirm(`确定删除存储池 "${pool.name}"？\n删除后该存储池下的文件将无法访问。`, '确认删除', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+    await ElMessageBox.confirm(t('storage.deletePoolConfirm').replace('{name}', pool.name), t('common.confirm'), { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') })
     const result = await storageApi.deletePool(pool.id) as any
-    if (result.success) { ElMessage.success('删除成功'); await loadData() }
-    else { ElMessage.error(result.message || '删除失败') }
-  } catch (e: any) { if (e !== 'cancel') ElMessage.error(e.message || '删除失败') }
+    if (result.success) { ElMessage.success(t('storage.deleteSuccess')); await loadData() }
+    else { ElMessage.error(result.message || t('common.failed')) }
+  } catch (e: any) { if (e !== 'cancel') ElMessage.error(e.message || t('common.failed')) }
 }
 
 onMounted(() => loadData())
@@ -192,12 +194,12 @@ onMounted(() => loadData())
   <div class="storage-page">
     <div class="page-header">
       <div class="header-left">
-        <h1>存储管理</h1>
-        <p>管理系统存储池和存储空间</p>
+        <h1>{{ t('storage.title') }}</h1>
+        <p>{{ t('storage.subtitle') }}</p>
       </div>
       <div class="header-actions">
-        <el-button :icon="Refresh" @click="loadData" :loading="loading">刷新</el-button>
-        <el-button type="primary" :icon="Plus" @click="openCreateDialog">新建存储池</el-button>
+        <el-button :icon="Refresh" @click="loadData" :loading="loading">{{ t('common.refresh') }}</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreateDialog">{{ t('storage.createPool') }}</el-button>
       </div>
     </div>
 
@@ -206,8 +208,8 @@ onMounted(() => loadData())
         <div class="main-header">
           <div class="main-icon"><el-icon :size="28"><Box /></el-icon></div>
           <div class="main-title">
-            <h3>存储空间</h3>
-            <p>系统总存储使用情况</p>
+            <h3>{{ t('storage.overview') }}</h3>
+            <p>{{ t('storage.subtitle') }}</p>
           </div>
           <div class="main-percentage" :style="{ color: getUsageColor(overview?.usagePercentage || 0) }">
             {{ (overview?.usagePercentage || 0).toFixed(1) }}%
@@ -219,27 +221,27 @@ onMounted(() => loadData())
           </div>
         </div>
         <div class="main-stats">
-          <div class="stat"><span class="label">已使用</span><span class="value">{{ formatSize(overview?.usedBytes || 0) }}</span></div>
-          <div class="stat"><span class="label">可用</span><span class="value success">{{ formatSize(overview?.availableBytes || 0) }}</span></div>
-          <div class="stat"><span class="label">总容量</span><span class="value">{{ formatSize(overview?.totalBytes || 0) }}</span></div>
+          <div class="stat"><span class="label">{{ t('storage.usedSpace') }}</span><span class="value">{{ formatSize(overview?.usedBytes || 0) }}</span></div>
+          <div class="stat"><span class="label">{{ t('storage.availableSpace') }}</span><span class="value success">{{ formatSize(overview?.availableBytes || 0) }}</span></div>
+          <div class="stat"><span class="label">{{ t('storage.totalCapacity') }}</span><span class="value">{{ formatSize(overview?.totalBytes || 0) }}</span></div>
         </div>
       </div>
 
       <div class="overview-card">
         <div class="card-icon pools"><el-icon :size="24"><FolderOpened /></el-icon></div>
-        <div class="card-info"><div class="card-value">{{ overview?.poolCount || 0 }}</div><div class="card-label">存储池</div></div>
+        <div class="card-info"><div class="card-value">{{ overview?.poolCount || 0 }}</div><div class="card-label">{{ t('storage.pools') }}</div></div>
       </div>
 
       <div class="overview-card">
         <div class="card-icon" :style="{ background: healthStatus.color + '20', color: healthStatus.color }">
           <el-icon :size="24"><InfoFilled /></el-icon>
         </div>
-        <div class="card-info"><div class="card-value" :style="{ color: healthStatus.color }">{{ healthStatus.text }}</div><div class="card-label">系统状态</div></div>
+        <div class="card-info"><div class="card-value" :style="{ color: healthStatus.color }">{{ healthStatus.text }}</div><div class="card-label">{{ t('storage.systemStatus') }}</div></div>
       </div>
     </div>
 
     <div class="pools-section">
-      <div class="section-header"><h2>存储池</h2><span class="count">{{ pools.length }} 个</span></div>
+      <div class="section-header"><h2>{{ t('storage.pools') }}</h2><span class="count">{{ pools.length }} {{ t('dashboard.pools') }}</span></div>
       
       <div class="pools-list" v-loading="loading">
         <div v-for="pool in pools" :key="pool.id" class="pool-item" :class="{ 'is-default': pool.isDefault }">
@@ -248,7 +250,7 @@ onMounted(() => loadData())
             <div class="pool-info">
               <div class="pool-name">
                 {{ pool.name }}
-                <el-tag v-if="pool.isDefault" type="primary" size="small" effect="light">默认</el-tag>
+                <el-tag v-if="pool.isDefault" type="primary" size="small" effect="light">{{ t('storage.default') }}</el-tag>
                 <el-tag :type="getStatusInfo(pool.status).type" size="small">{{ getStatusInfo(pool.status).text }}</el-tag>
               </div>
               <div class="pool-path">{{ pool.mountPath }}</div>
@@ -267,19 +269,19 @@ onMounted(() => loadData())
               </div>
               <div class="capacity-limit" v-if="pool.maxCapacityBytes">
                 <el-icon :size="12"><Warning /></el-icon>
-                <span>容量限制: {{ formatSize(pool.maxCapacityBytes) }}</span>
+                <span>{{ t('storage.capacityLimit') }}: {{ formatSize(pool.maxCapacityBytes) }}</span>
               </div>
             </div>
           </div>
 
           <div class="pool-actions">
-            <el-tooltip content="编辑" placement="top">
+            <el-tooltip :content="t('common.edit')" placement="top">
               <el-button text circle @click="openEditDialog(pool)"><el-icon><Edit /></el-icon></el-button>
             </el-tooltip>
-            <el-tooltip v-if="!pool.isDefault" content="设为默认" placement="top">
+            <el-tooltip v-if="!pool.isDefault" :content="t('storage.setDefault')" placement="top">
               <el-button text circle @click="handleSetDefault(pool)"><el-icon><Check /></el-icon></el-button>
             </el-tooltip>
-            <el-tooltip v-if="!pool.isDefault" content="删除" placement="top">
+            <el-tooltip v-if="!pool.isDefault" :content="t('common.delete')" placement="top">
               <el-button text circle type="danger" @click="handleDelete(pool)"><el-icon><Delete /></el-icon></el-button>
             </el-tooltip>
           </div>
@@ -287,95 +289,95 @@ onMounted(() => loadData())
 
         <div v-if="pools.length === 0 && !loading" class="empty-state">
           <div class="empty-icon"><el-icon :size="64"><Box /></el-icon></div>
-          <h3>暂无存储池</h3>
-          <p>创建一个存储池来开始管理您的文件</p>
-          <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon>创建存储池</el-button>
+          <h3>{{ t('storage.noPools') }}</h3>
+          <p>{{ t('storage.createPoolHint') }}</p>
+          <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon>{{ t('storage.createPool') }}</el-button>
         </div>
       </div>
     </div>
 
     <!-- 新建存储池对话框 -->
-    <el-dialog v-model="createDialogVisible" title="新建存储池" width="500px" :close-on-click-modal="false">
+    <el-dialog v-model="createDialogVisible" :title="t('storage.createPool')" width="500px" :close-on-click-modal="false">
       <el-form :model="poolForm" label-position="top">
-        <el-form-item label="存储池名称" required>
-          <el-input v-model="poolForm.name" placeholder="例如: 主存储、备份存储" maxlength="50" show-word-limit />
+        <el-form-item :label="t('storage.poolName')" required>
+          <el-input v-model="poolForm.name" :placeholder="t('storage.poolNamePlaceholder')" maxlength="50" show-word-limit />
         </el-form-item>
-        <el-form-item label="存储路径" required>
+        <el-form-item :label="t('storage.mountPath')" required>
           <div class="path-input-wrapper">
-            <el-input v-model="poolForm.mountPath" placeholder="点击右侧按钮选择路径" readonly />
-            <el-button type="primary" @click="openPathDialog"><el-icon><FolderOpened /></el-icon>选择</el-button>
+            <el-input v-model="poolForm.mountPath" :placeholder="t('storage.selectPathHint')" readonly />
+            <el-button type="primary" @click="openPathDialog"><el-icon><FolderOpened /></el-icon>{{ t('storage.selectPath') }}</el-button>
           </div>
-          <div class="form-tip"><el-icon><InfoFilled /></el-icon><span>请选择一个有读写权限的目录</span></div>
+          <div class="form-tip"><el-icon><InfoFilled /></el-icon><span>{{ t('storage.selectDirHint') }}</span></div>
         </el-form-item>
-        <el-form-item label="最大容量限制">
-          <el-input-number v-model="poolForm.maxCapacityGB" :min="0" :max="102400" :step="10" placeholder="0 表示不限制" style="width: 100%" />
-          <div class="form-tip"><el-icon><InfoFilled /></el-icon><span>单位: GB，设置为 0 表示不限制（使用磁盘实际容量）</span></div>
+        <el-form-item :label="t('storage.maxCapacity')">
+          <el-input-number v-model="poolForm.maxCapacityGB" :min="0" :max="102400" :step="10" :placeholder="t('storage.noLimitHint')" style="width: 100%" />
+          <div class="form-tip"><el-icon><InfoFilled /></el-icon><span>{{ t('storage.noLimitHint') }}</span></div>
         </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="poolForm.description" type="textarea" :rows="3" placeholder="可选，描述此存储池的用途" maxlength="200" show-word-limit />
+        <el-form-item :label="t('storage.description')">
+          <el-input v-model="poolForm.description" type="textarea" :rows="3" :placeholder="t('storage.descriptionPlaceholder')" maxlength="200" show-word-limit />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleCreate" :loading="creating">创建</el-button>
+        <el-button @click="createDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleCreate" :loading="creating">{{ t('common.create') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 编辑存储池对话框 -->
-    <el-dialog v-model="editDialogVisible" title="编辑存储池" width="500px" :close-on-click-modal="false">
+    <el-dialog v-model="editDialogVisible" :title="t('storage.editPool')" width="500px" :close-on-click-modal="false">
       <el-form :model="poolForm" label-position="top">
-        <el-form-item label="存储池名称" required>
-          <el-input v-model="poolForm.name" placeholder="存储池名称" maxlength="50" show-word-limit />
+        <el-form-item :label="t('storage.poolName')" required>
+          <el-input v-model="poolForm.name" :placeholder="t('storage.poolName')" maxlength="50" show-word-limit />
         </el-form-item>
-        <el-form-item label="存储路径">
+        <el-form-item :label="t('storage.mountPath')">
           <el-input :model-value="poolForm.mountPath" disabled />
-          <div class="form-tip warning"><el-icon><Warning /></el-icon><span>存储路径创建后不可修改</span></div>
+          <div class="form-tip warning"><el-icon><Warning /></el-icon><span>{{ t('storage.pathCannotModify') }}</span></div>
         </el-form-item>
-        <el-form-item label="最大容量限制">
-          <el-input-number v-model="poolForm.maxCapacityGB" :min="0" :max="102400" :step="10" placeholder="0 表示不限制" style="width: 100%" />
-          <div class="form-tip"><el-icon><InfoFilled /></el-icon><span>单位: GB，设置为 0 表示取消限制</span></div>
+        <el-form-item :label="t('storage.maxCapacity')">
+          <el-input-number v-model="poolForm.maxCapacityGB" :min="0" :max="102400" :step="10" :placeholder="t('storage.cancelLimitHint')" style="width: 100%" />
+          <div class="form-tip"><el-icon><InfoFilled /></el-icon><span>{{ t('storage.cancelLimitHint') }}</span></div>
         </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="poolForm.description" type="textarea" :rows="3" placeholder="可选描述" maxlength="200" show-word-limit />
+        <el-form-item :label="t('storage.description')">
+          <el-input v-model="poolForm.description" type="textarea" :rows="3" :placeholder="t('storage.descriptionPlaceholder')" maxlength="200" show-word-limit />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="editDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleUpdate" :loading="updating">保存</el-button>
+        <el-button @click="editDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleUpdate" :loading="updating">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 目录选择对话框 -->
-    <el-dialog v-model="pathDialogVisible" title="选择存储路径" width="600px" :close-on-click-modal="false">
+    <el-dialog v-model="pathDialogVisible" :title="t('storage.selectPath')" width="600px" :close-on-click-modal="false">
       <div class="path-browser">
         <div class="browser-header">
-          <el-button :icon="Back" :disabled="!parentPath && !browsingPath" @click="goToParent" size="small">返回上级</el-button>
+          <el-button :icon="Back" :disabled="!parentPath && !browsingPath" @click="goToParent" size="small">{{ t('storage.goBack') }}</el-button>
           <div class="current-path">
             <el-icon><Folder /></el-icon>
-            <span>{{ browsingPath || '我的电脑' }}</span>
+            <span>{{ browsingPath || t('storage.myComputer') }}</span>
           </div>
         </div>
         <div class="browser-content" v-loading="browsingLoading">
           <div v-if="directories.length === 0 && !browsingLoading" class="empty-dir">
             <el-icon :size="48" color="#d1d5db"><Folder /></el-icon>
-            <p>此目录为空或无法访问</p>
+            <p>{{ t('storage.emptyDir') }}</p>
           </div>
           <div v-for="dir in directories" :key="dir.path" class="dir-item" @dblclick="selectDirectory(dir)">
             <el-icon :size="20" color="#f59e0b"><Folder /></el-icon>
             <span class="dir-name">{{ dir.name }}</span>
-            <el-button text size="small" @click.stop="selectDirectory(dir)">打开</el-button>
+            <el-button text size="small" @click.stop="selectDirectory(dir)">{{ t('storage.open') }}</el-button>
           </div>
         </div>
       </div>
       <template #footer>
         <div class="path-dialog-footer">
           <div class="selected-path">
-            <span class="label">已选择:</span>
-            <span class="path">{{ browsingPath || '未选择' }}</span>
+            <span class="label">{{ t('storage.selected') }}:</span>
+            <span class="path">{{ browsingPath || t('storage.notSelected') }}</span>
           </div>
           <div class="actions">
-            <el-button @click="pathDialogVisible = false">取消</el-button>
-            <el-button type="primary" @click="confirmPath" :disabled="!browsingPath">确定</el-button>
+            <el-button @click="pathDialogVisible = false">{{ t('common.cancel') }}</el-button>
+            <el-button type="primary" @click="confirmPath" :disabled="!browsingPath">{{ t('common.confirm') }}</el-button>
           </div>
         </div>
       </template>
@@ -398,7 +400,7 @@ onMounted(() => loadData())
     .main-percentage { font-size: 32px; font-weight: 700; }
   }
   .main-bar { margin-bottom: 20px;
-    .bar-track { height: 12px; background: #e5e7eb; border-radius: 6px; overflow: hidden; border: 1px solid #d1d5db;
+    .bar-track { height: 12px; background: var(--el-fill-color); border-radius: 6px; overflow: hidden; border: 1px solid var(--el-border-color-lighter);
       .bar-fill { height: 100%; border-radius: 5px; transition: width 0.3s; }
     }
   }
@@ -439,7 +441,7 @@ onMounted(() => loadData())
         .usage-text { font-size: 13px; color: var(--el-text-color-secondary); }
         .usage-percent { font-size: 14px; font-weight: 600; }
       }
-      .usage-bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; border: 1px solid #d1d5db;
+      .usage-bar { height: 8px; background: var(--el-fill-color); border-radius: 4px; overflow: hidden; border: 1px solid var(--el-border-color-lighter);
         .bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
       }
       .capacity-limit { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 11px; color: var(--el-color-warning); }

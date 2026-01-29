@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
@@ -17,8 +19,8 @@ const form = reactive({
 })
 
 const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  username: [{ required: true, message: () => t('login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: () => t('login.passwordRequired'), trigger: 'blur' }]
 }
 
 async function handleLogin() {
@@ -30,14 +32,14 @@ async function handleLogin() {
     })
     
     if (success) {
-      ElMessage.success('登录成功')
+      ElMessage.success(t('login.loginSuccess'))
       const redirect = route.query.redirect as string || '/dashboard'
       router.push(redirect)
     } else {
-      ElMessage.error('用户名或密码错误')
+      ElMessage.error(t('login.loginFailed'))
     }
   } catch {
-    ElMessage.error('登录失败，请稍后重试')
+    ElMessage.error(t('login.loginFailed'))
   } finally {
     loading.value = false
   }
@@ -52,7 +54,7 @@ async function handleLogin() {
           <Box />
         </el-icon>
         <h1>NAS System</h1>
-        <p>网络存储系统</p>
+        <p>{{ t('login.subtitle') }}</p>
       </div>
 
       <el-form
@@ -65,7 +67,7 @@ async function handleLogin() {
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
-            placeholder="用户名"
+            :placeholder="t('login.usernamePlaceholder')"
             size="large"
             :prefix-icon="User"
           />
@@ -75,7 +77,7 @@ async function handleLogin() {
           <el-input
             v-model="form.password"
             type="password"
-            placeholder="密码"
+            :placeholder="t('login.passwordPlaceholder')"
             size="large"
             :prefix-icon="Lock"
             show-password
@@ -83,7 +85,7 @@ async function handleLogin() {
         </el-form-item>
 
         <el-form-item>
-          <el-checkbox v-model="form.rememberMe">记住我</el-checkbox>
+          <el-checkbox v-model="form.rememberMe">{{ t('login.rememberMe') }}</el-checkbox>
         </el-form-item>
 
         <el-form-item>
@@ -94,13 +96,13 @@ async function handleLogin() {
             native-type="submit"
             class="login-button"
           >
-            登录
+            {{ loading ? t('login.logging') : t('login.loginBtn') }}
           </el-button>
         </el-form-item>
       </el-form>
 
       <div class="login-footer">
-        <p>默认管理员: admin / Admin@123</p>
+        <p>默认管理员: admin / admin123</p>
       </div>
     </div>
   </div>
@@ -119,9 +121,10 @@ async function handleLogin() {
 .login-card {
   width: 400px;
   padding: 40px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  background: var(--el-bg-color);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--el-border-color-lighter);
 }
 
 .login-header {

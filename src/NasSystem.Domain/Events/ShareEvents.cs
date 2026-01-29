@@ -1,6 +1,6 @@
 // =============================================================================
 // NasSystem.Domain - ShareEvents.cs
-// 共享相关领域事件
+// 文件分享相关领域事件
 // =============================================================================
 
 namespace NasSystem.Domain.Events;
@@ -8,21 +8,26 @@ namespace NasSystem.Domain.Events;
 using NasSystem.Domain.Common;
 
 /// <summary>
-/// 共享创建事件
+/// 文件分享创建事件
 /// </summary>
-public sealed record ShareCreatedEvent(Guid ShareId, string Name) : DomainEvent;
+public sealed record FileShareCreatedEvent(Guid FileShareId, Guid FileItemId, string ShareCode) : DomainEvent;
 
 /// <summary>
-/// 共享更新事件
+/// 文件分享访问事件
 /// </summary>
-public sealed record ShareUpdatedEvent(Guid ShareId, string Name) : DomainEvent;
+public sealed record FileShareAccessedEvent(Guid FileShareId, string ShareCode) : DomainEvent;
 
 /// <summary>
-/// 共享删除事件
+/// 文件分享下载事件
 /// </summary>
-public sealed record ShareDeletedEvent(Guid ShareId, string Name) : DomainEvent;
+public sealed record FileShareDownloadedEvent(Guid FileShareId, string ShareCode, int DownloadCount) : DomainEvent;
 
 /// <summary>
-/// 共享权限变更事件
+/// 文件分享禁用事件
 /// </summary>
-public sealed record SharePermissionChangedEvent(Guid ShareId, Guid? UserId, string? GroupName) : DomainEvent;
+public sealed record FileShareDisabledEvent(Guid FileShareId, string ShareCode) : DomainEvent;
+
+/// <summary>
+/// 文件分享过期事件
+/// </summary>
+public sealed record FileShareExpiredEvent(Guid FileShareId, string ShareCode) : DomainEvent;

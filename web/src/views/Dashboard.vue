@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
 import { storageApi } from '@/api/storage'
 import { fileApi } from '@/api/file'
@@ -10,6 +11,7 @@ import {
   Picture, VideoPlay, Headset, Document, FolderOpened
 } from '@element-plus/icons-vue'
 
+const { t } = useI18n()
 const userStore = useUserStore()
 
 // 存储概览
@@ -82,7 +84,7 @@ const formatUptime = (uptime: string): string => {
     const days = parseInt(parts[0])
     const time = parts[1]
     if (days > 0) {
-      return `${days}天 ${time}`
+      return `${days}${t('dashboard.days')} ${time}`
     }
     return time
   }
@@ -103,25 +105,25 @@ const getPoolStatusColor = (status: number): string => {
 // 获取存储池状态名称
 const getPoolStatusName = (status: number): string => {
   switch (status) {
-    case 1: return '健康'
-    case 2: return '降级'
-    case 3: return '危险'
-    case 4: return '重建中'
-    case 5: return '离线'
-    default: return '未知'
+    case 1: return t('storage.healthy')
+    case 2: return t('dashboard.degraded')
+    case 3: return t('dashboard.critical')
+    case 4: return t('dashboard.rebuilding')
+    case 5: return t('dashboard.offline')
+    default: return t('dashboard.unknown')
   }
 }
 
 // 获取 RAID 级别名称
 const getRaidLevelName = (level: number): string => {
   switch (level) {
-    case 0: return '无'
+    case 0: return t('common.none')
     case 1: return 'RAID 0'
     case 2: return 'RAID 1'
     case 3: return 'RAID 5'
     case 4: return 'RAID 6'
     case 5: return 'RAID 10'
-    default: return '未知'
+    default: return t('dashboard.unknown')
   }
 }
 
@@ -259,20 +261,20 @@ onUnmounted(() => {
     <!-- 头部 -->
     <div class="dashboard-header">
       <div class="welcome-section">
-        <h1>欢迎回来，{{ userStore.displayName || userStore.username }}</h1>
-        <p>NAS System 网络存储管理系统</p>
+        <h1>{{ t('dashboard.welcome') }}，{{ userStore.displayName || userStore.username }}</h1>
+        <p>NAS System {{ t('dashboard.subtitle') }}</p>
       </div>
       <div class="header-actions">
-        <span class="last-update">最后更新: {{ formattedLastUpdate }}</span>
+        <span class="last-update">{{ t('dashboard.lastUpdate') }}: {{ formattedLastUpdate }}</span>
         <el-button-group>
           <el-button :icon="Refresh" @click="handleRefresh" :loading="loading">
-            刷新
+            {{ t('common.refresh') }}
           </el-button>
           <el-button 
             :type="autoRefresh ? 'primary' : 'default'"
             @click="toggleAutoRefresh"
           >
-            {{ autoRefresh ? '自动刷新中' : '自动刷新' }}
+            {{ autoRefresh ? t('dashboard.autoRefreshing') : t('dashboard.autoRefresh') }}
           </el-button>
         </el-button-group>
       </div>
@@ -288,7 +290,7 @@ onUnmounted(() => {
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ systemStatus.status }}</div>
-              <div class="stat-label">系统状态</div>
+              <div class="stat-label">{{ t('dashboard.systemStatus') }}</div>
             </div>
           </div>
         </el-card>
@@ -301,7 +303,7 @@ onUnmounted(() => {
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ formatUptime(systemStatus.uptime) }}</div>
-              <div class="stat-label">运行时间</div>
+              <div class="stat-label">{{ t('settings.uptime') }}</div>
             </div>
           </div>
         </el-card>
@@ -314,7 +316,7 @@ onUnmounted(() => {
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ systemStatus.memoryUsageMB }} MB</div>
-              <div class="stat-label">内存使用</div>
+              <div class="stat-label">{{ t('settings.memoryUsage') }}</div>
             </div>
           </div>
         </el-card>
@@ -327,7 +329,7 @@ onUnmounted(() => {
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ systemStatus.threadCount }}</div>
-              <div class="stat-label">活动线程</div>
+              <div class="stat-label">{{ t('dashboard.activeThreads') }}</div>
             </div>
           </div>
         </el-card>
@@ -340,9 +342,9 @@ onUnmounted(() => {
         <el-card class="storage-overview-card">
           <template #header>
             <div class="card-header">
-              <span><el-icon><Box /></el-icon> 存储概览</span>
+              <span><el-icon><Box /></el-icon> {{ t('storage.overview') }}</span>
               <el-tag :type="storageOverview.usagePercentage > 90 ? 'danger' : storageOverview.usagePercentage > 70 ? 'warning' : 'success'">
-                使用率 {{ storageOverview.usagePercentage.toFixed(1) }}%
+                {{ t('storage.usagePercent') }} {{ storageOverview.usagePercentage.toFixed(1) }}%
               </el-tag>
             </div>
           </template>
@@ -363,7 +365,7 @@ onUnmounted(() => {
                 <template #default="{ percentage }">
                   <div class="chart-inner">
                     <span class="percentage">{{ percentage.toFixed(1) }}%</span>
-                    <span class="label">已使用</span>
+                    <span class="label">{{ t('storage.usedSpace') }}</span>
                   </div>
                 </template>
               </el-progress>
@@ -373,32 +375,32 @@ onUnmounted(() => {
               <div class="detail-item">
                 <div class="detail-label">
                   <span class="dot" style="background: #409EFF"></span>
-                  总容量
+                  {{ t('storage.totalCapacity') }}
                 </div>
                 <div class="detail-value">{{ formatSize(storageOverview.totalBytes) }}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">
                   <span class="dot" style="background: #F56C6C"></span>
-                  已使用
+                  {{ t('storage.usedSpace') }}
                 </div>
                 <div class="detail-value">{{ formatSize(storageOverview.usedBytes) }}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">
                   <span class="dot" style="background: #67C23A"></span>
-                  可用空间
+                  {{ t('storage.availableSpace') }}
                 </div>
                 <div class="detail-value">{{ formatSize(storageOverview.availableBytes) }}</div>
               </div>
               <el-divider />
               <div class="detail-item">
-                <div class="detail-label">存储池数量</div>
-                <div class="detail-value">{{ storageOverview.poolCount }} 个</div>
+                <div class="detail-label">{{ t('storage.poolCount') }}</div>
+                <div class="detail-value">{{ storageOverview.poolCount }} {{ t('dashboard.pools') }}</div>
               </div>
               <div class="detail-item">
-                <div class="detail-label">磁盘总数</div>
-                <div class="detail-value">{{ storageOverview.diskCount }} 块</div>
+                <div class="detail-label">{{ t('dashboard.diskCount') }}</div>
+                <div class="detail-value">{{ storageOverview.diskCount }} {{ t('dashboard.disks') }}</div>
               </div>
             </div>
           </div>
@@ -409,9 +411,9 @@ onUnmounted(() => {
         <el-card class="file-stats-card">
           <template #header>
             <div class="card-header">
-              <span><el-icon><Files /></el-icon> 文件统计</span>
+              <span><el-icon><Files /></el-icon> {{ t('dashboard.fileStats') }}</span>
               <el-tag type="info">
-                共 {{ fileStats.totalFiles + fileStats.totalFolders }} 项
+                {{ t('dashboard.total') }} {{ fileStats.totalFiles + fileStats.totalFolders }} {{ t('dashboard.items') }}
               </el-tag>
             </div>
           </template>
@@ -422,21 +424,21 @@ onUnmounted(() => {
                 <el-icon :size="24" color="#409EFF"><FolderOpened /></el-icon>
                 <div class="summary-info">
                   <span class="count">{{ fileStats.totalFolders }}</span>
-                  <span class="label">文件夹</span>
+                  <span class="label">{{ t('files.folder') }}</span>
                 </div>
               </div>
               <div class="summary-item">
                 <el-icon :size="24" color="#67C23A"><Document /></el-icon>
                 <div class="summary-info">
                   <span class="count">{{ fileStats.totalFiles }}</span>
-                  <span class="label">文件</span>
+                  <span class="label">{{ t('files.file') }}</span>
                 </div>
               </div>
               <div class="summary-item">
                 <el-icon :size="24" color="#E6A23C"><Timer /></el-icon>
                 <div class="summary-info">
                   <span class="count">{{ fileStats.recentFilesCount }}</span>
-                  <span class="label">近7天新增</span>
+                  <span class="label">{{ t('dashboard.recentAdded') }}</span>
                 </div>
               </div>
             </div>
@@ -449,7 +451,7 @@ onUnmounted(() => {
                   <el-icon><Picture /></el-icon>
                 </div>
                 <div class="type-info">
-                  <span class="type-name">图片</span>
+                  <span class="type-name">{{ t('files.image') }}</span>
                   <span class="type-count">{{ fileStats.imageCount }}</span>
                 </div>
               </div>
@@ -458,7 +460,7 @@ onUnmounted(() => {
                   <el-icon><VideoPlay /></el-icon>
                 </div>
                 <div class="type-info">
-                  <span class="type-name">视频</span>
+                  <span class="type-name">{{ t('files.video') }}</span>
                   <span class="type-count">{{ fileStats.videoCount }}</span>
                 </div>
               </div>
@@ -467,7 +469,7 @@ onUnmounted(() => {
                   <el-icon><Headset /></el-icon>
                 </div>
                 <div class="type-info">
-                  <span class="type-name">音频</span>
+                  <span class="type-name">{{ t('files.audio') }}</span>
                   <span class="type-count">{{ fileStats.audioCount }}</span>
                 </div>
               </div>
@@ -476,7 +478,7 @@ onUnmounted(() => {
                   <el-icon><Document /></el-icon>
                 </div>
                 <div class="type-info">
-                  <span class="type-name">文档</span>
+                  <span class="type-name">{{ t('files.document') }}</span>
                   <span class="type-count">{{ fileStats.documentCount }}</span>
                 </div>
               </div>
@@ -485,14 +487,14 @@ onUnmounted(() => {
                   <el-icon><Files /></el-icon>
                 </div>
                 <div class="type-info">
-                  <span class="type-name">其他</span>
+                  <span class="type-name">{{ t('files.other') }}</span>
                   <span class="type-count">{{ fileStats.otherCount }}</span>
                 </div>
               </div>
             </div>
             
             <div class="total-size">
-              <span class="label">文件总大小:</span>
+              <span class="label">{{ t('dashboard.totalFileSize') }}:</span>
               <span class="value">{{ fileStats.totalSizeDisplay || formatSize(fileStats.totalSizeBytes) }}</span>
             </div>
           </div>
@@ -504,23 +506,23 @@ onUnmounted(() => {
     <el-card class="pools-card">
       <template #header>
         <div class="card-header">
-          <span><el-icon><Box /></el-icon> 存储池状态</span>
+          <span><el-icon><Box /></el-icon> {{ t('dashboard.poolStatus') }}</span>
           <router-link to="/storage">
-            <el-button type="primary" link>查看全部</el-button>
+            <el-button type="primary" link>{{ t('dashboard.viewAll') }}</el-button>
           </router-link>
         </div>
       </template>
       
       <el-table :data="storagePools" v-loading="loading" style="width: 100%">
-        <el-table-column prop="name" label="名称" min-width="120">
+        <el-table-column prop="name" :label="t('storage.poolName')" min-width="120">
           <template #default="{ row }">
             <div class="pool-name">
-              <el-tag v-if="row.isDefault" size="small" type="success">默认</el-tag>
+              <el-tag v-if="row.isDefault" size="small" type="success">{{ t('storage.default') }}</el-tag>
               <span>{{ row.name }}</span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="status" :label="t('common.status')" width="100">
           <template #default="{ row }">
             <el-tag :color="getPoolStatusColor(row.status)" effect="dark" size="small">
               {{ getPoolStatusName(row.status) }}
@@ -532,7 +534,7 @@ onUnmounted(() => {
             {{ getRaidLevelName(row.raidLevel) }}
           </template>
         </el-table-column>
-        <el-table-column label="容量" min-width="200">
+        <el-table-column :label="t('dashboard.capacity')" min-width="200">
           <template #default="{ row }">
             <div class="capacity-cell">
               <div class="capacity-text">
@@ -547,17 +549,17 @@ onUnmounted(() => {
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="usagePercentage" label="使用率" width="100">
+        <el-table-column prop="usagePercentage" :label="t('storage.usagePercent')" width="100">
           <template #default="{ row }">
             <span :style="{ color: row.usagePercentage > 90 ? '#F56C6C' : row.usagePercentage > 70 ? '#E6A23C' : '#67C23A' }">
               {{ row.usagePercentage.toFixed(1) }}%
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="mountPath" label="挂载路径" min-width="150" />
+        <el-table-column prop="mountPath" :label="t('storage.mountPath')" min-width="150" />
       </el-table>
       
-      <el-empty v-if="storagePools.length === 0 && !loading" description="暂无存储池" />
+      <el-empty v-if="storagePools.length === 0 && !loading" :description="t('storage.noPools')" />
     </el-card>
 
     <!-- 快捷操作和系统信息 -->
@@ -565,24 +567,24 @@ onUnmounted(() => {
       <el-col :xs="24" :md="12">
         <el-card class="quick-actions-card">
           <template #header>
-            <span>快捷操作</span>
+            <span>{{ t('dashboard.quickAccess') }}</span>
           </template>
           <div class="quick-actions">
             <router-link to="/files" class="action-item">
               <el-icon :size="32" color="#409EFF"><Files /></el-icon>
-              <span>文件管理</span>
+              <span>{{ t('nav.files') }}</span>
             </router-link>
             <router-link to="/shares" class="action-item">
               <el-icon :size="32" color="#67C23A"><Share /></el-icon>
-              <span>共享管理</span>
+              <span>{{ t('nav.shares') }}</span>
             </router-link>
             <router-link to="/storage" class="action-item">
               <el-icon :size="32" color="#E6A23C"><Box /></el-icon>
-              <span>存储管理</span>
+              <span>{{ t('nav.storage') }}</span>
             </router-link>
             <router-link to="/users" class="action-item" v-if="userStore.isAdmin">
               <el-icon :size="32" color="#F56C6C"><User /></el-icon>
-              <span>用户管理</span>
+              <span>{{ t('nav.users') }}</span>
             </router-link>
           </div>
         </el-card>
@@ -591,31 +593,31 @@ onUnmounted(() => {
       <el-col :xs="24" :md="12">
         <el-card class="system-info-card">
           <template #header>
-            <span><el-icon><Monitor /></el-icon> 系统信息</span>
+            <span><el-icon><Monitor /></el-icon> {{ t('settings.system') }}</span>
           </template>
           <div class="info-list">
             <div class="info-item">
-              <span class="label">系统名称</span>
+              <span class="label">{{ t('settings.systemName') }}</span>
               <span class="value">{{ systemInfo.name }}</span>
             </div>
             <div class="info-item">
-              <span class="label">版本</span>
+              <span class="label">{{ t('settings.version') }}</span>
               <span class="value">{{ systemInfo.version }}</span>
             </div>
             <div class="info-item">
-              <span class="label">主机名</span>
+              <span class="label">{{ t('settings.hostname') }}</span>
               <span class="value">{{ systemInfo.machineName }}</span>
             </div>
             <div class="info-item">
-              <span class="label">操作系统</span>
+              <span class="label">{{ t('settings.os') }}</span>
               <span class="value">{{ systemInfo.os }}</span>
             </div>
             <div class="info-item">
-              <span class="label">处理器核心</span>
-              <span class="value">{{ systemInfo.processorCount }} 核</span>
+              <span class="label">{{ t('settings.cpuCores') }}</span>
+              <span class="value">{{ systemInfo.processorCount }} {{ t('dashboard.cores') }}</span>
             </div>
             <div class="info-item">
-              <span class="label">.NET 版本</span>
+              <span class="label">{{ t('settings.dotnetVersion') }}</span>
               <span class="value">{{ systemInfo.dotNetVersion }}</span>
             </div>
           </div>
@@ -670,9 +672,14 @@ onUnmounted(() => {
 
 .stat-card {
   margin-bottom: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  
+  &:hover {
+    transform: translateY(-2px);
+  }
   
   :deep(.el-card__body) {
-    padding: 16px;
+    padding: 20px;
   }
   
   .stat-content {
@@ -684,11 +691,12 @@ onUnmounted(() => {
   .stat-icon {
     width: 56px;
     height: 56px;
-    border-radius: 12px;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
   
   .stat-info {
@@ -696,18 +704,19 @@ onUnmounted(() => {
     min-width: 0;
     
     .stat-value {
-      font-size: 20px;
-      font-weight: 600;
+      font-size: 22px;
+      font-weight: 700;
       color: var(--el-text-color-primary);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      letter-spacing: -0.5px;
     }
     
     .stat-label {
       font-size: 13px;
       color: var(--el-text-color-secondary);
-      margin-top: 2px;
+      margin-top: 4px;
     }
   }
 }
@@ -965,21 +974,25 @@ onUnmounted(() => {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
-      padding: 20px 16px;
-      border-radius: 8px;
+      gap: 12px;
+      padding: 24px 16px;
+      border-radius: 12px;
       background: var(--el-fill-color-light);
       text-decoration: none;
       color: var(--el-text-color-primary);
-      transition: all 0.3s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid transparent;
       
       &:hover {
-        background: var(--el-color-primary-light-9);
-        transform: translateY(-2px);
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+        border-color: rgba(99, 102, 241, 0.3);
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(99, 102, 241, 0.15);
       }
       
       span {
         font-size: 13px;
+        font-weight: 500;
       }
     }
   }

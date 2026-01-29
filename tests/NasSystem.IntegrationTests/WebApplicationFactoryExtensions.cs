@@ -72,8 +72,9 @@ public class NasSystemWebApplicationFactory : WebApplicationFactory<Program>
         var db = scope.ServiceProvider.GetRequiredService<NasDbContext>();
         
         // 清空所有表数据
-        db.SharePermissions.RemoveRange(db.SharePermissions);
-        db.Shares.RemoveRange(db.Shares);
+        db.FileShares.RemoveRange(db.FileShares);
+        db.FilePermissions.RemoveRange(db.FilePermissions);
+        db.FileVersions.RemoveRange(db.FileVersions);
         db.FileItems.RemoveRange(db.FileItems);
         db.StoragePools.RemoveRange(db.StoragePools);
         db.Users.RemoveRange(db.Users);

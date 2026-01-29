@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { 
   Refresh, Delete, Link, CopyDocument, Edit, View, 
   Document, Folder, Picture, VideoPlay, Headset,
@@ -9,6 +10,7 @@ import {
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fileShareApi, ShareAccessType, type FileShareDto, type UpdateFileShareRequest } from '@/api/fileShare'
 
+const { t } = useI18n()
 const loading = ref(false)
 const shares = ref<FileShareDto[]>([])
 const editDialogVisible = ref(false)
@@ -23,13 +25,17 @@ const loadData = async () => {
   try {
     const result = await fileShareApi.getMyShares()
     if (result.data) shares.value = result.data
-  } catch { ElMessage.error('加载失败') }
+  } catch { ElMessage.error(t('common.failed')) }
   finally { loading.value = false }
 }
 
 const getAccessTypeText = (type: ShareAccessType) => {
-  const map: Record<number, string> = { 0: '公开', 1: '密码保护', 2: '内部' }
-  return map[type] || '未知'
+  const map: Record<number, string> = { 
+    0: t('shares.public'), 
+    1: t('shares.hasPassword'), 
+    2: t('shares.private') 
+  }
+  return map[type] || t('dashboard.unknown')
 }
 
 const getAccessTypeInfo = (type: ShareAccessType) => {
@@ -120,13 +126,13 @@ const getFileIconStyle = (share: FileShareDto) => {
   return { bg: 'linear-gradient(135deg, #6b7280, #9ca3af)', color: '#fff' }
 }
 
-const formatDate = (date: string) => new Date(date).toLocaleDateString('zh-CN')
+const formatDate = (date: string) => new Date(date).toLocaleDateString()
 
 const copyLink = async (share: FileShareDto) => {
   try {
     await navigator.clipboard.writeText(share.shareUrl)
-    ElMessage.success('链接已复制')
-  } catch { ElMessage.error('复制失败') }
+    ElMessage.success(t('shares.linkCopied'))
+  } catch { ElMessage.error(t('common.failed')) }
 }
 
 const openEditDialog = (share: FileShareDto) => {
@@ -162,25 +168,25 @@ const handleSaveEdit = async () => {
       request.maxDownloads = parseInt(editMaxDownloadsOption.value)
     }
     await fileShareApi.update(editTarget.value.id, request)
-    ElMessage.success('更新成功')
+    ElMessage.success(t('common.success'))
     editDialogVisible.value = false
     await loadData()
-  } catch (e: any) { ElMessage.error(e.message || '更新失败') }
+  } catch (e: any) { ElMessage.error(e.message || t('common.failed')) }
 }
 
 const handleToggle = async (share: FileShareDto) => {
   try {
     await fileShareApi.update(share.id, { isEnabled: !share.isEnabled })
     share.isEnabled = !share.isEnabled
-    ElMessage.success(share.isEnabled ? '已启用' : '已禁用')
-  } catch { ElMessage.error('操作失败') }
+    ElMessage.success(share.isEnabled ? t('common.enabled') : t('common.disabled'))
+  } catch { ElMessage.error(t('common.failed')) }
 }
 
 const handleDelete = async (share: FileShareDto) => {
   try {
-    await ElMessageBox.confirm(`确定删除 "${share.fileName}" 的分享？`, '确认删除', { type: 'warning' })
+    await ElMessageBox.confirm(t('shares.deleteConfirm'), t('common.confirm'), { type: 'warning' })
     await fileShareApi.delete(share.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('shares.deleteSuccess'))
     await loadData()
   } catch {}
 }
@@ -201,28 +207,28 @@ onMounted(() => loadData())
   <div class="shares-page">
     <div class="page-header">
       <div class="header-left">
-        <h1>我的分享</h1>
-        <p>管理您创建的所有文件分享链接</p>
+        <h1>{{ t('shares.title') }}</h1>
+        <p>{{ t('shares.subtitle') }}</p>
       </div>
-      <el-button :icon="Refresh" @click="loadData" :loading="loading">刷新</el-button>
+      <el-button :icon="Refresh" @click="loadData" :loading="loading">{{ t('common.refresh') }}</el-button>
     </div>
 
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-icon total"><el-icon :size="24"><Share /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">总分享</div></div>
+        <div class="stat-info"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">{{ t('shares.totalShares') }}</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon active"><el-icon :size="24"><Link /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ stats.active }}</div><div class="stat-label">有效</div></div>
+        <div class="stat-info"><div class="stat-value">{{ stats.active }}</div><div class="stat-label">{{ t('shares.active') }}</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon expired"><el-icon :size="24"><Clock /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ stats.expired }}</div><div class="stat-label">已过期</div></div>
+        <div class="stat-info"><div class="stat-value">{{ stats.expired }}</div><div class="stat-label">{{ t('shares.expired') }}</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon downloads"><el-icon :size="24"><Download /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ stats.downloads }}</div><div class="stat-label">下载次数</div></div>
+        <div class="stat-info"><div class="stat-value">{{ stats.downloads }}</div><div class="stat-label">{{ t('shares.downloadCount') }}</div></div>
       </div>
     </div>
 
@@ -240,10 +246,10 @@ onMounted(() => loadData())
             <el-button text circle><el-icon><MoreFilled /></el-icon></el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="previewShare(share)"><el-icon><View /></el-icon>预览</el-dropdown-item>
-                <el-dropdown-item @click="copyLink(share)"><el-icon><CopyDocument /></el-icon>复制链接</el-dropdown-item>
-                <el-dropdown-item @click="openEditDialog(share)"><el-icon><Edit /></el-icon>编辑</el-dropdown-item>
-                <el-dropdown-item divided @click="handleDelete(share)"><el-icon color="#ef4444"><Delete /></el-icon><span style="color:#ef4444">删除</span></el-dropdown-item>
+                <el-dropdown-item @click="previewShare(share)"><el-icon><View /></el-icon>{{ t('shares.preview') }}</el-dropdown-item>
+                <el-dropdown-item @click="copyLink(share)"><el-icon><CopyDocument /></el-icon>{{ t('shares.copyLink') }}</el-dropdown-item>
+                <el-dropdown-item @click="openEditDialog(share)"><el-icon><Edit /></el-icon>{{ t('common.edit') }}</el-dropdown-item>
+                <el-dropdown-item divided @click="handleDelete(share)"><el-icon color="#ef4444"><Delete /></el-icon><span style="color:#ef4444">{{ t('common.delete') }}</span></el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -255,16 +261,16 @@ onMounted(() => loadData())
               <el-icon :size="14"><component :is="getAccessTypeInfo(share.accessType).icon" /></el-icon>
               {{ getAccessTypeText(share.accessType) }}
             </div>
-            <div v-if="share.isFolder" class="badge folder">文件夹</div>
-            <div v-if="share.isExpired" class="badge expired">已过期</div>
-            <div v-else-if="share.isDownloadLimitReached" class="badge limit">已达限制</div>
-            <div v-else-if="!share.isEnabled" class="badge disabled">已禁用</div>
+            <div v-if="share.isFolder" class="badge folder">{{ t('files.folder') }}</div>
+            <div v-if="share.isExpired" class="badge expired">{{ t('shares.expired') }}</div>
+            <div v-else-if="share.isDownloadLimitReached" class="badge limit">{{ t('shares.limitReached') }}</div>
+            <div v-else-if="!share.isEnabled" class="badge disabled">{{ t('common.disabled') }}</div>
           </div>
 
           <div class="share-stats">
             <div class="stat-item">
               <el-icon><Download /></el-icon>
-              <span>{{ share.downloadCount }}{{ share.maxDownloads ? '/' + share.maxDownloads : '' }} 次</span>
+              <span>{{ share.downloadCount }}{{ share.maxDownloads ? '/' + share.maxDownloads : '' }} {{ t('shares.times') }}</span>
             </div>
             <div class="stat-item" v-if="share.expiresAt">
               <el-icon><Clock /></el-icon>
@@ -272,7 +278,7 @@ onMounted(() => loadData())
             </div>
             <div class="stat-item" v-else>
               <el-icon><Clock /></el-icon>
-              <span>永久有效</span>
+              <span>{{ t('shares.neverExpire') }}</span>
             </div>
           </div>
         </div>
@@ -289,46 +295,46 @@ onMounted(() => loadData())
 
       <div v-if="shares.length === 0 && !loading" class="empty-state">
         <el-icon :size="64" color="#d1d5db"><Share /></el-icon>
-        <h3>暂无分享</h3>
-        <p>在文件管理页面右键文件可创建分享</p>
+        <h3>{{ t('shares.noShares') }}</h3>
+        <p>{{ t('shares.noSharesHint') }}</p>
       </div>
     </div>
 
-    <el-dialog v-model="editDialogVisible" title="编辑分享" width="480px">
+    <el-dialog v-model="editDialogVisible" :title="t('shares.editShare')" width="480px">
       <el-form v-if="editTarget" label-position="top">
-        <el-form-item label="访问方式">
+        <el-form-item :label="t('shares.accessType')">
           <el-radio-group v-model="editForm.accessType">
-            <el-radio :value="0">公开访问</el-radio>
-            <el-radio :value="1">密码保护</el-radio>
-            <el-radio :value="2">仅内部用户</el-radio>
+            <el-radio :value="0">{{ t('shares.public') }}</el-radio>
+            <el-radio :value="1">{{ t('shares.hasPassword') }}</el-radio>
+            <el-radio :value="2">{{ t('shares.internalOnly') }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="新密码" v-if="editForm.accessType === 1">
-          <el-input v-model="editPassword" placeholder="留空保持原密码" show-password />
+        <el-form-item :label="t('shares.newPassword')" v-if="editForm.accessType === 1">
+          <el-input v-model="editPassword" :placeholder="t('shares.keepPassword')" show-password />
         </el-form-item>
-        <el-form-item label="有效期">
+        <el-form-item :label="t('shares.expiresAt')">
           <el-radio-group v-model="editExpiresOption">
-            <el-radio value="keep">保持不变</el-radio>
-            <el-radio value="clear">永久</el-radio>
-            <el-radio value="7d">7天</el-radio>
-            <el-radio value="30d">30天</el-radio>
+            <el-radio value="keep">{{ t('shares.keepCurrent') }}</el-radio>
+            <el-radio value="clear">{{ t('shares.neverExpire') }}</el-radio>
+            <el-radio value="7d">7{{ t('shares.days') }}</el-radio>
+            <el-radio value="30d">30{{ t('shares.days') }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="下载限制">
+        <el-form-item :label="t('shares.downloadLimit')">
           <el-radio-group v-model="editMaxDownloadsOption">
-            <el-radio value="keep">保持不变</el-radio>
-            <el-radio value="clear">不限</el-radio>
-            <el-radio value="10">10次</el-radio>
-            <el-radio value="100">100次</el-radio>
+            <el-radio value="keep">{{ t('shares.keepCurrent') }}</el-radio>
+            <el-radio value="clear">{{ t('common.unlimited') }}</el-radio>
+            <el-radio value="10">10{{ t('shares.times') }}</el-radio>
+            <el-radio value="100">100{{ t('shares.times') }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="状态">
-          <el-switch v-model="editForm.isEnabled" active-text="启用" inactive-text="禁用" />
+        <el-form-item :label="t('common.status')">
+          <el-switch v-model="editForm.isEnabled" :active-text="t('common.enabled')" :inactive-text="t('common.disabled')" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="editDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSaveEdit">保存</el-button>
+        <el-button @click="editDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleSaveEdit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -363,10 +369,10 @@ onMounted(() => loadData())
   .card-body { padding: 0 16px 12px;
     .share-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;
       .badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 500;
-        &.folder { background: #fef3c7; color: #d97706; }
-        &.expired { background: #fef2f2; color: #ef4444; }
-        &.limit { background: #fffbeb; color: #f59e0b; }
-        &.disabled { background: #f3f4f6; color: #6b7280; }
+        &.folder { background: rgba(217, 119, 6, 0.15); color: #d97706; }
+        &.expired { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        &.limit { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+        &.disabled { background: var(--el-fill-color); color: var(--el-text-color-secondary); }
       }
     }
     .share-stats { display: flex; gap: 16px;

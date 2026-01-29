@@ -121,51 +121,15 @@ export interface DeleteRequest {
   permanent?: boolean
 }
 
-// 共享
-export interface Share {
-  id: string
-  name: string
-  description?: string
-  path: string
-  shareType: ShareType
-  isEnabled: boolean
-  isPublic: boolean
-  isReadOnly: boolean
-  createdByUserId: string
-  createdByUserName?: string
-  storagePoolId: string
-  storagePoolName?: string
-  quotaBytes?: number
-  quotaDisplay?: string
-  smbShareName?: string
-  enableRecycleBin: boolean
-  createdAt: string
-  updatedAt?: string
-  permissions?: SharePermission[]
-}
+// 权限级别
+export type PermissionLevel = 'None' | 'Read' | 'ReadWrite' | 'FullControl'
 
-export type ShareType = 'Smb' | 'Nfs' | 'Ftp' | 'WebDav'
-
-export interface SharePermission {
-  id: string
-  shareId: string
-  userId?: string
-  userName?: string
-  groupName?: string
-  permission: PermissionLevel
-  isDeny: boolean
-}
-
-export type PermissionLevel = 'None' | 'Read' | 'Write' | 'Full'
-
-// 存储
+// 存储池（简化版）
 export interface StoragePool {
   id: string
   name: string
   description?: string
   mountPath: string
-  status: StoragePoolStatus
-  raidLevel: RaidLevel
   totalBytes: number
   usedBytes: number
   availableBytes: number
@@ -173,35 +137,14 @@ export interface StoragePool {
   totalDisplay?: string
   usedDisplay?: string
   availableDisplay?: string
+  maxCapacityBytes?: number
+  maxCapacityDisplay?: string
   isDefault: boolean
   isEnabled: boolean
-  enableDeduplication: boolean
-  enableCompression: boolean
+  isNearlyFull: boolean
   createdAt: string
-  disks?: StoragePoolDisk[]
+  updatedAt?: string
 }
-
-export type StoragePoolStatus = 'Unknown' | 'Healthy' | 'Degraded' | 'Critical' | 'Rebuilding' | 'Offline'
-export type RaidLevel = 'None' | 'Raid0' | 'Raid1' | 'Raid5' | 'Raid6' | 'Raid10'
-
-export interface StoragePoolDisk {
-  id: string
-  serialNumber: string
-  model: string
-  devicePath: string
-  sizeBytes: number
-  sizeDisplay?: string
-  diskType: DiskType
-  status: DiskStatus
-  healthPercentage: number
-  temperatureCelsius?: number
-  powerOnHours?: number
-  isHotSpare: boolean
-  lastCheckedAt?: string
-}
-
-export type DiskType = 'Unknown' | 'Hdd' | 'Ssd' | 'Nvme'
-export type DiskStatus = 'Unknown' | 'Healthy' | 'Warning' | 'Critical' | 'Failed'
 
 export interface StorageOverview {
   totalBytes: number
@@ -212,10 +155,6 @@ export interface StorageOverview {
   usedDisplay?: string
   availableDisplay?: string
   poolCount: number
-  diskCount: number
-  healthyDiskCount: number
-  warningDiskCount: number
-  criticalDiskCount: number
 }
 
 // 上传

@@ -7,7 +7,6 @@ namespace NasSystem.IntegrationTests;
 
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
 using NasSystem.Infrastructure.Data;
@@ -59,8 +58,7 @@ public class BasicIntegrationTests
 
         var pool = StoragePool.Create(
             name: "TestPool",
-            mountPath: "/mnt/test",
-            raidLevel: RaidLevel.None);
+            mountPath: "/mnt/test");
 
         // Act
         context.StoragePools.Add(pool);
@@ -104,7 +102,7 @@ public class BasicIntegrationTests
     }
 
     [Fact]
-    public async Task CanCreateAndRetrieveShare()
+    public async Task CanCreateAndRetrieveFileShare()
     {
         // Arrange
         using var context = new NasDbContext(_dbOptions);
@@ -116,22 +114,32 @@ public class BasicIntegrationTests
         context.StoragePools.Add(pool);
         await context.SaveChangesAsync();
 
-        var share = Share.Create(
-            name: "PublicShare",
-            path: "/shares/public",
-            physicalPath: "/mnt/sharepool/shares/public",
-            shareType: ShareType.Smb,
+        var file = FileItem.CreateFile(
+            name: "shared.txt",
+            path: "/shared.txt",
+            physicalPath: "/mnt/sharepool/shared.txt",
+            sizeBytes: 1024,
+            mimeType: "text/plain",
+            storagePoolId: pool.Id,
+            ownerId: user.Id);
+        context.FileItems.Add(file);
+        await context.SaveChangesAsync();
+
+        var fileShare = FileShare.Create(
+            fileItemId: file.Id,
             createdByUserId: user.Id,
-            storagePoolId: pool.Id);
+            accessType: ShareAccessType.Public,
+            permission: PermissionLevel.Read);
 
         // Act
-        context.Shares.Add(share);
+        context.FileShares.Add(fileShare);
         await context.SaveChangesAsync();
 
         // Assert
-        var retrievedShare = await context.Shares.FirstOrDefaultAsync(s => s.Name == "PublicShare");
+        var retrievedShare = await context.FileShares.FirstOrDefaultAsync(s => s.FileItemId == file.Id);
         retrievedShare.Should().NotBeNull();
-        retrievedShare!.ShareType.Should().Be(ShareType.Smb);
+        retrievedShare!.AccessType.Should().Be(ShareAccessType.Public);
+        retrievedShare.ShareCode.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -211,5 +219,51 @@ public class BasicIntegrationTests
         deletedFile.Should().NotBeNull();
         deletedFile!.IsDeleted.Should().BeTrue();
         deletedFile.DeletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task FileShareExpiration_WorksCorrectly()
+    {
+        // Arrange
+        using var context = new NasDbContext(_dbOptions);
+        await context.Database.EnsureCreatedAsync();
+
+        var user = User.Create("shareuser", "hash", "salt");
+        var pool = StoragePool.Create("Pool", "/mnt/pool");
+        context.Users.Add(user);
+        context.StoragePools.Add(pool);
+        await context.SaveChangesAsync();
+
+        var file = FileItem.CreateFile(
+            name: "expiring.txt",
+            path: "/expiring.txt",
+            physicalPath: "/mnt/pool/expiring.txt",
+            sizeBytes: 100,
+            mimeType: "text/plain",
+            storagePoolId: pool.Id,
+            ownerId: user.Id);
+        context.FileItems.Add(file);
+        await context.SaveChangesAsync();
+
+        // Create expired share
+        var expiredShare = FileShare.Create(
+            fileItemId: file.Id,
+            createdByUserId: user.Id,
+            expiresAt: DateTime.UtcNow.AddDays(-1)); // Expired yesterday
+
+        // Create valid share
+        var validShare = FileShare.Create(
+            fileItemId: file.Id,
+            createdByUserId: user.Id,
+            expiresAt: DateTime.UtcNow.AddDays(7)); // Expires in a week
+
+        context.FileShares.AddRange(expiredShare, validShare);
+        await context.SaveChangesAsync();
+
+        // Assert
+        expiredShare.IsExpired.Should().BeTrue();
+        expiredShare.IsAccessible.Should().BeFalse();
+        validShare.IsExpired.Should().BeFalse();
+        validShare.IsAccessible.Should().BeTrue();
     }
 }

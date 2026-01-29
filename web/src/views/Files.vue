@@ -1597,9 +1597,11 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-radius: 8px;
-  padding: 16px;
+  background: var(--el-bg-color);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--card-shadow, 0 2px 12px rgba(0, 0, 0, 0.06));
+  border: 1px solid var(--el-border-color-lighter);
 }
 
 .toolbar {
@@ -1622,13 +1624,15 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
   margin-bottom: 16px;
   padding: 12px 16px;
   background: var(--el-fill-color-light);
-  border-radius: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
 
   .breadcrumb-item {
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    transition: color 0.2s;
     
     &:hover {
       color: var(--el-color-primary);
@@ -1646,6 +1650,19 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
   background-color: var(--el-color-primary-light-9) !important;
 }
 
+:deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  
+  .el-table__header-wrapper th {
+    background: var(--el-fill-color-lighter) !important;
+  }
+  
+  .el-table__row:hover > td {
+    background: var(--el-fill-color-light) !important;
+  }
+}
+
 .grid-view {
   flex: 1;
   display: grid;
@@ -1660,17 +1677,19 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
     flex-direction: column;
     align-items: center;
     padding: 16px 8px;
-    border-radius: 8px;
+    border-radius: 12px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
     
     &:hover {
       background: var(--el-fill-color-light);
+      border-color: var(--el-border-color-lighter);
     }
     
     &.selected {
       background: var(--el-color-primary-light-9);
-      border: 1px solid var(--el-color-primary);
+      border-color: var(--el-color-primary);
     }
     
     .grid-item-icon {
@@ -1685,6 +1704,7 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
+      color: var(--el-text-color-primary);
     }
     
     .grid-item-size {
@@ -1734,8 +1754,9 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
       align-items: center;
       gap: 12px;
       padding: 12px;
-      border-radius: 4px;
+      border-radius: 8px;
       cursor: pointer;
+      transition: background 0.2s;
       
       &:hover {
         background: var(--el-fill-color-light);
@@ -1747,6 +1768,7 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
         
         .result-name {
           font-weight: 500;
+          color: var(--el-text-color-primary);
         }
         
         .result-meta {
@@ -1804,7 +1826,7 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
   padding: 12px;
   margin-bottom: 16px;
   background: var(--el-fill-color-light);
-  border-radius: 4px;
+  border-radius: 8px;
   font-size: 14px;
   color: var(--el-text-color-secondary);
   
@@ -1829,11 +1851,13 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
     max-width: 100%;
     max-height: 70vh;
     object-fit: contain;
+    border-radius: 8px;
   }
   
   .preview-video {
     max-width: 100%;
     max-height: 70vh;
+    border-radius: 8px;
   }
   
   .preview-audio {
@@ -1901,8 +1925,9 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
   gap: 12px;
   padding: 16px;
   background: var(--el-fill-color-light);
-  border-radius: 8px;
+  border-radius: 12px;
   margin-bottom: 20px;
+  border: 1px solid var(--el-border-color-lighter);
   
   .share-target-info {
     flex: 1;
@@ -1911,6 +1936,7 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
     .share-target-name {
       font-weight: 500;
       font-size: 15px;
+      color: var(--el-text-color-primary);
     }
     
     .share-target-path {
@@ -1931,8 +1957,9 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
   
   .share-info-list {
     background: var(--el-fill-color-light);
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 16px;
+    border: 1px solid var(--el-border-color-lighter);
     
     .share-info-item {
       display: flex;
