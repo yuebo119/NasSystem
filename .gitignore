@@ -43,3 +43,8 @@ Desktop.ini
 node_modules/
 wwwroot/
 data
+
+# AI 工具运行时目录（.ai 为嵌套独立仓，独立版本化）
+.ai/
+.cortex/
+.serena/

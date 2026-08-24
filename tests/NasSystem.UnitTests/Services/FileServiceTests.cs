@@ -395,7 +395,11 @@ public class FileServiceTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        _fileRepositoryMock.Verify(x => x.UpdateAsync(It.IsAny<FileItem>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        // ITM-N4（lessons.md II.1）：当前实现忽略 Permanent=false，恒走物理删除。
+        // 本断言锚定现状防回归；软删除链路（SoftDelete 子树标记 + 回收站读软删）
+        // 按 CONVENTIONS §3.5 落地时，此断言必须改回
+        // Verify(x => x.UpdateAsync(...), Times.Exactly(2)) 作为验收标准。
+        _fileRepositoryMock.Verify(x => x.DeleteAsync(It.IsAny<FileItem>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
@@ -533,6 +537,10 @@ public class FileServiceTests
             .Setup(x => x.GetByPathAsync("/destination", It.IsAny<CancellationToken>()))
             .ReturnsAsync(destFolder);
 
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateStoragePool(Guid.NewGuid(), "default", "C:/storage"));
+
         // Act
         var result = await _sut.MoveAsync(request, userId);
 
@@ -565,6 +573,10 @@ public class FileServiceTests
         _fileRepositoryMock
             .Setup(x => x.GetByPathAsync("/destination", It.IsAny<CancellationToken>()))
             .ReturnsAsync(destFolder);
+
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateStoragePool(Guid.NewGuid(), "default", "C:/storage"));
 
         // Act
         var result = await _sut.MoveAsync(request, userId);
@@ -734,7 +746,14 @@ public class FileServiceTests
         };
 
         _fileRepositoryMock
-            .Setup(x => x.SearchAsync("report", userId, null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.SearchAsync(
+                "report",
+                userId,
+                It.IsAny<Guid?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<bool?>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(matchingFiles);
 
         // Act
@@ -760,7 +779,14 @@ public class FileServiceTests
         };
 
         _fileRepositoryMock
-            .Setup(x => x.SearchAsync("nonexistent", userId, null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.SearchAsync(
+                "nonexistent",
+                userId,
+                It.IsAny<Guid?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<bool?>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FileItem>());
 
         // Act

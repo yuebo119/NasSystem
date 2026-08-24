@@ -367,7 +367,7 @@ public class UserServiceTests
     {
         // Arrange
         var user = User.Create("testuser", "hashedpwd", "salt123");
-        var dto = new LoginDto(Username: "testuser", Password: "password123");
+        var dto = new LoginDto { Username = "testuser", Password = "password123" };
 
         _userRepositoryMock
             .Setup(x => x.GetByUsernameAsync("testuser", It.IsAny<CancellationToken>()))
@@ -403,7 +403,7 @@ public class UserServiceTests
     public async Task LoginAsync_WithInvalidUsername_ReturnsInvalidCredentialsError()
     {
         // Arrange
-        var dto = new LoginDto(Username: "nonexistent", Password: "password123");
+        var dto = new LoginDto { Username = "nonexistent", Password = "password123" };
 
         _userRepositoryMock
             .Setup(x => x.GetByUsernameAsync("nonexistent", It.IsAny<CancellationToken>()))
@@ -422,7 +422,7 @@ public class UserServiceTests
     {
         // Arrange
         var user = User.Create("testuser", "hashedpwd", "salt123");
-        var dto = new LoginDto(Username: "testuser", Password: "wrongpassword");
+        var dto = new LoginDto { Username = "testuser", Password = "wrongpassword" };
 
         _userRepositoryMock
             .Setup(x => x.GetByUsernameAsync("testuser", It.IsAny<CancellationToken>()))
@@ -446,7 +446,7 @@ public class UserServiceTests
         // Arrange
         var user = User.Create("testuser", "hashedpwd", "salt123");
         user.SetEnabled(false);
-        var dto = new LoginDto(Username: "testuser", Password: "password123");
+        var dto = new LoginDto { Username = "testuser", Password = "password123" };
 
         _userRepositoryMock
             .Setup(x => x.GetByUsernameAsync("testuser", It.IsAny<CancellationToken>()))
