@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { UserFilled, SwitchButton, Box, Moon, Sunny, Fold, Expand } from '@element-plus/icons-vue'
+import { UserFilled, SwitchButton, Box, Moon, Sunny, Fold, Expand, Odometer, Folder, Share, Setting as SettingIcon, User as UserIcon } from '@element-plus/icons-vue'
 import { getCurrentTheme, applyTheme, type ThemeType } from '@/utils/theme'
 
 const { t } = useI18n()
@@ -17,12 +17,12 @@ const isDarkMode = ref(false)
 
 // 侧边栏菜单
 const menuItems = [
-  { path: '/dashboard', titleKey: 'nav.dashboard', icon: 'Odometer' },
-  { path: '/files', titleKey: 'nav.files', icon: 'Folder' },
-  { path: '/shares', titleKey: 'nav.shares', icon: 'Share' },
-  { path: '/storage', titleKey: 'nav.storage', icon: 'Box' },
-  { path: '/users', titleKey: 'nav.users', icon: 'User', admin: true },
-  { path: '/settings', titleKey: 'nav.settings', icon: 'Setting' }
+  { path: '/dashboard', titleKey: 'nav.dashboard', icon: Odometer },
+  { path: '/files', titleKey: 'nav.files', icon: Folder },
+  { path: '/shares', titleKey: 'nav.shares', icon: Share },
+  { path: '/storage', titleKey: 'nav.storage', icon: Box },
+  { path: '/users', titleKey: 'nav.users', icon: UserIcon, admin: true },
+  { path: '/settings', titleKey: 'nav.settings', icon: SettingIcon }
 ]
 
 // 过滤管理员菜单

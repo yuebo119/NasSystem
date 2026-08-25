@@ -1,8 +1,11 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
-import 'element-plus/dist/index.css'
+// ITM-N5/G18：Element Plus 按需引入——模板组件由 unplugin resolvers 自动导入，
+// 此处仅补齐"非模板形态"（反馈 API 与指令）的样式，全量 CSS 已移除
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
+import 'element-plus/es/components/notification/style/css'
+import 'element-plus/es/components/loading/style/css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import './styles/main.scss'
 
@@ -15,15 +18,9 @@ import { initTheme } from './utils/theme'
 const app = createApp(App)
 const pinia = createPinia()
 
-// 注册 Element Plus 图标
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-  app.component(key, component)
-}
-
 app.use(pinia)
 app.use(router)
 app.use(i18n)
-app.use(ElementPlus, { size: 'default', zIndex: 3000 })
 
 // 初始化主题
 initTheme()

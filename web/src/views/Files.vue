@@ -404,21 +404,29 @@ async function handleCopy() {
 }
 
 // 下载文件
-function downloadFile(item: FileItem) {
+async function downloadFile(item: FileItem) {
   if (item.isFolder) {
     ElMessage.warning('暂不支持下载文件夹')
     return
   }
+  // ITM-N19/G19：token 走 Authorization 头，禁止拼入 URL（防泄漏到历史/日志）
   const url = fileApi.getDownloadUrl(item.path)
   const token = localStorage.getItem('token')
-  // 创建隐藏的 a 标签下载
-  const link = document.createElement('a')
-  link.href = `${url}?token=${token}`
-  link.download = item.name
-  link.target = '_blank'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  try {
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!response.ok) throw new Error(String(response.status))
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = item.name
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(objectUrl)
+  } catch {
+    ElMessage.error('下载失败')
+  }
 }
 
 // 下载选中文件
@@ -624,7 +632,9 @@ async function openPreview(item: FileItem) {
     previewDialogVisible.value = true
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(`${fileApi.getDownloadUrl(item.path)}?token=${token}`)
+      const response = await fetch(fileApi.getDownloadUrl(item.path), {
+        headers: { Authorization: `Bearer ${token}` }
+      })
       if (response.ok) {
         textContent.value = await response.text()
       } else {
@@ -635,6 +645,8 @@ async function openPreview(item: FileItem) {
     }
   } else {
     previewDialogVisible.value = true
+    // 媒体类预览经 Header 拉取 blob，避免 token 进 URL
+    void ensurePreviewUrl(item)
   }
 }
 
@@ -816,10 +828,22 @@ function handleSortChange({ prop, order }: { prop: string, order: string | null 
   }
 }
 
-// 获取预览 URL
-function getPreviewUrl(item: FileItem): string {
-  const token = localStorage.getItem('token')
-  return `${fileApi.getDownloadUrl(item.path)}?token=${token}`
+// 预览资源 objectURL 缓存（ITM-N19/G19：token 走 Header，blob 经 createObjectURL 提供给媒体标签）
+const previewUrls = ref<Record<string, string>>({})
+
+async function ensurePreviewUrl(item: FileItem): Promise<void> {
+  if (previewUrls.value[item.path]) return
+  try {
+    const token = localStorage.getItem('token')
+    const response = await fetch(fileApi.getDownloadUrl(item.path), {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!response.ok) throw new Error(String(response.status))
+    const blob = await response.blob()
+    previewUrls.value[item.path] = URL.createObjectURL(blob)
+  } catch {
+    ElMessage.error('加载失败')
+  }
 }
 
 // 剪贴板状态文本
@@ -1377,11 +1401,11 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
     >
       <div class="preview-content" v-if="previewItem">
         <!-- 图片预览 -->
-        <img v-if="isImage(previewItem)" :src="getPreviewUrl(previewItem)" class="preview-image" />
+        <img v-if="isImage(previewItem)" :src="previewUrls[previewItem.path]" class="preview-image" />
         <!-- 视频预览 -->
-        <video v-else-if="isVideo(previewItem)" :src="getPreviewUrl(previewItem)" controls class="preview-video" />
+        <video v-else-if="isVideo(previewItem)" :src="previewUrls[previewItem.path]" controls class="preview-video" />
         <!-- 音频预览 -->
-        <audio v-else-if="isAudio(previewItem)" :src="getPreviewUrl(previewItem)" controls class="preview-audio" />
+        <audio v-else-if="isAudio(previewItem)" :src="previewUrls[previewItem.path]" controls class="preview-audio" />
         <!-- 文本预览 -->
         <div v-else-if="isTextFile(previewItem)" class="preview-text">
           <pre><code>{{ textContent }}</code></pre>
