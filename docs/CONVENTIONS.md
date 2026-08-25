@@ -32,7 +32,7 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 
 ### 现状基线（2026-08-24）
 
-- Application 层裸 IO 直调 **31 处**（口径：`File.X` / `Directory.X` / `new FileStream|StreamReader|StreamWriter|ZipArchive|DriveInfo`；分布见 `FileService.cs` / `FileVersionService.cs` / `FileShareService.cs`；2026-08-25 ITM-N18 修复引入版本恢复临时文件操作 +1，正当新增）→ 收口计划见 action-items
+- Application 层裸 IO 直调 **22 处**（白名单口径：`File.Exists|Create|Delete|Copy|Move|...` 等真实 System.IO 成员名，剔除 `"File.Xxx"` 错误码字符串误报；2026-08-25 口径修正后从宽口径 31 重定标）→ 收口计划见 action-items
 - 异常 sealed 违规 0；接口 I 前缀违规 0 ✓
 
 ## §2 异步与并发
