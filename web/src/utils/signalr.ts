@@ -12,11 +12,11 @@ let startPromise: Promise<void> | null = null
 export function getHubConnection(): HubConnection {
   if (connection) return connection
 
-  const token = localStorage.getItem('token') ?? ''
   connection = new HubConnectionBuilder()
     .withUrl('/hubs/nas', {
-      // WebSocket 无法携带 Authorization 头，后端 OnMessageReceived 白名单 /hubs 从 query 取令牌
-      accessTokenFactory: () => token,
+      // WebSocket 无法携带 Authorization 头，后端 OnMessageReceived 白名单 /hubs 从 query 取令牌；
+      // 工厂每次调用时实时读取——令牌刷新后重连自动携带新值，避免闭包捕获过期常量
+      accessTokenFactory: () => localStorage.getItem('token') ?? '',
       skipNegotiation: true,
       transport: HttpTransportType.WebSockets,
     })
