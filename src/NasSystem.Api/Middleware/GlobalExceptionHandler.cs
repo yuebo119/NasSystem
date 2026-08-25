@@ -33,11 +33,13 @@ public sealed class GlobalExceptionHandler(
     {
         logger.LogError(exception, "处理请求时发生未处理的异常: {Path}", context.Request.Path);
 
-        var (statusCode, error) = exception switch
+        HttpStatusCode statusCode;
+        ApiError? error;
+        (statusCode, error) = exception switch
         {
-            ArgumentException argEx => (
+            ArgumentException => (
                 HttpStatusCode.BadRequest,
-                new ApiError("Error.Argument", argEx.Message)),
+                new ApiError("Error.Argument", "请求参数无效")),
 
             UnauthorizedAccessException => (
                 HttpStatusCode.Unauthorized,
@@ -51,13 +53,12 @@ public sealed class GlobalExceptionHandler(
                 HttpStatusCode.NotFound,
                 new ApiError("Error.NotFound", "目录未找到")),
 
-            InvalidOperationException invalidEx => (
+            InvalidOperationException => (
                 HttpStatusCode.BadRequest,
-                new ApiError("Error.InvalidOperation", invalidEx.Message)),
+                new ApiError("Error.InvalidOperation", "当前状态下无法执行此操作")),
 
-            OperationCanceledException => (
-                HttpStatusCode.BadRequest,
-                new ApiError("Error.Cancelled", "操作已取消")),
+            // ITM-N10：客户端断开导致的取消——连接已终止，不再尝试写响应（与 Pal.DDD ITM-030 同型）
+            OperationCanceledException => (HttpStatusCode.RequestTimeout, null),
 
             _ => (
                 HttpStatusCode.InternalServerError,
@@ -65,6 +66,13 @@ public sealed class GlobalExceptionHandler(
                     "Error.Internal",
                     environment.IsDevelopment() ? exception.Message : "发生内部错误，请稍后重试"))
         };
+
+        // 取消场景：客户端已断开，写响应会抛异常——直接结束管道
+        if (error is null)
+        {
+            context.Response.StatusCode = (int)statusCode;
+            return;
+        }
 
         context.Response.StatusCode = (int)statusCode;
         context.Response.ContentType = "application/json; charset=utf-8";

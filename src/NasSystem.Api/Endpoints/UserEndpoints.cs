@@ -27,6 +27,7 @@ public static class UserEndpoints
              .WithName("Login")
              .WithSummary("用户登录")
              .WithDescription("使用用户名和密码登录，成功后返回 JWT Token")
+             .RequireRateLimiting("auth")
              .AllowAnonymous();
 
         // 用户登出

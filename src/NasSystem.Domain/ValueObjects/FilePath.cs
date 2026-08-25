@@ -119,7 +119,7 @@ public sealed class FilePath : ValueObject
     /// </summary>
     public string GetRelativeTo(FilePath basePath)
     {
-        if (!Value.StartsWith(basePath.Value))
+        if (!Value.StartsWith(basePath.Value, StringComparison.Ordinal))
             throw new ArgumentException("路径不在基路径下", nameof(basePath));
         
         return Value[basePath.Value.Length..].TrimStart('/');
@@ -130,7 +130,7 @@ public sealed class FilePath : ValueObject
     /// </summary>
     public bool IsUnder(FilePath parentPath)
     {
-        return Value.StartsWith(parentPath.Value.TrimEnd('/') + "/");
+        return Value.StartsWith(parentPath.Value.TrimEnd('/') + "/", StringComparison.Ordinal);
     }
 
     /// <summary>

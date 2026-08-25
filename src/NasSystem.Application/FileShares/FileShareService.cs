@@ -6,12 +6,16 @@
 namespace NasSystem.Application.FileShares;
 
 using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Extensions.Options;
+using NasSystem.Application.Common;
 using NasSystem.Application.FileShares.Dtos;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
 using NasSystem.Domain.Services;
+using NasSystem.Domain.ValueObjects;
 using NasSystem.Shared;
 
 /// <summary>
@@ -22,10 +26,14 @@ public sealed class FileShareService(
     IFileItemRepository fileItemRepository,
     IUserRepository userRepository,
     IPasswordHasher passwordHasher,
-    IUnitOfWork unitOfWork) : IFileShareService
+    IUnitOfWork unitOfWork,
+    IOptions<JwtSettings> jwtOptions) : IFileShareService
 {
     // 访问令牌有效期（小时）
     private const int AccessTokenExpirationHours = 24;
+
+    // 访问令牌签名密钥（复用 JWT 主密钥，ITM-N1：令牌必须带签名防伪造）
+    private readonly byte[] _tokenKey = Encoding.UTF8.GetBytes(jwtOptions.Value.SecretKey);
 
     #region 管理 API
 
@@ -288,6 +296,7 @@ public sealed class FileShareService(
         string shareCode,
         string? accessToken,
         string? subPath,
+        bool isAuthenticated = false,
         CancellationToken cancellationToken = default)
     {
         var share = await fileShareRepository.GetByShareCodeAsync(shareCode, cancellationToken);
@@ -295,7 +304,7 @@ public sealed class FileShareService(
             return Result<(Stream, string, string)>.Failure(FileShareErrors.ShareCodeNotFound(shareCode));
 
         // 验证访问权限
-        var accessResult = ValidateAccess(share, accessToken);
+        var accessResult = ValidateAccess(share, accessToken, isAuthenticated);
         if (!accessResult.IsSuccess)
             return Result<(Stream, string, string)>.Failure(accessResult.Error);
 
@@ -307,12 +316,17 @@ public sealed class FileShareService(
         FileItem targetFile;
         if (fileItem.IsFolder && !string.IsNullOrEmpty(subPath))
         {
-            // 下载文件夹中的子文件
-            var targetPath = Path.Combine(fileItem.Path, subPath.TrimStart('/')).Replace('\\', '/');
-            var target = await fileItemRepository.GetByPathAsync(targetPath, cancellationToken);
+            // ITM-N16：subPath 必须规范化（解析 ..）后仍落在分享目录内，否则拒绝——
+            // FilePath.Normalize 已解析 .. 与多余斜杠，IsUnder 校验防逃逸挂载范围
+            var shareRoot = FilePath.Create(fileItem.Path);
+            var resolved = FilePath.Create(shareRoot.Combine(subPath).Value);
+            if (!resolved.IsUnder(shareRoot))
+                return Result<(Stream, string, string)>.Failure(FileShareErrors.AccessDenied());
+
+            var target = await fileItemRepository.GetByPathAsync(resolved.Value, cancellationToken);
             if (target is null)
                 return Result<(Stream, string, string)>.Failure(FileShareErrors.FileNotFound(Guid.Empty));
-            
+
             // 如果是子文件夹，也打包下载
             if (target.IsFolder)
             {
@@ -422,6 +436,7 @@ public sealed class FileShareService(
         string shareCode,
         string? accessToken,
         string? subPath,
+        bool isAuthenticated = false,
         CancellationToken cancellationToken = default)
     {
         var share = await fileShareRepository.GetByShareCodeAsync(shareCode, cancellationToken);
@@ -429,7 +444,7 @@ public sealed class FileShareService(
             return Result<ShareFolderContentDto>.Failure(FileShareErrors.ShareCodeNotFound(shareCode));
 
         // 验证访问权限
-        var accessResult = ValidateAccess(share, accessToken);
+        var accessResult = ValidateAccess(share, accessToken, isAuthenticated);
         if (!accessResult.IsSuccess)
             return Result<ShareFolderContentDto>.Failure(accessResult.Error);
 
@@ -446,8 +461,13 @@ public sealed class FileShareService(
 
         if (!string.IsNullOrEmpty(subPath))
         {
-            var targetPath = Path.Combine(fileItem.Path, subPath.TrimStart('/')).Replace('\\', '/');
-            var targetFolder = await fileItemRepository.GetByPathAsync(targetPath, cancellationToken);
+            // ITM-N16：同下载路径——规范化 + IsUnder 防穿越
+            var shareRoot = FilePath.Create(fileItem.Path);
+            var resolved = FilePath.Create(shareRoot.Combine(subPath).Value);
+            if (!resolved.IsUnder(shareRoot))
+                return Result<ShareFolderContentDto>.Failure(FileShareErrors.AccessDenied());
+
+            var targetFolder = await fileItemRepository.GetByPathAsync(resolved.Value, cancellationToken);
             if (targetFolder is null || !targetFolder.IsFolder)
                 return Result<ShareFolderContentDto>.Failure(FileShareErrors.FolderNotFound());
             targetParentId = targetFolder.Id;
@@ -480,7 +500,7 @@ public sealed class FileShareService(
 
     #region 辅助方法
 
-    private Result ValidateAccess(FileShare share, string? accessToken)
+    private Result ValidateAccess(FileShare share, string? accessToken, bool isAuthenticated = false)
     {
         if (!share.IsAccessible)
             return Result.Failure(FileShareErrors.ShareNotAccessible());
@@ -498,7 +518,10 @@ public sealed class FileShareService(
                 return Result.Success();
 
             case ShareAccessType.Internal:
-                // Internal 类型需要在 API 层验证用户登录状态
+                // ITM-N17：Internal 分享必须由已认证用户访问——公开匿名端点传 isAuthenticated=false
+                // 直接拒绝，防止"仅内部可见"分享经由公开路由全网可下
+                if (!isAuthenticated)
+                    return Result.Failure(FileShareErrors.LoginRequired());
                 return Result.Success();
 
             default:
@@ -506,28 +529,41 @@ public sealed class FileShareService(
         }
     }
 
-    private static string GenerateAccessToken(string shareCode)
+    /// <summary>
+    /// 生成带 HMAC-SHA256 签名的访问令牌（ITM-N1：Base64 明文拼接可被任意伪造，必须签名）
+    /// </summary>
+    private string GenerateAccessToken(string shareCode)
     {
         var expiration = DateTime.UtcNow.AddHours(AccessTokenExpirationHours);
-        var data = $"{shareCode}:{expiration:O}";
-        var bytes = System.Text.Encoding.UTF8.GetBytes(data);
-        return Convert.ToBase64String(bytes);
+        var payload = $"{shareCode}:{expiration:O}";
+        var payloadBytes = Encoding.UTF8.GetBytes(payload);
+        var signature = HMACSHA256.HashData(_tokenKey, payloadBytes);
+        return $"{Convert.ToBase64String(payloadBytes)}.{Convert.ToBase64String(signature)}";
     }
 
-    private static bool ValidateAccessToken(string shareCode, string token)
+    private bool ValidateAccessToken(string shareCode, string token)
     {
         try
         {
-            var bytes = Convert.FromBase64String(token);
-            var data = System.Text.Encoding.UTF8.GetString(bytes);
-            var parts = data.Split(':');
-            if (parts.Length < 2) return false;
+            var parts = token.Split('.');
+            if (parts.Length != 2) return false;
 
-            var tokenShareCode = parts[0];
-            var expirationStr = string.Join(":", parts.Skip(1));
+            var payloadBytes = Convert.FromBase64String(parts[0]);
+            var expectedSignature = HMACSHA256.HashData(_tokenKey, payloadBytes);
+            var actualSignature = Convert.FromBase64String(parts[1]);
+            if (!CryptographicOperations.FixedTimeEquals(expectedSignature, actualSignature))
+                return false;
+
+            var data = Encoding.UTF8.GetString(payloadBytes);
+            var separatorIndex = data.IndexOf(':');
+            if (separatorIndex <= 0) return false;
+
+            var tokenShareCode = data[..separatorIndex];
+            var expirationStr = data[(separatorIndex + 1)..];
 
             if (tokenShareCode != shareCode) return false;
-            if (!DateTime.TryParse(expirationStr, out var expiration)) return false;
+            if (!DateTime.TryParse(expirationStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out var expiration))
+                return false;
 
             return expiration > DateTime.UtcNow;
         }
@@ -632,4 +668,7 @@ public static class FileShareErrors
 
     public static Error PhysicalFileNotFound() =>
         new("FileShare.PhysicalFileNotFound", "文件已被删除或移动");
+
+    public static Error LoginRequired() =>
+        new("FileShare.LoginRequired", "此分享仅限登录用户访问，请先登录");
 }

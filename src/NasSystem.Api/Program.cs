@@ -37,8 +37,8 @@ try
         .AddSharedServices()
         .AddApplicationServices()
         .AddInfrastructureServices(builder.Configuration)
-        .AddJwtAuthentication(builder.Configuration)
-        .AddApiServices();
+        .AddJwtAuthentication(builder.Configuration, builder.Environment)
+        .AddApiServices(builder.Environment);
 
     var app = builder.Build();
 

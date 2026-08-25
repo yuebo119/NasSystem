@@ -16,9 +16,10 @@ public sealed class JwtSettings
     public const string SectionName = "Jwt";
 
     /// <summary>
-    /// 密钥 (最少 32 字符)
+    /// 密钥 (最少 32 字符)。只允许经环境变量/用户机密注入；
+    /// 缺失时生产环境启动即失败，Development 环境自动生成临时随机密钥（ITM-N1）
     /// </summary>
-    public string SecretKey { get; set; } = "NasSystem_Super_Secret_Key_2025_Must_Be_At_Least_32_Characters";
+    public string SecretKey { get; set; } = string.Empty;
 
     /// <summary>
     /// 发行者

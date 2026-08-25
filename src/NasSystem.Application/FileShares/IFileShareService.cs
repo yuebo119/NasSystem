@@ -94,6 +94,7 @@ public interface IFileShareService
         string shareCode,
         string? accessToken,
         string? subPath,
+        bool isAuthenticated = false,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -103,6 +104,7 @@ public interface IFileShareService
         string shareCode,
         string? accessToken,
         string? subPath,
+        bool isAuthenticated = false,
         CancellationToken cancellationToken = default);
 
     #endregion

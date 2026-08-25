@@ -5,6 +5,7 @@
 
 namespace NasSystem.Domain.Entities;
 
+using System.Security.Cryptography;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Enums;
 
@@ -104,9 +105,9 @@ public sealed class FileShare : Entity
     {
         // 使用小写字母和数字，排除易混淆字符 (0/o/l/1)
         const string chars = "abcdefghjkmnpqrstuvwxyz23456789";
-        var random = new Random();
+        // ITM-N1：分享码可被猜测遍历，必须用加密随机数而非 Random
         return new string(Enumerable.Range(0, 6)
-            .Select(_ => chars[random.Next(chars.Length)])
+            .Select(_ => chars[RandomNumberGenerator.GetInt32(chars.Length)])
             .ToArray());
     }
 

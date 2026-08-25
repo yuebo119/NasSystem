@@ -219,16 +219,23 @@ const toggleAutoRefresh = () => {
   }
 }
 
-// 启动自动刷新
+// 启动自动刷新（ITM-N19：后台标签页暂停，避免不可见页面的无效请求风暴）
+const REFRESH_INTERVAL_MS = 30000
 const startAutoRefresh = () => {
   if (refreshTimer) return
-  refreshTimer = setInterval(() => {
+  const tick = () => {
+    if (document.visibilityState === 'hidden') return
     loadStorageOverview()
     loadFileStats()
     loadSystemStatus()
     lastUpdateTime.value = new Date()
-  }, 5000) // 每5秒刷新
+  }
+  tick()
+  refreshTimer = setInterval(tick, REFRESH_INTERVAL_MS)
 }
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') startAutoRefresh()
+})
 
 // 停止自动刷新
 const stopAutoRefresh = () => {

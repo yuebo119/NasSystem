@@ -177,3 +177,15 @@ public sealed record ScanResultDto
     public TimeSpan Duration { get; init; }
     public string? Message { get; init; }
 }
+
+/// <summary>
+/// 删除结果 DTO（ITM-N14：per-item 结果收集，禁止吞异常部分成功）
+/// </summary>
+public sealed class DeleteResultDto
+{
+    /// <summary>成功删除（含软删除）的项目数</summary>
+    public int DeletedCount { get; set; }
+
+    /// <summary>失败项描述列表（物理删除失败/路径不存在等）</summary>
+    public List<string> FailedItems { get; set; } = [];
+}

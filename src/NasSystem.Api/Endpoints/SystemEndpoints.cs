@@ -135,20 +135,16 @@ public static class SystemEndpoints
 
     private static IResult UpdateSystemSettings(UpdateSettingsRequest request)
     {
-        // TODO: 实现更新系统设置逻辑
-        return Results.Ok(ApiResponse.Ok());
+        // ITM-N9：假成功比报错更危险（前端显示已保存但数据被丢弃）——诚实返回未实现
+        return Results.Json(ApiResponse<object>.Fail("System.NotImplemented", "系统设置持久化尚未实现"),
+            statusCode: StatusCodes.Status501NotImplemented);
     }
 
     private static IResult GetSystemLogs(int page = 1, int pageSize = 50, string? level = null)
     {
-        // TODO: 从日志文件或数据库读取日志
-        return Results.Ok(ApiResponse<object>.Ok(new
-        {
-            Items = Array.Empty<object>(),
-            Page = page,
-            PageSize = pageSize,
-            TotalCount = 0
-        }));
+        // ITM-N9：恒空数组是假数据——诚实返回未实现
+        return Results.Json(ApiResponse<object>.Fail("System.NotImplemented", "系统日志查询尚未实现"),
+            statusCode: StatusCodes.Status501NotImplemented);
     }
 
     private static IResult RestartSystem()

@@ -297,6 +297,10 @@ public class FileServiceTests
         };
 
         _fileRepositoryMock
+            .Setup(x => x.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItem>());
+
+        _fileRepositoryMock
             .Setup(x => x.GetByPathAsync("/documents/test.txt", It.IsAny<CancellationToken>()))
             .ReturnsAsync(fileItem);
 
@@ -329,6 +333,10 @@ public class FileServiceTests
         _fileSystemServiceMock
             .Setup(x => x.FileExists(It.IsAny<string>()))
             .Returns(true);
+        _fileRepositoryMock
+            .Setup(x => x.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItem>());
+
 
         // Act
         var result = await _sut.DeleteAsync(request, userId);
@@ -390,16 +398,20 @@ public class FileServiceTests
             .Setup(x => x.GetByPathAsync("/documents/file2.txt", It.IsAny<CancellationToken>()))
             .ReturnsAsync(file2);
 
+        _fileRepositoryMock
+            .Setup(x => x.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItem>());
+
         // Act
         var result = await _sut.DeleteAsync(request, userId);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        // ITM-N4（lessons.md II.1）：当前实现忽略 Permanent=false，恒走物理删除。
-        // 本断言锚定现状防回归；软删除链路（SoftDelete 子树标记 + 回收站读软删）
-        // 按 CONVENTIONS §3.5 落地时，此断言必须改回
-        // Verify(x => x.UpdateAsync(...), Times.Exactly(2)) 作为验收标准。
-        _fileRepositoryMock.Verify(x => x.DeleteAsync(It.IsAny<FileItem>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        result.Value.Should().NotBeNull();
+        result.Value.DeletedCount.Should().Be(2);
+        // 软删除链路已按 CONVENTIONS §3.5 落地（ITM-N7/N4 验收）：
+        // Permanent=false 走 SoftDelete + UpdateAsync，而非物理删除
+        _fileRepositoryMock.Verify(x => x.UpdateAsync(It.IsAny<FileItem>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
@@ -449,6 +461,9 @@ public class FileServiceTests
         _fileRepositoryMock
             .Setup(x => x.PathExistsAsync(It.Is<string>(p => p.Contains("new.txt")), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
+        _fileRepositoryMock
+            .Setup(x => x.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItem>());
 
         // Act
         var result = await _sut.RenameAsync(request, userId);
@@ -646,6 +661,9 @@ public class FileServiceTests
         _fileRepositoryMock
             .Setup(x => x.GetByIdAsync(fileId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(file);
+        _fileRepositoryMock
+            .Setup(x => x.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItem>());
 
         // Act
         var result = await _sut.RestoreAsync(fileId, userId);

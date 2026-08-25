@@ -251,6 +251,10 @@ public sealed class FileService : IFileService
         item.Rename(request.NewName);
         item.MoveTo(newPath, newPhysicalPath, item.ParentId);
         await _fileRepository.UpdateAsync(item, cancellationToken);
+
+        // ITM-N3：文件夹重命名必须同步重写后代路径，否则子树 Path/PhysicalPath 指向旧位置
+        await RewriteDescendantPathsAsync(item.Id, GetParentPath(path), newPath, newPhysicalPath, cancellationToken);
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result<FileItemDto>.Success(MapToDto(item));
@@ -287,7 +291,7 @@ public sealed class FileService : IFileService
             if (item is null) continue;
 
             // 检查是否移动到自身或子目录
-            if (destPath.StartsWith(normalized + "/") || destPath == normalized)
+            if (destPath.StartsWith(normalized + "/", StringComparison.Ordinal) || destPath == normalized)
                 continue;
 
             var newPath = CombinePath(destPath, item.Name);
@@ -305,7 +309,11 @@ public sealed class FileService : IFileService
                 // 更新数据库记录
                 item.MoveTo(newPath, newPhysicalPath, destParentId);
                 await _fileRepository.UpdateAsync(item, cancellationToken);
-                
+
+                // ITM-N3：移动文件夹时同步重写后代路径（ParentId 树不变，仅路径串前缀变化）
+                if (item.IsFolder)
+                    await RewriteDescendantPathsAsync(item.Id, normalized, newPath, newPhysicalPath, cancellationToken);
+
                 results.Add(MapToDto(item));
             }
             catch (Exception)
@@ -538,42 +546,76 @@ public sealed class FileService : IFileService
         }
     }
 
-    public async Task<Result> DeleteAsync(
+    public async Task<Result<DeleteResultDto>> DeleteAsync(
         DeleteItemsRequest request,
         Guid userId,
         CancellationToken cancellationToken = default)
     {
+        var result = new DeleteResultDto();
+
         foreach (var path in request.Paths)
         {
             var normalized = NormalizePath(path);
             var item = await _fileRepository.GetByPathAsync(normalized, cancellationToken);
-            if (item is null) continue;
-
-            // 始终物理删除文件/目录
-            try
+            if (item is null)
             {
-                if (item.ItemType == FileItemType.Folder)
-                {
-                    if (_fileSystemService.DirectoryExists(item.PhysicalPath))
-                        _fileSystemService.DeleteDirectory(item.PhysicalPath, true);
-                }
-                else
-                {
-                    if (_fileSystemService.FileExists(item.PhysicalPath))
-                        _fileSystemService.DeleteFile(item.PhysicalPath);
-                }
-            }
-            catch (Exception)
-            {
-                // 物理文件删除失败时仍然删除数据库记录
+                result.FailedItems.Add($"路径不存在: {normalized}");
+                continue;
             }
 
-            // 始终从数据库删除记录
-            await _fileRepository.DeleteAsync(item, cancellationToken);
+            if (request.Permanent)
+            {
+                await PermanentDeleteAsync(item, result, cancellationToken);
+            }
+            else
+            {
+                // ITM-N7/N4：默认软删除——自身 + 后代子树标记，回收站读 IsDeleted 记录
+                var descendants = await _fileRepository.GetDescendantsAsync(item.Id, cancellationToken);
+                item.SoftDelete();
+                await _fileRepository.UpdateAsync(item, cancellationToken);
+
+                foreach (var descendant in descendants)
+                {
+                    descendant.SoftDelete();
+                    await _fileRepository.UpdateAsync(descendant, cancellationToken);
+                }
+                result.DeletedCount++;
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return Result.Success();
+        return Result<DeleteResultDto>.Success(result);
+    }
+
+    /// <summary>
+    /// 永久删除：物理删除成功才删数据库记录（ITM-N14：物理失败仍删库会产生孤儿文件，
+    /// 并在下次扫描时被当作新文件重新入库）；文件夹级联清理后代记录。
+    /// </summary>
+    private async Task PermanentDeleteAsync(FileItem item, DeleteResultDto result, CancellationToken ct)
+    {
+        try
+        {
+            if (item.ItemType == FileItemType.Folder)
+            {
+                if (_fileSystemService.DirectoryExists(item.PhysicalPath))
+                    _fileSystemService.DeleteDirectory(item.PhysicalPath, true);
+            }
+            else if (_fileSystemService.FileExists(item.PhysicalPath))
+            {
+                _fileSystemService.DeleteFile(item.PhysicalPath);
+            }
+
+            var descendants = await _fileRepository.GetDescendantsAsync(item.Id, ct);
+            if (descendants.Count > 0)
+                await _fileRepository.DeleteRangeAsync(descendants, ct);
+            await _fileRepository.DeleteAsync(item, ct);
+
+            result.DeletedCount++;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            result.FailedItems.Add($"{item.Name}: 物理删除失败，已保留记录（{ex.Message}）");
+        }
     }
 
     public async Task<Result<IReadOnlyList<FileItemDto>>> GetRecycleBinAsync(
@@ -595,29 +637,48 @@ public sealed class FileService : IFileService
 
         item.Restore();
         await _fileRepository.UpdateAsync(item, cancellationToken);
+
+        // ITM-N7：恢复文件夹时后代一并恢复，否则子项仍处于软删态导致目录内容为空
+        var descendants = await _fileRepository.GetDescendantsAsync(item.Id, cancellationToken);
+        foreach (var descendant in descendants)
+        {
+            descendant.Restore();
+            await _fileRepository.UpdateAsync(descendant, cancellationToken);
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result<FileItemDto>.Success(MapToDto(item));
     }
 
-    public async Task<Result> EmptyRecycleBinAsync(
+    public async Task<Result<DeleteResultDto>> EmptyRecycleBinAsync(
         Guid userId,
         CancellationToken cancellationToken = default)
     {
+        var result = new DeleteResultDto();
         var deletedItems = await _fileRepository.GetDeletedItemsAsync(userId, cancellationToken);
 
         foreach (var item in deletedItems)
         {
-            if (_fileSystemService.FileExists(item.PhysicalPath))
-                _fileSystemService.DeleteFile(item.PhysicalPath);
-            else if (_fileSystemService.DirectoryExists(item.PhysicalPath))
-                _fileSystemService.DeleteDirectory(item.PhysicalPath, true);
+            try
+            {
+                if (_fileSystemService.FileExists(item.PhysicalPath))
+                    _fileSystemService.DeleteFile(item.PhysicalPath);
+                else if (_fileSystemService.DirectoryExists(item.PhysicalPath))
+                    _fileSystemService.DeleteDirectory(item.PhysicalPath, true);
 
-            await _fileRepository.DeleteAsync(item, cancellationToken);
+                await _fileRepository.DeleteAsync(item, cancellationToken);
+                result.DeletedCount++;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 单个锁定文件不阻塞整批清理（ITM-N14）
+                result.FailedItems.Add($"{item.Name}: 清理失败（{ex.Message}）");
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return Result.Success();
+        return Result<DeleteResultDto>.Success(result);
     }
 
     public async Task<Result<PagedResult<FileItemDto>>> SearchAsync(
@@ -695,8 +756,11 @@ public sealed class FileService : IFileService
                 Directory.CreateDirectory(storagePath);
             }
 
-            // 获取数据库中所有文件记录（不限制用户，因为扫描是全局的）
-            var dbItems = await _fileRepository.GetAllAsync(cancellationToken);
+            // 获取数据库中文件记录——ITM-N13：只取默认池的记录。
+            // 物理扫描仅覆盖默认池挂载点，若对比全库记录，其他池的记录会被误判
+            // "物理不存在"而批量删除（多存储池数据销毁）。
+            var allDbItems = await _fileRepository.GetAllAsync(cancellationToken);
+            var dbItems = allDbItems.Where(x => x.StoragePoolId == defaultPool.Id).ToList();
             var dbPathMap = dbItems.ToDictionary(x => x.Path, x => x);
 
             // 扫描物理文件系统
@@ -871,6 +935,37 @@ public sealed class FileService : IFileService
     {
         // TODO: 实现缩略图生成
         return Task.FromResult(Result<Stream>.Failure(new Error("NotImplemented", "缩略图功能暂未实现")));
+    }
+
+
+    /// <summary>
+    /// 重写后代记录的路径前缀（ITM-N3）。ParentId 树保持不变——被移动的只有祖先链顶层。
+    /// </summary>
+    /// <param name="folderId">被重命名/移动的文件夹 Id</param>
+    /// <param name="oldBasePath">后代的旧虚拟路径前缀（Rename=所在父目录；Move=源目录）</param>
+    /// <param name="newVirtualBase">后代的虚拟路径新基底</param>
+    /// <param name="newPhysicalBase">后代的物理路径新基底</param>
+    private async Task RewriteDescendantPathsAsync(
+        Guid folderId,
+        string oldBasePath,
+        string newVirtualBase,
+        string newPhysicalBase,
+        CancellationToken ct)
+    {
+        var descendants = await _fileRepository.GetDescendantsAsync(folderId, ct);
+        foreach (var d in descendants)
+        {
+            if (!d.Path.StartsWith(oldBasePath + "/", StringComparison.Ordinal))
+                continue;
+
+            var relative = d.Path[oldBasePath.Length..]; // 以 / 开头
+            var newDescendantPath = newVirtualBase + relative;
+            var newDescendantPhysical = Path.Combine(
+                newPhysicalBase,
+                relative.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+            d.MoveTo(newDescendantPath, newDescendantPhysical, d.ParentId);
+            await _fileRepository.UpdateAsync(d, ct);
+        }
     }
 
     #region 辅助方法

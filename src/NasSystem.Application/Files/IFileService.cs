@@ -82,7 +82,7 @@ public interface IFileService
     /// <summary>
     /// 删除文件/文件夹
     /// </summary>
-    Task<Result> DeleteAsync(
+    Task<Result<DeleteResultDto>> DeleteAsync(
         DeleteItemsRequest request,
         Guid userId,
         CancellationToken cancellationToken = default);
@@ -105,7 +105,7 @@ public interface IFileService
     /// <summary>
     /// 清空回收站
     /// </summary>
-    Task<Result> EmptyRecycleBinAsync(
+    Task<Result<DeleteResultDto>> EmptyRecycleBinAsync(
         Guid userId,
         CancellationToken cancellationToken = default);
 

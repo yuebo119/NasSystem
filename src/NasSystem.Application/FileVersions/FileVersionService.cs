@@ -161,13 +161,17 @@ public class FileVersionService : IFileVersionService
         var fileItem = await _fileItemRepository.GetByIdAsync(fileItemId, cancellationToken);
         if (fileItem is not null)
         {
-            // 将版本文件复制回原位置
-            var targetPath = fileItem.Path;
+            // ITM-N18：目标是物理路径而非虚拟路径（旧代码把 /xxx 当磁盘路径写到盘根）；
+            // 先拷贝到临时文件再替换，Copy 失败时原文件不受影响，消除"先删后拷"数据丢失窗口
+            var targetPath = fileItem.PhysicalPath;
+            var tempPath = targetPath + ".restore.tmp";
+            File.Copy(version.StoragePath, tempPath, overwrite: true);
+
             if (File.Exists(targetPath))
             {
                 File.Delete(targetPath);
             }
-            File.Copy(version.StoragePath, targetPath);
+            File.Move(tempPath, targetPath);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

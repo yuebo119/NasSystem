@@ -6,6 +6,9 @@
 namespace NasSystem.Api.Extensions;
 
 using Microsoft.AspNetCore.OpenApi;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using System.Threading.RateLimiting;
 using NasSystem.Api.Hubs;
 using Scalar.AspNetCore;
 
@@ -17,7 +20,9 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// 注册 API 层服务
     /// </summary>
-    public static IServiceCollection AddApiServices(this IServiceCollection services)
+    public static IServiceCollection AddApiServices(
+        this IServiceCollection services,
+        Microsoft.Extensions.Hosting.IHostEnvironment environment)
     {
         // 配置 JSON 序列化选项
         services.ConfigureHttpJsonOptions(options =>
@@ -69,12 +74,14 @@ public static class ServiceCollectionExtensions
                       .AllowCredentials(); // SignalR 需要
             });
             
-            // 生产环境策略
+            // 生产环境策略（ITM-N2）：来源白名单来自配置 Cors:AllowedOrigins，禁止 AllowAnyOrigin
             options.AddPolicy("Production", policy =>
             {
-                policy.AllowAnyOrigin()
+                // 占位：实际来源在 UseApiMiddleware 阶段由 ConfigureCorsOrigins 动态装配
+                policy.SetIsOriginAllowed(_ => false)
                       .AllowAnyMethod()
-                      .AllowAnyHeader();
+                      .AllowAnyHeader()
+                      .AllowCredentials();
             });
         });
 
@@ -89,6 +96,25 @@ public static class ServiceCollectionExtensions
         {
             options.EnableDetailedErrors = true;
             options.MaximumReceiveMessageSize = 64 * 1024; // 64 KB
+        });
+
+        // 限流（CONVENTIONS §4.5）：认证端点严格窗口，防暴力破解/用户名枚举
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddFixedWindowLimiter("auth", limiterOptions =>
+            {
+                // 集成测试并发登录不受限（仅生产启用严格窗口防暴力破解）
+                limiterOptions.PermitLimit = environment.IsProduction() ? 10 : int.MaxValue;
+                limiterOptions.Window = TimeSpan.FromMinutes(1);
+                limiterOptions.QueueLimit = 0;
+            });
+        });
+
+        // 上传大小限制（ITM-N2）：Kestrel 全局 500MB，防未限制上传耗尽磁盘
+        services.Configure<KestrelServerOptions>(options =>
+        {
+            options.Limits.MaxRequestBodySize = 500 * 1024 * 1024;
         });
 
         // 注册 Hub 通知服务
@@ -125,6 +151,9 @@ public static class ServiceCollectionExtensions
 
         // CORS
         app.UseCors();
+
+        // 限流（必须在路由解析后、端点执行前）
+        app.UseRateLimiter();
 
         // 静态文件（前端 SPA）
         app.UseDefaultFiles();

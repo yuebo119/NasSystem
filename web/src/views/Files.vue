@@ -51,6 +51,7 @@ let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // 上传相关
 const uploadFiles = ref<UploadFile[]>([])
+const batchOperationActive = ref(false)
 const uploading = ref(false)
 const uploadProgress = ref(0)
 
@@ -257,43 +258,22 @@ async function handleDelete(permanent = false) {
       { confirmButtonText: permanent ? '永久删除' : '删除', cancelButtonText: '取消', type: 'warning' }
     )
     
-    // 显示进度对话框
-    operationTitle.value = '正在删除...'
-    operationTotal.value = count
-    operationCurrent.value = 0
-    operationCancelled.value = false
-    operationDialogVisible.value = true
-    
-    let successCount = 0
-    let failCount = 0
-    
-    for (const item of items) {
-      if (operationCancelled.value) break
-      
-      operationCurrentItem.value = item.name
-      try {
-        const result = await fileApi.delete([item.path], permanent)
-        if (result.success) {
-          successCount++
-        } else {
-          failCount++
-        }
-      } catch {
-        failCount++
+    // ITM-N19：一次数组请求（后端返回 per-item 结果），替代逐项循环
+    batchOperationActive.value = true
+    try {
+      const result = await fileApi.delete(items.map(i => i.path), permanent)
+      const failed: string[] = (result.data as { failedItems?: string[] } | null)?.failedItems ?? []
+      if (failed.length === 0) {
+        ElMessage.success(`成功删除 ${items.length} 个项目`)
+      } else {
+        ElMessage.warning(`删除完成：成功 ${items.length - failed.length} 个，失败 ${failed.length} 个（${failed[0]}）`)
       }
-      operationCurrent.value++
+    } catch {
+      // 拦截器已弹错
+    } finally {
+      batchOperationActive.value = false
     }
-    
-    operationDialogVisible.value = false
-    
-    if (operationCancelled.value) {
-      ElMessage.info(`已取消，成功删除 ${successCount} 个项目`)
-    } else if (failCount === 0) {
-      ElMessage.success(`成功删除 ${successCount} 个项目`)
-    } else {
-      ElMessage.warning(`删除完成：成功 ${successCount} 个，失败 ${failCount} 个`)
-    }
-    
+
     fileStore.clearSelection()
     await fileStore.loadDirectory(fileStore.currentPath)
   } catch {
@@ -353,57 +333,35 @@ async function handlePaste() {
   const action = clipboard.value.action
   const destination = fileStore.currentPath
   
-  // 显示进度对话框
-  operationTitle.value = action === 'copy' ? '正在复制...' : '正在移动...'
-  operationTotal.value = items.length
-  operationCurrent.value = 0
-  operationCancelled.value = false
-  operationDialogVisible.value = true
-  
-  let successCount = 0
-  let failCount = 0
-  
-  for (const item of items) {
-    if (operationCancelled.value) break
-    
-    operationCurrentItem.value = item.name
-    try {
-      if (action === 'copy') {
-        const result = await fileApi.copy([item.path], destination)
-        if (result.success) {
-          successCount++
-        } else {
-          failCount++
-        }
-      } else {
-        const result = await fileApi.move([item.path], destination)
-        if (result.success) {
-          successCount++
-        } else {
-          failCount++
-        }
-      }
-    } catch {
-      failCount++
+  // ITM-N19：一次数组请求，替代逐项循环
+  batchOperationActive.value = true
+  let pasteFailed = 0
+  try {
+    const paths = items.map(i => i.path)
+    if (action === 'copy') {
+      const result = await fileApi.copy(paths, destination)
+      pasteFailed = ((result.data as { failedItems?: string[] } | null)?.failedItems ?? []).length
+    } else {
+      const result = await fileApi.move(paths, destination)
+      pasteFailed = ((result.data as { failedItems?: string[] } | null)?.failedItems ?? []).length
     }
-    operationCurrent.value++
+  } catch {
+    pasteFailed = items.length
+  } finally {
+    batchOperationActive.value = false
   }
-  
-  operationDialogVisible.value = false
-  
+
+  const okCount = items.length - pasteFailed
+  if (pasteFailed === 0) {
+    ElMessage.success(`${action === 'copy' ? '复制' : '移动'}完成（${okCount} 个项目）`)
+  } else {
+    ElMessage.warning(`${action === 'copy' ? '复制' : '移动'}完成：成功 ${okCount} 个，失败 ${pasteFailed} 个`)
+  }
+
   if (action === 'cut') {
     clipboard.value = null  // 剪切后清空剪贴板
   }
-  
-  const actionText = action === 'copy' ? '复制' : '移动'
-  if (operationCancelled.value) {
-    ElMessage.info(`已取消，成功${actionText} ${successCount} 个项目`)
-  } else if (failCount === 0) {
-    ElMessage.success(`成功${actionText} ${successCount} 个项目`)
-  } else {
-    ElMessage.warning(`${actionText}完成：成功 ${successCount} 个，失败 ${failCount} 个`)
-  }
-  
+
   await fileStore.loadDirectory(fileStore.currentPath)
 }
 
@@ -922,7 +880,10 @@ function generatePassword() {
   const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789'
   let password = ''
   for (let i = 0; i < 8; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length))
+    // ITM-N1：分享密码必须用加密随机数，Math.random 可预测
+    const randomValues = new Uint32Array(1)
+    crypto.getRandomValues(randomValues)
+    password += chars.charAt(randomValues[0] % chars.length)
   }
   shareForm.value.password = password
 }

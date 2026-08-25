@@ -83,7 +83,7 @@ const saveProfile = async () => {
     })
     
     if (response.success && response.data) {
-      userStore.setUser(response.data)
+      userStore.updateUser(response.data)
       ElMessage.success(t('settings.profileSaved'))
     } else {
       ElMessage.error(response.error?.message || t('common.failed'))
@@ -269,7 +269,7 @@ const roleDisplay = computed(() => {
                 <span class="setting-label">{{ t('settings.darkMode') }}</span>
                 <span class="setting-desc">{{ t('settings.darkModeDesc') }}</span>
               </div>
-              <el-switch v-model="isDarkMode" @change="handleThemeChange" />
+              <el-switch v-model="isDarkMode" @change="(val: string | number | boolean) => handleThemeChange(Boolean(val))" />
             </div>
             <div class="setting-item">
               <div class="setting-info">

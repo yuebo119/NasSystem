@@ -183,8 +183,10 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
         Guid parentId,
         CancellationToken cancellationToken = default)
     {
-        // 获取父路径
-        var parent = await DbSet.FindAsync([parentId], cancellationToken);
+        // 获取父路径——必须 NoTracking：调用方常已 Attach 同 Id 实体做更新，
+        // FindAsync 的 tracking 加载会触发 IdentityMap 键冲突（软删除子树场景实测）
+        var parent = await QueryNoTracking()
+            .FirstOrDefaultAsync(f => f.Id == parentId, cancellationToken);
         if (parent is null)
             return [];
 
