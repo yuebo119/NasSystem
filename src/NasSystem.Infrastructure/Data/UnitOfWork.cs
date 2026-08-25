@@ -18,7 +18,9 @@ public sealed class UnitOfWork(
     IDomainEventDispatcher? eventDispatcher = null) : IUnitOfWork
 {
     private IDbContextTransaction? _transaction;
-    private bool _disposed;
+
+    // 【生命周期论证】不自行 Dispose DbContext：容器按 Scope 统一处置；
+    // 事务随连接关闭自动回滚，无需手动清理路径
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -111,13 +113,4 @@ public sealed class UnitOfWork(
         await eventDispatcher.DispatchAsync(domainEvents, cancellationToken);
     }
 
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-
-        _transaction?.Dispose();
-        context.Dispose();
-        _disposed = true;
-    }
 }

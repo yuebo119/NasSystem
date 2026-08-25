@@ -184,7 +184,11 @@ public sealed class FilePath : ValueObject
 
     protected override IEnumerable<object?> GetEqualityComponents()
     {
-        yield return Value.ToLowerInvariant(); // 路径比较忽略大小写
+        // 【部署语义声明】大小写不敏感比较对齐 Windows NTFS 的默认行为。
+        // 若未来部署到 Linux（ext4 大小写敏感），此处需与物理文件系统的
+        // 实际比较语义重新对齐——当前物理路径始终由库内记录派生，
+        // 故不触发运行时错位，但跨平台迁移前必须重审本决策。
+        yield return Value.ToLowerInvariant();
     }
 
     public override string ToString() => Value;

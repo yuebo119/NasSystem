@@ -58,6 +58,10 @@ public static class DependencyInjection
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 
+        // 领域事件处理器注册（ITM-N29 批次：机制接通首个订阅者）
+        services.AddSingleton<NasSystem.Domain.Services.IDomainEventHandler<Domain.Events.FileDeletedEvent>,
+            Services.FileDeletedCacheCleanupHandler>();
+
         // 注册 JWT 服务
         services.AddScoped<IJwtService, JwtService>();
 
