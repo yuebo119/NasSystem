@@ -977,7 +977,26 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
   fileStore.selectItem(item)
 }
 
-// ═══ 实时刷新（ITM-N5 收尾：SignalR 目录订阅，多标签页/多用户变更自动同步）═══
+// ═══ 大目录渐进渲染（ITM-N5 前端专项：万级目录首屏只渲染 RENDER_BATCH 条，
+// 滚动到底部自动追加——保持 el-table/网格现有交互不变的低侵入方案）═══
+const RENDER_BATCH = 200
+const renderLimit = ref(RENDER_BATCH)
+const visibleFiles = computed(() => fileStore.sortedFiles.slice(0, renderLimit.value))
+const hasMoreToRender = computed(() => fileStore.sortedFiles.length > renderLimit.value)
+
+function loadMoreOnScroll(event: Event) {
+  const el = event.target as HTMLElement
+  if (!hasMoreToRender.value) return
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
+    renderLimit.value += RENDER_BATCH
+  }
+}
+
+watch(() => fileStore.currentPath, () => {
+  renderLimit.value = RENDER_BATCH
+})
+
+// ═══ 实时刷新（ITM-N5 收尾// ═══ 实时刷新（ITM-N5 收尾：SignalR 目录订阅，多标签页/多用户变更自动同步）═══
 let unsubscribe: (() => void) | null = null
 
 async function resubscribe(path: string) {
@@ -1121,7 +1140,9 @@ onUnmounted(() => void unsubscribe?.())
     <el-table
       v-if="fileStore.viewMode === 'list'"
       v-loading="fileStore.isLoading"
-      :data="fileStore.sortedFiles"
+      :data="visibleFiles"
+      height="calc(100vh - 260px)"
+      @scroll="loadMoreOnScroll"
       style="width: 100%"
       row-key="id"
       @row-click="handleRowClick"
@@ -1200,9 +1221,9 @@ onUnmounted(() => void unsubscribe?.())
     </el-table>
 
     <!-- 网格视图 -->
-    <div v-else class="grid-view" v-loading="fileStore.isLoading">
+    <div v-else class="grid-view" v-loading="fileStore.isLoading" @scroll="loadMoreOnScroll">
       <div
-        v-for="item in fileStore.sortedFiles"
+        v-for="item in visibleFiles"
         :key="item.id"
         class="grid-item"
         :class="{ selected: fileStore.selectedItems.some(i => i.id === item.id) }"

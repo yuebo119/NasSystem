@@ -85,6 +85,13 @@ public static class DependencyInjection
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
         var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<NasDbContext>>();
 
+        // 集成测试 InMemory provider：仅建模型，不走关系型初始化
+        if (!context.Database.IsRelational())
+        {
+            await context.Database.EnsureCreatedAsync();
+            return;
+        }
+
         // 确保数据库目录存在
         var connectionString = configuration.GetConnectionString("DefaultConnection") ?? "Data Source=data/nas.db";
         var match = System.Text.RegularExpressions.Regex.Match(
@@ -99,17 +106,60 @@ public static class DependencyInjection
                 Directory.CreateDirectory(directory);
         }
 
-        // 应用迁移或创建数据库
-        await context.Database.EnsureCreatedAsync();
-
-        // 执行架构迁移（添加缺失的列与索引）
-        await MigrateSchemaAsync(context, logger);
-
         // ITM-N7：SQLite 并发三件套——WAL 读写分离、busy_timeout 防 SQLITE_BUSY、NORMAL 同步级别
         await EnsureSqlitePragmasAsync(context);
 
+        // 迁移调度（ITM-N26 批次）：EF Migrations 取代手写 PRAGMA 列/索引迁移
+        await BaselineAndMigrateAsync(context, logger);
+
         // 初始化种子数据
         await SeedDataAsync(context);
+    }
+
+    /// <summary>
+    /// 存量库兼容的迁移入口：EnsureCreated 时代的旧库没有 __EFMigrationsHistory 表，
+    /// 直接 Migrate 会尝试重建全部表。检测到旧库时先打基线标记（声明现状=InitialBaseline）
+    /// 再执行后续迁移（AddBusinessUniqueIndexes 幂等补齐新增索引）。
+    /// </summary>
+    private static async Task BaselineAndMigrateAsync(NasDbContext context, Microsoft.Extensions.Logging.ILogger logger)
+    {
+        var connection = context.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            await connection.OpenAsync();
+
+        var historyTableExists = false;
+        using (var check = connection.CreateCommand())
+        {
+            check.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='__EFMigrationsHistory';";
+            historyTableExists = Convert.ToInt64(await check.ExecuteScalarAsync()) > 0;
+        }
+
+        if (!historyTableExists)
+        {
+            var usersTableExists = false;
+            using (var check2 = connection.CreateCommand())
+            {
+                check2.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='Users';";
+                usersTableExists = Convert.ToInt64(await check2.ExecuteScalarAsync()) > 0;
+            }
+
+            if (usersTableExists)
+            {
+                logger.LogInformation("检测到 EnsureCreated 时代的存量库——打基线标记后增量迁移");
+                using var createHist = connection.CreateCommand();
+                createHist.CommandText = @"CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
+                    ""MigrationId"" TEXT NOT NULL CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY,
+                    ""ProductVersion"" TEXT NOT NULL);";
+                await createHist.ExecuteNonQueryAsync();
+
+                using var mark = connection.CreateCommand();
+                mark.CommandText = "INSERT OR IGNORE INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES ('20260825080018_InitialBaseline', '10.0.2');";
+                await mark.ExecuteNonQueryAsync();
+            }
+            // 全新空库：无历史表也无业务表，Migrate 会自动建历史表并应用全部迁移
+        }
+
+        await context.Database.MigrateAsync();
     }
 
     /// <summary>
@@ -131,72 +181,6 @@ public static class DependencyInjection
             using var command = connection.CreateCommand();
             command.CommandText = pragma;
             await command.ExecuteNonQueryAsync();
-        }
-    }
-
-    /// <summary>
-    /// 迁移数据库架构（添加缺失的列）
-    /// </summary>
-    private static async Task MigrateSchemaAsync(NasDbContext context, Microsoft.Extensions.Logging.ILogger logger)
-    {
-        try
-        {
-            var connection = context.Database.GetDbConnection();
-            if (connection.State != System.Data.ConnectionState.Open)
-                await connection.OpenAsync();
-
-            // 检查 StoragePools 表是否有 MaxCapacityBytes 列
-            using var command = connection.CreateCommand();
-            command.CommandText = "PRAGMA table_info(StoragePools);";
-            
-            bool hasMaxCapacityBytes = false;
-            using (var reader = await command.ExecuteReaderAsync())
-            {
-                while (await reader.ReadAsync())
-                {
-                    var columnName = reader.GetString(1);
-                    if (columnName == "MaxCapacityBytes")
-                    {
-                        hasMaxCapacityBytes = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!hasMaxCapacityBytes)
-            {
-                using var alterCommand = connection.CreateCommand();
-                alterCommand.CommandText = "ALTER TABLE StoragePools ADD COLUMN MaxCapacityBytes INTEGER NULL;";
-                await alterCommand.ExecuteNonQueryAsync();
-            }
-
-            // ITM-N7：EnsureCreated 不更新已有库的索引——旧库用 DDL 补业务唯一性兜底
-            // （新库由 EF 配置的 HasFilter 唯一索引覆盖，IF NOT EXISTS 双向幂等）
-            var uniqueIndexes = new[]
-            {
-                "CREATE UNIQUE INDEX IF NOT EXISTS UX_FileItems_Path ON FileItems(Path) WHERE [IsDeleted] = 0;",
-                "CREATE UNIQUE INDEX IF NOT EXISTS UX_FileShares_ShareCode ON FileShares(ShareCode);",
-                "CREATE UNIQUE INDEX IF NOT EXISTS UX_Users_Username ON Users(Username);",
-                "CREATE UNIQUE INDEX IF NOT EXISTS UX_FileVersions_Item_Version ON FileVersions(FileItemId, VersionNumber);"
-            };
-            foreach (var ddl in uniqueIndexes)
-            {
-                try
-                {
-                    using var indexCommand = connection.CreateCommand();
-                    indexCommand.CommandText = ddl;
-                    await indexCommand.ExecuteNonQueryAsync();
-                }
-                catch (Exception indexEx)
-                {
-                    // 存量数据含重复值时建索引失败——记录并放行，由人工清理后重启重试
-                    logger.LogWarning(indexEx, "唯一索引创建失败（存量数据可能存在重复），DDL: {Ddl}", ddl);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "数据库架构迁移时出现警告");
         }
     }
 
