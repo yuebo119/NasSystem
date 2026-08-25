@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { 
@@ -10,6 +11,8 @@ import {
 import { publicShareApi, ShareAccessType, type PublicShareInfoDto, type ShareFolderContentDto, type ShareFileItemDto } from '@/api/fileShare'
 
 const route = useRoute()
+// ITM-M3 收尾：对外访客页接入 i18n（外部用户此前无法切换语言）
+const { t } = useI18n()
 const shareCode = computed(() => route.params.shareCode as string)
 
 // 状态
@@ -36,7 +39,7 @@ const loadShareInfo = async () => {
       }
     }
   } catch (e: any) {
-    error.value = e.message || '分享不存在或已失效'
+    error.value = e.message || t('shareAccess.notFound')
   } finally {
     loading.value = false
   }
@@ -45,7 +48,7 @@ const loadShareInfo = async () => {
 // 验证密码
 const verifyPassword = async () => {
   if (!passwordInput.value) {
-    ElMessage.warning('请输入访问密码')
+    ElMessage.warning(t('shareAccess.enterPassword'))
     return
   }
   verifying.value = true
@@ -53,13 +56,13 @@ const verifyPassword = async () => {
     const result = await publicShareApi.verifyPassword(shareCode.value, passwordInput.value)
     if (result.data?.accessToken) {
       accessToken.value = result.data.accessToken
-      ElMessage.success('验证成功')
+      ElMessage.success(t('shareAccess.verifySuccess'))
       if (shareInfo.value?.isFolder) {
         await loadFolderContent()
       }
     }
   } catch (e: any) {
-    ElMessage.error(e.message || '密码错误')
+    ElMessage.error(e.message || t('shareAccess.wrongPassword'))
   } finally {
     verifying.value = false
   }
@@ -74,7 +77,7 @@ const loadFolderContent = async (subPath?: string) => {
       currentPath.value = subPath || ''
     }
   } catch (e: any) {
-    ElMessage.error('加载文件夹内容失败')
+    ElMessage.error(t('shareAccess.loadFolderFailed'))
   }
 }
 
@@ -177,7 +180,7 @@ onMounted(() => {
         <!-- 加载中 -->
         <div v-if="loading" class="state-container loading-state">
           <div class="spinner"></div>
-          <p>正在加载分享信息...</p>
+          <p>{{ $t('shareAccess.loading') }}</p>
         </div>
 
         <!-- 错误状态 -->
@@ -185,9 +188,9 @@ onMounted(() => {
           <div class="state-icon error">
             <el-icon :size="48"><Warning /></el-icon>
           </div>
-          <h2>无法访问此分享</h2>
+          <h2>{{ $t('shareAccess.cannotAccess') }}</h2>
           <p>{{ error }}</p>
-          <el-button type="primary" plain @click="loadShareInfo">重试</el-button>
+          <el-button type="primary" plain @click="loadShareInfo">{{ $t('shareAccess.retry') }}</el-button>
         </div>
 
         <!-- 已过期 -->
@@ -195,8 +198,8 @@ onMounted(() => {
           <div class="state-icon warning">
             <el-icon :size="48"><Clock /></el-icon>
           </div>
-          <h2>分享已过期</h2>
-          <p>此分享链接已超过有效期，无法继续访问</p>
+          <h2>{{ $t('shareAccess.expiredTitle') }}</h2>
+          <p>{{ $t('shareAccess.expiredDesc') }}</p>
         </div>
 
         <!-- 下载限制已达 -->
@@ -204,8 +207,8 @@ onMounted(() => {
           <div class="state-icon warning">
             <el-icon :size="48"><View /></el-icon>
           </div>
-          <h2>下载次数已用完</h2>
-          <p>此分享链接的下载次数已达上限</p>
+          <h2>{{ $t('shareAccess.downloadLimitTitle') }}</h2>
+          <p>{{ $t('shareAccess.downloadLimitDesc') }}</p>
         </div>
 
         <!-- 需要密码 -->
@@ -221,12 +224,12 @@ onMounted(() => {
           <div class="password-section">
             <div class="lock-badge">
               <el-icon :size="20"><Lock /></el-icon>
-              <span>需要密码访问</span>
+              <span>{{ $t('shareAccess.passwordRequired') }}</span>
             </div>
             <el-input 
               v-model="passwordInput" 
               type="password" 
-              placeholder="请输入访问密码"
+              :placeholder="$t('shareAccess.passwordPlaceholder')"
               size="large"
               @keyup.enter="verifyPassword"
               show-password
@@ -239,13 +242,13 @@ onMounted(() => {
               :loading="verifying"
               class="verify-btn"
             >
-              {{ verifying ? '验证中...' : '验证并访问' }}
+              {{ verifying ? $t('shareAccess.verifying') : $t('shareAccess.verify') }}
             </el-button>
           </div>
           
           <div class="share-info" v-if="shareInfo.createdByUserName">
             <el-icon><User /></el-icon>
-            <span>{{ shareInfo.createdByUserName }} 分享</span>
+            <span>{{ $t('shareAccess.sharedBy', { name: shareInfo.createdByUserName }) }}</span>
           </div>
         </div>
 
@@ -262,11 +265,11 @@ onMounted(() => {
           <div class="login-section">
             <div class="lock-badge internal">
               <el-icon :size="20"><User /></el-icon>
-              <span>仅限内部用户</span>
+              <span>{{ $t('shareAccess.internalOnly') }}</span>
             </div>
-            <p class="login-hint">请登录系统后访问此分享</p>
+            <p class="login-hint">{{ $t('shareAccess.loginRequiredHint') }}</p>
             <el-button type="primary" size="large" @click="$router.push('/login')">
-              登录系统
+              {{ $t('shareAccess.loginSystem') }}
             </el-button>
           </div>
         </div>
@@ -279,7 +282,7 @@ onMounted(() => {
             </el-icon>
           </div>
           <h2 class="file-name">{{ shareInfo.fileName }}</h2>
-          <p class="file-size" v-if="shareInfo.sizeDisplay">文件大小: {{ shareInfo.sizeDisplay }}</p>
+          <p class="file-size" v-if="shareInfo.sizeDisplay">{{ $t('shareAccess.fileSizeLabel') }}: {{ shareInfo.sizeDisplay }}</p>
           
           <el-button 
             type="primary" 
@@ -289,12 +292,12 @@ onMounted(() => {
             class="download-btn"
           >
             <el-icon v-if="!downloading"><Download /></el-icon>
-            {{ downloading ? '准备下载...' : '立即下载' }}
+            {{ downloading ? $t('shareAccess.preparingDownload') : $t('shareAccess.downloadNow') }}
           </el-button>
           
           <div class="share-info" v-if="shareInfo.createdByUserName">
             <el-icon><User /></el-icon>
-            <span>{{ shareInfo.createdByUserName }} 分享</span>
+            <span>{{ $t('shareAccess.sharedBy', { name: shareInfo.createdByUserName }) }}</span>
           </div>
         </div>
 
@@ -306,7 +309,7 @@ onMounted(() => {
               <div class="title-text">
                 <h2>{{ shareInfo.fileName }}</h2>
                 <div class="breadcrumb" v-if="currentPath">
-                  <span class="root" @click="loadFolderContent()">根目录</span>
+                  <span class="root" @click="loadFolderContent()">{{ $t('shareAccess.rootDir') }}</span>
                   <template v-for="(crumb, index) in breadcrumbs" :key="index">
                     <span class="separator">/</span>
                     <span 
@@ -323,10 +326,10 @@ onMounted(() => {
             <div class="header-actions">
               <el-button type="primary" @click="downloadFile(currentPath || undefined)" :loading="downloading">
                 <el-icon><Download /></el-icon>
-                下载整个文件夹 (ZIP)
+                {{ $t('shareAccess.downloadZip') }}
               </el-button>
               <el-button v-if="currentPath" @click="goBack" :icon="ArrowLeft">
-                返回
+                {{ $t('shareAccess.back') }}
               </el-button>
             </div>
           </div>
@@ -346,7 +349,7 @@ onMounted(() => {
               </div>
               <div class="item-details">
                 <span class="item-name">{{ item.name }}</span>
-                <span class="item-meta">{{ item.isFolder ? '文件夹' : item.sizeDisplay }}</span>
+                <span class="item-meta">{{ item.isFolder ? $t('shareAccess.folder') : item.sizeDisplay }}</span>
               </div>
               <el-button 
                 v-if="!item.isFolder" 
@@ -356,20 +359,20 @@ onMounted(() => {
                 @click.stop="downloadFile(currentPath ? `${currentPath}/${item.name}` : item.name)"
               >
                 <el-icon><Download /></el-icon>
-                下载
+                {{ $t('shareAccess.download') }}
               </el-button>
               <el-icon v-else class="arrow-icon"><ArrowLeft style="transform: rotate(180deg)" /></el-icon>
             </div>
             
             <div v-if="folderContent.items.length === 0" class="empty-folder">
               <el-icon :size="48" color="#dcdfe6"><FolderOpened /></el-icon>
-              <p>此文件夹为空</p>
+              <p>{{ $t('shareAccess.emptyFolder') }}</p>
             </div>
           </div>
           
           <div class="share-info" v-if="shareInfo.createdByUserName">
             <el-icon><User /></el-icon>
-            <span>{{ shareInfo.createdByUserName }} 分享</span>
+            <span>{{ $t('shareAccess.sharedBy', { name: shareInfo.createdByUserName }) }}</span>
           </div>
         </div>
       </div>
