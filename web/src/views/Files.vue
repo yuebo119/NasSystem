@@ -2,6 +2,7 @@
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { subscribeDirectory } from '@/utils/signalr'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api/file'
 import { fileShareApi, ShareAccessType, PermissionLevel, type FileShareDto, type CreateFileShareRequest } from '@/api/fileShare'
@@ -9,7 +10,7 @@ import { storageApi } from '@/api/storage'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import { 
-  Refresh, Upload, Delete, Download, EditPen, 
+  Refresh, Upload, Delete, Download, 
   CopyDocument, Rank, MoreFilled, FolderAdd, Search,
   Grid, List, View, Hide, DeleteFilled, Back,
   Document, Folder, Picture, VideoPlay, Headset,
@@ -17,6 +18,8 @@ import {
 } from '@element-plus/icons-vue'
 import type { FileItem } from '@/types'
 
+// ITM-M3 收尾：Files 页 i18n 全量接入
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const fileStore = useFileStore()
@@ -203,16 +206,16 @@ function goBack() {
 // 创建文件夹
 async function handleCreateFolder() {
   if (!newFolderName.value.trim()) {
-    ElMessage.warning('请输入文件夹名称')
+    ElMessage.warning(t('filesView.enterFolderName'))
     return
   }
   const result = await fileStore.createFolder(newFolderName.value.trim())
   if (result.success) {
-    ElMessage.success('创建成功')
+    ElMessage.success(t('filesView.createSuccess'))
     createFolderDialogVisible.value = false
     newFolderName.value = ''
   } else {
-    ElMessage.error(result.error?.message || '创建失败')
+    ElMessage.error(result.error?.message || t('filesView.createFailed'))
   }
 }
 
@@ -226,7 +229,7 @@ function openRenameDialog(item: FileItem) {
 // 重命名
 async function handleRename() {
   if (!renameTarget.value || !newName.value.trim()) {
-    ElMessage.warning('请输入新名称')
+    ElMessage.warning(t('filesView.enterNewName'))
     return
   }
   if (newName.value === renameTarget.value.name) {
@@ -235,10 +238,10 @@ async function handleRename() {
   }
   const result = await fileStore.rename(renameTarget.value, newName.value.trim())
   if (result.success) {
-    ElMessage.success('重命名成功')
+    ElMessage.success(t('filesView.renameSuccess'))
     renameDialogVisible.value = false
   } else {
-    ElMessage.error(result.error?.message || '重命名失败')
+    ElMessage.error(result.error?.message || t('filesView.renameFailed'))
   }
 }
 
@@ -247,16 +250,16 @@ async function handleDelete(permanent = false) {
   const items = [...fileStore.selectedItems]
   const count = items.length
   if (count === 0) {
-    ElMessage.warning('请先选择要删除的文件')
+    ElMessage.warning(t('filesView.selectToDelete'))
     return
   }
   try {
     await ElMessageBox.confirm(
       permanent 
-        ? `确定要永久删除选中的 ${count} 个项目吗？此操作不可恢复！`
-        : `确定要删除选中的 ${count} 个项目吗？`,
-      permanent ? '永久删除' : '删除确认',
-      { confirmButtonText: permanent ? '永久删除' : '删除', cancelButtonText: '取消', type: 'warning' }
+        ? t('filesView.confirmPermDeleteSelected', { count })
+        : t('filesView.confirmDeleteSelected', { count }),
+      permanent ? t('filesView.permanentDelete') : t('filesView.deleteConfirm'),
+      { confirmButtonText: permanent ? t('filesView.permanentDelete') : t('filesView.delete'), cancelButtonText: t('filesView.cancel'), type: 'warning' }
     )
     
     // ITM-N19：一次数组请求（后端返回 per-item 结果），替代逐项循环
@@ -265,9 +268,9 @@ async function handleDelete(permanent = false) {
       const result = await fileApi.delete(items.map(i => i.path), permanent)
       const failed: string[] = (result.data as { failedItems?: string[] } | null)?.failedItems ?? []
       if (failed.length === 0) {
-        ElMessage.success(`成功删除 ${items.length} 个项目`)
+        ElMessage.success(t('filesView.deletedCount', { count: items.length }))
       } else {
-        ElMessage.warning(`删除完成：成功 ${items.length - failed.length} 个，失败 ${failed.length} 个（${failed[0]}）`)
+        ElMessage.warning(t('filesView.deletePartialWithReason', { ok: items.length - failed.length, fail: failed.length, first: failed[0] }))
       }
     } catch {
       // 拦截器已弹错
@@ -287,17 +290,17 @@ async function handleDeleteItem(item: FileItem, permanent = false) {
   try {
     await ElMessageBox.confirm(
       permanent 
-        ? `确定要永久删除 "${item.name}" 吗？此操作不可恢复！`
-        : `确定要删除 "${item.name}" 吗？`,
-      permanent ? '永久删除' : '删除确认',
-      { confirmButtonText: permanent ? '永久删除' : '删除', cancelButtonText: '取消', type: 'warning' }
+        ? t('filesView.confirmPermDeleteItem', { name: item.name })
+        : t('filesView.confirmDeleteItem', { name: item.name }),
+      permanent ? t('filesView.permanentDelete') : t('filesView.deleteConfirm'),
+      { confirmButtonText: permanent ? t('filesView.permanentDelete') : t('filesView.delete'), cancelButtonText: t('filesView.cancel'), type: 'warning' }
     )
     const result = await fileApi.delete([item.path], permanent)
     if (result.success) {
-      ElMessage.success(permanent ? '已永久删除' : '已移至回收站')
+      ElMessage.success(permanent ? t('filesView.permanentlyDeleted') : t('filesView.movedToRecycleBin'))
       await fileStore.loadDirectory(fileStore.currentPath)
     } else {
-      ElMessage.error(result.error?.message || '删除失败')
+      ElMessage.error(result.error?.message || t('filesView.deleteFailedMsg'))
     }
   } catch {
     // 取消操作
@@ -307,27 +310,27 @@ async function handleDeleteItem(item: FileItem, permanent = false) {
 // 复制到剪贴板
 function copyToClipboard() {
   if (fileStore.selectedItems.length === 0) {
-    ElMessage.warning('请先选择文件')
+    ElMessage.warning(t('filesView.selectFilesFirst'))
     return
   }
   clipboard.value = { items: [...fileStore.selectedItems], action: 'copy' }
-  ElMessage.success(`已复制 ${fileStore.selectedItems.length} 个项目`)
+  ElMessage.success(t('filesView.copiedCount', { count: fileStore.selectedItems.length }))
 }
 
 // 剪切到剪贴板
 function cutToClipboard() {
   if (fileStore.selectedItems.length === 0) {
-    ElMessage.warning('请先选择文件')
+    ElMessage.warning(t('filesView.selectFilesFirst'))
     return
   }
   clipboard.value = { items: [...fileStore.selectedItems], action: 'cut' }
-  ElMessage.success(`已剪切 ${fileStore.selectedItems.length} 个项目`)
+  ElMessage.success(t('filesView.cutCount', { count: fileStore.selectedItems.length }))
 }
 
 // 粘贴
 async function handlePaste() {
   if (!clipboard.value) {
-    ElMessage.warning('剪贴板为空')
+    ElMessage.warning(t('filesView.clipboardEmpty'))
     return
   }
   const items = [...clipboard.value.items]
@@ -354,9 +357,9 @@ async function handlePaste() {
 
   const okCount = items.length - pasteFailed
   if (pasteFailed === 0) {
-    ElMessage.success(`${action === 'copy' ? '复制' : '移动'}完成（${okCount} 个项目）`)
+    ElMessage.success(t('filesView.pasteDone', { action: t(action === 'copy' ? 'filesView.copyAction' : 'filesView.moveAction'), count: okCount }))
   } else {
-    ElMessage.warning(`${action === 'copy' ? '复制' : '移动'}完成：成功 ${okCount} 个，失败 ${pasteFailed} 个`)
+    ElMessage.warning(t('filesView.pastePartial', { action: t(action === 'copy' ? 'filesView.copyAction' : 'filesView.moveAction'), ok: okCount, fail: pasteFailed }))
   }
 
   if (action === 'cut') {
@@ -383,11 +386,11 @@ async function handleMove() {
   const paths = fileStore.selectedItems.map(item => item.path)
   const result = await fileApi.move(paths, moveDestination.value)
   if (result.success) {
-    ElMessage.success('移动成功')
+    ElMessage.success(t('filesView.moveSuccess'))
     moveDialogVisible.value = false
     await fileStore.loadDirectory(fileStore.currentPath)
   } else {
-    ElMessage.error(result.error?.message || '移动失败')
+    ElMessage.error(result.error?.message || t('filesView.moveFailed'))
   }
 }
 
@@ -396,18 +399,18 @@ async function handleCopy() {
   const paths = fileStore.selectedItems.map(item => item.path)
   const result = await fileApi.copy(paths, copyDestination.value)
   if (result.success) {
-    ElMessage.success('复制成功')
+    ElMessage.success(t('filesView.copySuccessMsg'))
     copyDialogVisible.value = false
     await fileStore.loadDirectory(fileStore.currentPath)
   } else {
-    ElMessage.error(result.error?.message || '复制失败')
+    ElMessage.error(result.error?.message || t('filesView.copyFailed'))
   }
 }
 
 // 下载文件
 async function downloadFile(item: FileItem) {
   if (item.isFolder) {
-    ElMessage.warning('暂不支持下载文件夹')
+    ElMessage.warning(t('filesView.folderDownloadUnsupported'))
     return
   }
   // ITM-N19/G19：token 走 Authorization 头，禁止拼入 URL（防泄漏到历史/日志）
@@ -426,7 +429,7 @@ async function downloadFile(item: FileItem) {
     document.body.removeChild(link)
     URL.revokeObjectURL(objectUrl)
   } catch {
-    ElMessage.error('下载失败')
+    ElMessage.error(t('filesView.downloadFailed'))
   }
 }
 
@@ -434,7 +437,7 @@ async function downloadFile(item: FileItem) {
 function downloadSelected() {
   const files = fileStore.selectedItems.filter(item => !item.isFolder)
   if (files.length === 0) {
-    ElMessage.warning('请选择要下载的文件')
+    ElMessage.warning(t('filesView.selectToDownload'))
     return
   }
   files.forEach(file => downloadFile(file))
@@ -443,11 +446,11 @@ function downloadSelected() {
 // 分享选中文件
 function shareSelected() {
   if (fileStore.selectedItems.length === 0) {
-    ElMessage.warning('请选择要分享的文件')
+    ElMessage.warning(t('filesView.selectToShare'))
     return
   }
   if (fileStore.selectedItems.length > 1) {
-    ElMessage.warning('暂不支持多选分享，请选择单个文件或文件夹')
+    ElMessage.warning(t('filesView.shareSingleOnly'))
     return
   }
   const item = fileStore.selectedItems[0]
@@ -457,7 +460,7 @@ function shareSelected() {
 // 搜索文件
 async function handleSearch() {
   if (!searchQuery.value.trim()) {
-    ElMessage.warning('请输入搜索关键词')
+    ElMessage.warning(t('filesView.enterSearchKeyword'))
     return
   }
   searchLoading.value = true
@@ -472,7 +475,7 @@ async function handleSearch() {
       searchResults.value = result.data.items
     }
   } catch (e) {
-    ElMessage.error('搜索失败')
+    ElMessage.error(t('filesView.searchFailed'))
   } finally {
     searchLoading.value = false
   }
@@ -519,7 +522,7 @@ async function openRecycleBin() {
       recycleBinItems.value = result.data
     }
   } catch (e) {
-    ElMessage.error('加载回收站失败')
+    ElMessage.error(t('filesView.loadRecycleBinFailed'))
   } finally {
     recycleBinLoading.value = false
   }
@@ -529,26 +532,26 @@ async function openRecycleBin() {
 async function restoreFile(item: FileItem) {
   const result = await fileApi.restore(item.id)
   if (result.success) {
-    ElMessage.success('恢复成功')
+    ElMessage.success(t('filesView.restoreSuccess'))
     recycleBinItems.value = recycleBinItems.value.filter(i => i.id !== item.id)
     await fileStore.loadDirectory(fileStore.currentPath)
   } else {
-    ElMessage.error(result.error?.message || '恢复失败')
+    ElMessage.error(result.error?.message || t('filesView.restoreFailed'))
   }
 }
 
 // 清空回收站
 async function emptyRecycleBin() {
   try {
-    await ElMessageBox.confirm('确定要清空回收站吗？此操作不可恢复！', '清空回收站', {
-      confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning'
+    await ElMessageBox.confirm(t('filesView.confirmEmptyRecycleBin'), t('filesView.emptyRecycleBinTitle'), {
+      confirmButtonText: t('filesView.emptyAction'), cancelButtonText: t('filesView.cancel'), type: 'warning'
     })
     const result = await fileApi.emptyRecycleBin()
     if (result.success) {
-      ElMessage.success('回收站已清空')
+      ElMessage.success(t('filesView.recycleBinEmptied'))
       recycleBinItems.value = []
     } else {
-      ElMessage.error(result.error?.message || '清空失败')
+      ElMessage.error(result.error?.message || t('filesView.emptyFailed'))
     }
   } catch {
     // 取消操作
@@ -558,7 +561,7 @@ async function emptyRecycleBin() {
 // 上传文件
 async function handleUpload() {
   if (uploadFiles.value.length === 0) {
-    ElMessage.warning('请选择要上传的文件')
+    ElMessage.warning(t('filesView.selectToUpload'))
     return
   }
   
@@ -570,7 +573,7 @@ async function handleUpload() {
     const checkResult = await storageApi.checkSpace({ fileSize: totalSize }) as any
     if (checkResult.success && checkResult.data) {
       if (!checkResult.data.hasEnoughSpace) {
-        ElMessage.error(checkResult.data.message || `存储空间不足！需要 ${formatSize(totalSize)}，可用 ${formatSize(checkResult.data.availableBytes)}`)
+        ElMessage.error(checkResult.data.message || t('filesView.storageInsufficient', { required: formatSize(totalSize), available: formatSize(checkResult.data.availableBytes) }))
         return
       }
     }
@@ -602,9 +605,9 @@ async function handleUpload() {
   uploadFiles.value = []
   
   if (failed === 0) {
-    ElMessage.success(`成功上传 ${completed} 个文件`)
+    ElMessage.success(t('filesView.uploadCountSuccess', { count: completed }))
   } else {
-    ElMessage.warning(`上传完成：成功 ${completed} 个，失败 ${failed} 个`)
+    ElMessage.warning(t('filesView.uploadPartial', { ok: completed, fail: failed }))
   }
   
   uploadDialogVisible.value = false
@@ -629,7 +632,7 @@ async function openPreview(item: FileItem) {
   previewItem.value = item
   // 如果是文本文件，先加载内容
   if (isTextFile(item)) {
-    textContent.value = '加载中...'
+    textContent.value = t('filesView.loadingText')
     previewDialogVisible.value = true
     try {
       const token = localStorage.getItem('token')
@@ -639,10 +642,10 @@ async function openPreview(item: FileItem) {
       if (response.ok) {
         textContent.value = await response.text()
       } else {
-        textContent.value = '加载失败'
+        textContent.value = t('filesView.loadFailedText')
       }
     } catch (e) {
-      textContent.value = '加载失败'
+      textContent.value = t('filesView.loadFailedText')
     }
   } else {
     previewDialogVisible.value = true
@@ -698,13 +701,9 @@ function handleRefresh() {
 async function handleScanSync() {
   try {
     await ElMessageBox.confirm(
-      '扫描将以物理文件为准，同步数据库记录。\n\n' +
-      '• 新增的物理文件将被添加到数据库\n' +
-      '• 已删除的物理文件将从数据库移除\n' +
-      '• 文件大小变化将被更新\n\n' +
-      '确定要执行扫描同步吗？',
-      '扫描同步',
-      { confirmButtonText: '开始扫描', cancelButtonText: '取消', type: 'warning' }
+      t('filesView.scanConfirm'),
+      t('filesView.scanTitle'),
+      { confirmButtonText: t('filesView.scanStart'), cancelButtonText: t('filesView.cancel'), type: 'warning' }
     )
     
     scanning.value = true
@@ -713,13 +712,13 @@ async function handleScanSync() {
     if (result.success && result.data) {
       const data = result.data
       ElMessage.success({
-        message: `扫描完成！\n新增: ${data.addedFiles} 文件, ${data.addedFolders} 文件夹\n删除: ${data.removedFiles} 文件, ${data.removedFolders} 文件夹\n更新: ${data.updatedFiles} 文件`,
+        message: t('filesView.scanResult', { added: data.addedFiles, addedFolders: data.addedFolders, removed: data.removedFiles, removedFolders: data.removedFolders, updated: data.updatedFiles }),
         duration: 5000
       })
       // 刷新当前目录
       await fileStore.loadDirectory(fileStore.currentPath)
     } else {
-      ElMessage.error(result.error?.message || '扫描失败')
+      ElMessage.error(result.error?.message || t('filesView.scanFailed'))
     }
   } catch {
     // 用户取消
@@ -843,15 +842,15 @@ async function ensurePreviewUrl(item: FileItem): Promise<void> {
     const blob = await response.blob()
     previewUrls.value[item.path] = URL.createObjectURL(blob)
   } catch {
-    ElMessage.error('加载失败')
+    ElMessage.error(t('filesView.loadFailedText'))
   }
 }
 
 // 剪贴板状态文本
 const clipboardText = computed(() => {
   if (!clipboard.value) return ''
-  const action = clipboard.value.action === 'copy' ? '复制' : '剪切'
-  return `${action}了 ${clipboard.value.items.length} 个项目`
+  const action = clipboard.value.action === 'copy' ? t('filesView.copyWord') : t('filesView.cutAction')
+  return t('filesView.clipboardStatus', { action, count: clipboard.value.items.length })
 })
 
 // 处理右键菜单命令
@@ -952,10 +951,10 @@ async function handleCreateShare() {
     const result = await fileShareApi.create(request)
     if (result.data) {
       shareResult.value = result.data
-      ElMessage.success('分享创建成功')
+      ElMessage.success(t('filesView.shareCreateSuccess'))
     }
   } catch (error: any) {
-    ElMessage.error(error.message || '创建分享失败')
+    ElMessage.error(error.message || t('filesView.shareCreateFailed'))
   } finally {
     shareLoading.value = false
   }
@@ -966,9 +965,9 @@ async function copyShareLink() {
   if (!shareResult.value) return
   try {
     await navigator.clipboard.writeText(shareResult.value.shareUrl)
-    ElMessage.success('链接已复制到剪贴板')
+    ElMessage.success(t('filesView.linkCopied'))
   } catch {
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('filesView.linkCopyFailed'))
   }
 }
 
@@ -1025,20 +1024,20 @@ onUnmounted(() => void unsubscribe?.())
     <div class="toolbar">
       <div class="toolbar-left">
         <el-button-group>
-          <el-tooltip content="返回上级" placement="bottom">
+          <el-tooltip :content="$t('filesView.goBackTip')" placement="bottom">
             <el-button @click="goBack" :disabled="fileStore.currentPath === '/'">
               <el-icon><Back /></el-icon>
             </el-button>
           </el-tooltip>
-          <el-tooltip content="刷新" placement="bottom">
+          <el-tooltip :content="$t('filesView.refreshTip')" placement="bottom">
             <el-button @click="handleRefresh" :loading="fileStore.isLoading">
               <el-icon><Refresh /></el-icon>
             </el-button>
           </el-tooltip>
-          <el-tooltip content="扫描同步（以物理文件为准）" placement="bottom">
+          <el-tooltip :content="$t('filesView.scanTip')" placement="bottom">
             <el-button @click="handleScanSync" :loading="scanning" type="warning">
               <el-icon><Refresh /></el-icon>
-              扫描
+              {{ $t('filesView.scanShort') }}
             </el-button>
           </el-tooltip>
         </el-button-group>
@@ -1047,44 +1046,44 @@ onUnmounted(() => void unsubscribe?.())
         
         <el-button type="primary" @click="createFolderDialogVisible = true">
           <el-icon><FolderAdd /></el-icon>
-          新建文件夹
+          {{ $t('filesView.newFolder') }}
         </el-button>
         <el-button @click="openUploadDialog">
           <el-icon><Upload /></el-icon>
-          上传
+          {{ $t('filesView.upload') }}
         </el-button>
         
         <el-divider direction="vertical" />
         
         <el-button-group>
-          <el-tooltip content="复制" placement="bottom">
+          <el-tooltip :content="$t('filesView.copyTip')" placement="bottom">
             <el-button @click="copyToClipboard" :disabled="!fileStore.hasSelection">
               <el-icon><CopyDocument /></el-icon>
             </el-button>
           </el-tooltip>
-          <el-tooltip content="剪切" placement="bottom">
+          <el-tooltip :content="$t('filesView.cutTip')" placement="bottom">
             <el-button @click="cutToClipboard" :disabled="!fileStore.hasSelection">
               <el-icon><Rank /></el-icon>
             </el-button>
           </el-tooltip>
-          <el-tooltip content="粘贴" placement="bottom">
+          <el-tooltip :content="$t('filesView.pasteTip')" placement="bottom">
             <el-button @click="handlePaste" :disabled="!clipboard">
               <el-icon><Document /></el-icon>
             </el-button>
           </el-tooltip>
         </el-button-group>
         
-        <el-tooltip content="下载" placement="bottom">
+        <el-tooltip :content="$t('filesView.downloadTip')" placement="bottom">
           <el-button @click="downloadSelected" :disabled="!fileStore.hasSelection">
             <el-icon><Download /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-tooltip content="分享" placement="bottom">
+        <el-tooltip :content="$t('filesView.shareTip')" placement="bottom">
           <el-button @click="shareSelected" :disabled="!fileStore.hasSelection" type="primary">
             <el-icon><Share /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-tooltip content="删除" placement="bottom">
+        <el-tooltip :content="$t('filesView.delete')" placement="bottom">
           <el-button type="danger" @click="handleDelete(false)" :disabled="!fileStore.hasSelection">
             <el-icon><Delete /></el-icon>
           </el-button>
@@ -1094,26 +1093,26 @@ onUnmounted(() => void unsubscribe?.())
       <div class="toolbar-right">
         <el-tooltip :content="clipboardText" v-if="clipboard">
           <el-tag closable @close="clipboard = null" size="small">
-            {{ clipboard.action === 'copy' ? '已复制' : '已剪切' }} {{ clipboard.items.length }}
+            {{ clipboard.action === 'copy' ? $t('filesView.copiedBadge') : $t('filesView.cutTip') }} {{ clipboard.items.length }}
           </el-tag>
         </el-tooltip>
         
-        <el-tooltip content="搜索" placement="bottom">
+        <el-tooltip :content="$t('filesView.searchTip')" placement="bottom">
           <el-button @click="searchDialogVisible = true">
             <el-icon><Search /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-tooltip content="回收站" placement="bottom">
+        <el-tooltip :content="$t('filesView.recycleBinTip')" placement="bottom">
           <el-button @click="openRecycleBin">
             <el-icon><DeleteFilled /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-tooltip :content="fileStore.showHidden ? '隐藏隐藏文件' : '显示隐藏文件'" placement="bottom">
+        <el-tooltip :content="fileStore.showHidden ? $t('filesView.hideHiddenTip') : $t('filesView.showHiddenTip')" placement="bottom">
           <el-button @click="toggleShowHidden" :type="fileStore.showHidden ? 'primary' : 'default'">
             <el-icon><component :is="fileStore.showHidden ? View : Hide" /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-tooltip :content="fileStore.viewMode === 'list' ? '切换到网格视图' : '切换到列表视图'" placement="bottom">
+        <el-tooltip :content="fileStore.viewMode === 'list' ? $t('filesView.toGridTip') : $t('filesView.toListTip')" placement="bottom">
           <el-button @click="fileStore.toggleViewMode">
             <el-icon><component :is="fileStore.viewMode === 'list' ? Grid : List" /></el-icon>
           </el-button>
@@ -1126,7 +1125,7 @@ onUnmounted(() => void unsubscribe?.())
       <el-breadcrumb-item>
         <span class="breadcrumb-item" @click="navigateToBreadcrumb('/')">
           <el-icon><HomeFilled /></el-icon>
-          根目录
+          {{ $t('filesView.rootCrumb') }}
         </span>
       </el-breadcrumb-item>
       <el-breadcrumb-item v-for="crumb in fileStore.breadcrumbs" :key="crumb.path">
@@ -1155,63 +1154,63 @@ onUnmounted(() => void unsubscribe?.())
     >
       <el-table-column type="selection" width="50" />
       
-      <el-table-column prop="name" label="名称" min-width="300" sortable="custom">
+      <el-table-column prop="name" :label="$t('filesView.colName')" min-width="300" sortable="custom">
         <template #default="{ row }">
           <div class="file-name">
             <el-icon :size="20" :color="getFileIconColor(row)">
               <component :is="getFileIcon(row)" />
             </el-icon>
             <span>{{ row.name }}</span>
-            <el-tag v-if="row.isHidden" size="small" type="info">隐藏</el-tag>
+            <el-tag v-if="row.isHidden" size="small" type="info">{{ $t('filesView.hiddenTag') }}</el-tag>
           </div>
         </template>
       </el-table-column>
       
-      <el-table-column prop="sizeBytes" label="大小" width="120" sortable="custom">
+      <el-table-column prop="sizeBytes" :label="$t('filesView.colSize')" width="120" sortable="custom">
         <template #default="{ row }">
           {{ row.isFolder ? '-' : formatSize(row.sizeBytes) }}
         </template>
       </el-table-column>
       
-      <el-table-column prop="extension" label="类型" width="100" sortable="custom">
+      <el-table-column prop="extension" :label="$t('filesView.colType')" width="100" sortable="custom">
         <template #default="{ row }">
-          {{ row.isFolder ? '文件夹' : (row.extension || '-') }}
+          {{ row.isFolder ? $t('filesView.typeFolder') : (row.extension || '-') }}
         </template>
       </el-table-column>
       
-      <el-table-column prop="createdAt" label="修改时间" width="180" sortable="custom">
+      <el-table-column prop="createdAt" :label="$t('filesView.colModified')" width="180" sortable="custom">
         <template #default="{ row }">
           {{ formatDate(row.updatedAt || row.createdAt) }}
         </template>
       </el-table-column>
       
-      <el-table-column label="操作" width="120" fixed="right" property="actions">
+      <el-table-column :label="$t('filesView.colActions')" width="120" fixed="right" property="actions">
         <template #default="{ row }">
           <el-dropdown trigger="click" @command="(cmd: string) => handleCommand(cmd, row)">
             <el-button :icon="MoreFilled" circle size="small" />
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item v-if="!row.isFolder" command="download">
-                  <el-icon><Download /></el-icon> 下载
+                  {{ $t('filesView.downloadTip') }}
                 </el-dropdown-item>
                 <el-dropdown-item v-if="canPreview(row)" command="preview">
-                  <el-icon><View /></el-icon> 预览
+                  {{ $t('filesView.actPreview') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="share">
-                  <el-icon><Share /></el-icon> 分享
+                  {{ $t('filesView.shareTip') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="rename">
-                  <el-icon><EditPen /></el-icon> 重命名
+                  {{ $t('filesView.actRename') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="copy">
-                  <el-icon><CopyDocument /></el-icon> 复制
+                  {{ $t('filesView.copyTip') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="cut">
-                  <el-icon><Rank /></el-icon> 剪切
+                  {{ $t('filesView.cutTip') }}
                 </el-dropdown-item>
                 <el-dropdown-item divided command="delete">
                   <el-icon color="var(--el-color-danger)"><Delete /></el-icon>
-                  <span style="color: var(--el-color-danger)">删除</span>
+                  <span style="color: var(--el-color-danger)">{{ $t('filesView.delete') }}</span>
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -1239,117 +1238,117 @@ onUnmounted(() => void unsubscribe?.())
         <div class="grid-item-name" :title="item.name">{{ item.name }}</div>
         <div class="grid-item-size">{{ item.isFolder ? '' : formatSize(item.sizeBytes) }}</div>
       </div>
-      <el-empty v-if="fileStore.sortedFiles.length === 0 && !fileStore.isLoading" description="文件夹为空" />
+      <el-empty v-if="fileStore.sortedFiles.length === 0 && !fileStore.isLoading" :description="$t('filesView.emptyFolderList')" />
     </div>
 
     <!-- 状态栏 -->
     <div class="status-bar">
       <span v-if="fileStore.directoryContent">
-        {{ fileStore.directoryContent.folderCount }} 个文件夹,
-        {{ fileStore.directoryContent.fileCount }} 个文件
+        {{ fileStore.directoryContent.folderCount }} {{ $t('filesView.folderUnit') }}
+        {{ fileStore.directoryContent.fileCount }} {{ $t('filesView.fileUnit') }}
         <span v-if="fileStore.directoryContent.totalSizeBytes > 0">
           ({{ formatSize(fileStore.directoryContent.totalSizeBytes) }})
         </span>
       </span>
       <span v-if="fileStore.hasSelection" class="selection-info">
-        已选择 {{ fileStore.selectionCount }} 项
+        {{ $t('filesView.selectedCount', { count: fileStore.selectionCount }) }}
       </span>
     </div>
 
     <!-- 新建文件夹对话框 -->
-    <el-dialog v-model="createFolderDialogVisible" title="新建文件夹" width="400">
+    <el-dialog v-model="createFolderDialogVisible" :title="$t('filesView.newFolderTitle')" width="400">
       <el-input
         v-model="newFolderName"
-        placeholder="请输入文件夹名称"
+        :placeholder="$t('filesView.folderNamePlaceholder')"
         @keyup.enter="handleCreateFolder"
         autofocus
       />
       <template #footer>
-        <el-button @click="createFolderDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleCreateFolder">创建</el-button>
+        <el-button @click="createFolderDialogVisible = false">{{ $t('filesView.cancel') }}</el-button>
+        <el-button type="primary" @click="handleCreateFolder">{{ $t('filesView.create') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 重命名对话框 -->
-    <el-dialog v-model="renameDialogVisible" title="重命名" width="400">
+    <el-dialog v-model="renameDialogVisible" :title="$t('filesView.renameTitle')" width="400">
       <el-input
         v-model="newName"
-        placeholder="请输入新名称"
+        :placeholder="$t('filesView.newNamePlaceholder')"
         @keyup.enter="handleRename"
         autofocus
       />
       <template #footer>
-        <el-button @click="renameDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleRename">确定</el-button>
+        <el-button @click="renameDialogVisible = false">{{ $t('filesView.cancel') }}</el-button>
+        <el-button type="primary" @click="handleRename">{{ $t('filesView.ok') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 移动对话框 -->
-    <el-dialog v-model="moveDialogVisible" title="移动到" width="500">
-      <el-input v-model="moveDestination" placeholder="目标路径，如 /documents">
-        <template #prepend>目标路径</template>
+    <el-dialog v-model="moveDialogVisible" :title="$t('filesView.moveTo')" width="500">
+      <el-input v-model="moveDestination" :placeholder="$t('filesView.destPathPlaceholder')">
+        <template #prepend>{{ $t('filesView.destPathLabel') }}</template>
       </el-input>
       <div class="dialog-tip">
-        将移动 {{ fileStore.selectionCount }} 个项目到指定目录
+        {{ $t('filesView.willMove', { count: fileStore.selectionCount }) }}
       </div>
       <template #footer>
-        <el-button @click="moveDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleMove">移动</el-button>
+        <el-button @click="moveDialogVisible = false">{{ $t('filesView.cancel') }}</el-button>
+        <el-button type="primary" @click="handleMove">{{ $t('filesView.moveAction') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 复制对话框 -->
-    <el-dialog v-model="copyDialogVisible" title="复制到" width="500">
-      <el-input v-model="copyDestination" placeholder="目标路径，如 /documents">
-        <template #prepend>目标路径</template>
+    <el-dialog v-model="copyDialogVisible" :title="$t('filesView.copyTo')" width="500">
+      <el-input v-model="copyDestination" :placeholder="$t('filesView.destPathPlaceholder')">
+        <template #prepend>{{ $t('filesView.destPathLabel') }}</template>
       </el-input>
       <div class="dialog-tip">
-        将复制 {{ fileStore.selectionCount }} 个项目到指定目录
+        {{ $t('filesView.willCopy', { count: fileStore.selectionCount }) }}
       </div>
       <template #footer>
-        <el-button @click="copyDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleCopy">复制</el-button>
+        <el-button @click="copyDialogVisible = false">{{ $t('filesView.cancel') }}</el-button>
+        <el-button type="primary" @click="handleCopy">{{ $t('filesView.copyTip') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 搜索对话框 -->
-    <el-dialog v-model="searchDialogVisible" title="搜索文件" width="650" @close="resetSearch">
+    <el-dialog v-model="searchDialogVisible" :title="$t('filesView.searchDialogTitle')" width="650" @close="resetSearch">
       <div class="search-form">
         <el-input
           v-model="searchQuery"
-          placeholder="输入文件名搜索"
+          :placeholder="$t('filesView.searchInputPlaceholder')"
           @keyup.enter="handleSearch"
           clearable
           class="search-input"
         >
           <template #append>
-            <el-button @click="handleSearch" :loading="searchLoading">搜索</el-button>
+            <el-button @click="handleSearch" :loading="searchLoading">{{ $t('filesView.searchTip') }}</el-button>
           </template>
         </el-input>
         
         <div class="search-filters">
-          <el-select v-model="searchItemType" placeholder="类型" clearable style="width: 120px">
-            <el-option label="全部" value="" />
-            <el-option label="文件" value="file" />
-            <el-option label="文件夹" value="folder" />
+          <el-select v-model="searchItemType" :placeholder="$t('filesView.typeAll')" clearable style="width: 120px">
+            <el-option :label="$t('filesView.allOption')" value="" />
+            <el-option :label="$t('filesView.typeFile')" value="file" />
+            <el-option :label="$t('filesView.typeFolder')" value="folder" />
           </el-select>
           
-          <el-select v-model="searchExtension" placeholder="扩展名" clearable style="width: 120px">
-            <el-option label="全部" value="" />
-            <el-option label="图片" value=".jpg,.jpeg,.png,.gif,.webp" />
-            <el-option label="视频" value=".mp4,.avi,.mkv,.mov" />
-            <el-option label="音频" value=".mp3,.wav,.flac" />
-            <el-option label="文档" value=".pdf,.doc,.docx,.txt,.md" />
-            <el-option label="压缩包" value=".zip,.rar,.7z,.tar" />
+          <el-select v-model="searchExtension" :placeholder="$t('filesView.extLabel')" clearable style="width: 120px">
+            <el-option :label="$t('filesView.allOption')" value="" />
+            <el-option :label="$t('filesView.extImages')" value=".jpg,.jpeg,.png,.gif,.webp" />
+            <el-option :label="$t('filesView.extVideos')" value=".mp4,.avi,.mkv,.mov" />
+            <el-option :label="$t('filesView.extAudios')" value=".mp3,.wav,.flac" />
+            <el-option :label="$t('filesView.extDocs')" value=".pdf,.doc,.docx,.txt,.md" />
+            <el-option :label="$t('filesView.extArchives')" value=".zip,.rar,.7z,.tar" />
           </el-select>
           
-          <el-checkbox v-model="searchInCurrentDir">仅当前目录</el-checkbox>
+          <el-checkbox v-model="searchInCurrentDir">{{ $t('filesView.currentDirOnly') }}</el-checkbox>
         </div>
       </div>
       
       <div class="search-results" v-loading="searchLoading">
         <div v-if="searchResults.length > 0" class="results-header">
-          找到 {{ searchResults.length }} 个结果
+          {{ $t('filesView.foundResults', { count: searchResults.length }) }}
         </div>
         <div v-if="searchResults.length > 0" class="results-list">
           <div
@@ -1370,22 +1369,22 @@ onUnmounted(() => void unsubscribe?.())
             </div>
           </div>
         </div>
-        <el-empty v-else-if="searchQuery && !searchLoading" description="未找到匹配的文件" />
+        <el-empty v-else-if="searchQuery && !searchLoading" :description="$t('filesView.noMatchFound')" />
       </div>
     </el-dialog>
 
     <!-- 回收站对话框 -->
-    <el-dialog v-model="recycleBinDialogVisible" title="回收站" width="700">
+    <el-dialog v-model="recycleBinDialogVisible" :title="$t('filesView.recycleBinTitle')" width="700">
       <template #header>
         <div class="recycle-header">
-          <span>回收站</span>
+          <span>{{ $t('filesView.recycleBinTitle') }}</span>
           <el-button type="danger" size="small" @click="emptyRecycleBin" :disabled="recycleBinItems.length === 0">
-            清空回收站
+            {{ $t('filesView.clearRecycleBin') }}
           </el-button>
         </div>
       </template>
       <el-table :data="recycleBinItems" v-loading="recycleBinLoading" max-height="400">
-        <el-table-column prop="name" label="名称" min-width="200">
+        <el-table-column prop="name" :label="$t('filesView.colName')" min-width="200">
           <template #default="{ row }">
             <div class="file-name">
               <el-icon :color="getFileIconColor(row)">
@@ -1395,21 +1394,21 @@ onUnmounted(() => void unsubscribe?.())
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="path" label="原路径" min-width="200" />
-        <el-table-column label="操作" width="120">
+        <el-table-column prop="path" :label="$t('filesView.colOriginalPath')" min-width="200" />
+        <el-table-column :label="$t('filesView.colActions')" width="120">
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="restoreFile(row)">恢复</el-button>
+            <el-button size="small" type="primary" @click="restoreFile(row)">{{ $t('filesView.actRestore') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="recycleBinItems.length === 0 && !recycleBinLoading" description="回收站为空" />
+      <el-empty v-if="recycleBinItems.length === 0 && !recycleBinLoading" :description="$t('filesView.recycleBinEmpty')" />
     </el-dialog>
 
     <!-- 上传对话框 -->
-    <el-dialog v-model="uploadDialogVisible" title="上传文件" width="500">
+    <el-dialog v-model="uploadDialogVisible" :title="$t('filesView.uploadTitle')" width="500">
       <div class="upload-path-info">
         <el-icon><Folder /></el-icon>
-        <span>上传到: <strong>{{ fileStore.currentPath }}</strong></span>
+        <span>{{ $t('filesView.uploadTo') }} <strong>{{ fileStore.currentPath }}</strong></span>
       </div>
       <el-upload
         drag
@@ -1421,17 +1420,17 @@ onUnmounted(() => void unsubscribe?.())
       >
         <el-icon class="el-icon--upload"><Upload /></el-icon>
         <div class="el-upload__text">
-          将文件拖到此处，或<em>点击上传</em>
+          {{ $t('filesView.dropHereBefore') }}<em>{{ $t('filesView.dropHereAfter') }}</em>
         </div>
       </el-upload>
       <div class="upload-info" v-if="uploadFiles.length > 0">
-        已选择 {{ uploadFiles.length }} 个文件，共 {{ formatSize(uploadFiles.reduce((sum, f) => sum + (f.raw?.size || 0), 0)) }}
+        {{ $t('filesView.selectedUploadInfo', { count: uploadFiles.length, size: formatSize(uploadFiles.reduce((sum, f) => sum + (f.raw?.size || 0), 0)) }) }}
       </div>
       <el-progress v-if="uploading" :percentage="uploadProgress" />
       <template #footer>
-        <el-button @click="uploadDialogVisible = false">取消</el-button>
+        <el-button @click="uploadDialogVisible = false">{{ $t('filesView.cancel') }}</el-button>
         <el-button type="primary" @click="handleUpload" :loading="uploading" :disabled="uploadFiles.length === 0">
-          开始上传
+          {{ $t('filesView.startUpload') }}
         </el-button>
       </template>
     </el-dialog>
@@ -1439,7 +1438,7 @@ onUnmounted(() => void unsubscribe?.())
     <!-- 预览对话框 -->
     <el-dialog 
       v-model="previewDialogVisible" 
-      :title="previewItem?.name || '预览'" 
+      :title="previewItem?.name || $t('filesView.previewFallbackTitle')" 
       width="80%"
       class="preview-dialog"
     >
@@ -1457,13 +1456,13 @@ onUnmounted(() => void unsubscribe?.())
         <!-- 其他文件 -->
         <div v-else class="preview-unsupported">
           <el-icon :size="64" color="#909399"><Document /></el-icon>
-          <p>此文件类型暂不支持预览</p>
-          <el-button type="primary" @click="downloadFile(previewItem)">下载文件</el-button>
+          <p>{{ $t('filesView.unsupportedPreview') }}</p>
+          <el-button type="primary" @click="downloadFile(previewItem)">{{ $t('filesView.downloadFileText') }}</el-button>
         </div>
       </div>
       <template #footer>
-        <el-button @click="previewDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="downloadFile(previewItem!)" v-if="previewItem">下载</el-button>
+        <el-button @click="previewDialogVisible = false">{{ $t('filesView.close') }}</el-button>
+        <el-button type="primary" @click="downloadFile(previewItem!)" v-if="previewItem">{{ $t('filesView.downloadTip') }}</el-button>
       </template>
     </el-dialog>
 
@@ -1489,13 +1488,13 @@ onUnmounted(() => void unsubscribe?.())
       </div>
       <template #footer>
         <el-button @click="cancelOperation" :disabled="operationCancelled">
-          {{ operationCancelled ? '正在取消...' : '取消' }}
+          {{ operationCancelled ? $t('filesView.cancelling') : $t('filesView.cancel') }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 分享对话框 -->
-    <el-dialog v-model="shareDialogVisible" title="分享文件" width="500">
+    <el-dialog v-model="shareDialogVisible" :title="$t('filesView.shareDialogTitle')" width="500">
       <div class="share-target" v-if="shareTarget">
         <el-icon :size="24" :color="getFileIconColor(shareTarget)">
           <component :is="getFileIcon(shareTarget)" />
@@ -1509,112 +1508,112 @@ onUnmounted(() => void unsubscribe?.())
       <!-- 分享结果 -->
       <div v-if="shareResult" class="share-result">
         <el-alert type="success" :closable="false" show-icon>
-          <template #title>分享链接已生成</template>
+          <template #title>{{ $t('filesView.linkGeneratedTitle') }}</template>
         </el-alert>
         <div class="share-link-box">
           <el-input v-model="shareResult.shareUrl" readonly>
             <template #append>
               <el-button @click="copyShareLink">
                 <el-icon><CopyDocument /></el-icon>
-                复制
+                {{ $t('filesView.copyTip') }}
               </el-button>
             </template>
           </el-input>
         </div>
         <div class="share-info-list">
           <div class="share-info-item">
-            <span class="label">访问方式:</span>
-            <span>{{ shareResult.accessType === 0 ? '公开' : shareResult.accessType === 1 ? '密码保护' : '仅内部用户' }}</span>
+            <span class="label">{{ $t('filesView.accessTypeLabel') }}</span>
+            <span>{{ shareResult.accessType === 0 ? $t('filesView.accessPublicCol') : shareResult.accessType === 1 ? $t('filesView.accessPasswordCol') : $t('filesView.accessInternalCol') }}</span>
           </div>
           <div class="share-info-item" v-if="shareResult.accessType === 1 && shareForm.password">
-            <span class="label">访问密码:</span>
+            <span class="label">{{ $t('filesView.passwordLabel') }}</span>
             <span class="password">{{ shareForm.password }}</span>
           </div>
           <div class="share-info-item">
-            <span class="label">权限:</span>
-            <span>{{ shareResult.permission === 1 ? '只读' : shareResult.permission === 2 ? '读写' : '完全控制' }}</span>
+            <span class="label">{{ $t('filesView.permissionLabel') }}</span>
+            <span>{{ shareResult.permission === 1 ? $t('filesView.permReadOnlyCol') : shareResult.permission === 2 ? $t('filesView.permReadWriteCol') : $t('filesView.permFullCol') }}</span>
           </div>
           <div class="share-info-item" v-if="shareResult.expiresAt">
-            <span class="label">有效期至:</span>
+            <span class="label">{{ $t('filesView.expiresUntilLabel') }}</span>
             <span>{{ formatDate(shareResult.expiresAt) }}</span>
           </div>
           <div class="share-info-item" v-if="shareResult.maxDownloads">
-            <span class="label">下载限制:</span>
-            <span>{{ shareResult.maxDownloads }} 次</span>
+            <span class="label">{{ $t('filesView.downloadLimitInfoLabel') }}</span>
+            <span>{{ $t('filesView.timesSuffix', { count: shareResult.maxDownloads }) }}</span>
           </div>
         </div>
       </div>
 
       <!-- 分享表单 -->
       <el-form v-else label-width="80px" class="share-form">
-        <el-form-item label="访问方式">
+        <el-form-item :label="$t('filesView.accessTypeLabel')">
           <el-radio-group v-model="shareForm.accessType">
-            <el-radio :value="ShareAccessType.Public">公开访问</el-radio>
-            <el-radio :value="ShareAccessType.Password">密码保护</el-radio>
-            <el-radio :value="ShareAccessType.Internal">仅内部用户</el-radio>
+            <el-radio :value="ShareAccessType.Public">{{ $t('filesView.publicRadio') }}</el-radio>
+            <el-radio :value="ShareAccessType.Password">{{ $t('filesView.passwordRadio') }}</el-radio>
+            <el-radio :value="ShareAccessType.Internal">{{ $t('filesView.internalRadio') }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="访问密码" v-if="shareForm.accessType === ShareAccessType.Password">
-          <el-input v-model="shareForm.password" placeholder="设置访问密码" show-password>
+        <el-form-item :label="$t('filesView.passwordLabel')" v-if="shareForm.accessType === ShareAccessType.Password">
+          <el-input v-model="shareForm.password" :placeholder="$t('filesView.passwordSetPlaceholder')" show-password>
             <template #append>
-              <el-button @click="generatePassword">随机生成</el-button>
+              <el-button @click="generatePassword">{{ $t('filesView.generateRandom') }}</el-button>
             </template>
           </el-input>
         </el-form-item>
 
-        <el-form-item label="权限">
+        <el-form-item :label="$t('filesView.permissionLabel')">
           <el-radio-group v-model="shareForm.permission">
-            <el-radio :value="PermissionLevel.Read">只读</el-radio>
-            <el-radio :value="PermissionLevel.ReadWrite">读写</el-radio>
-            <el-radio :value="PermissionLevel.FullControl">完全控制</el-radio>
+            <el-radio :value="PermissionLevel.Read">{{ $t('filesView.readOnly') }}</el-radio>
+            <el-radio :value="PermissionLevel.ReadWrite">{{ $t('filesView.readWrite') }}</el-radio>
+            <el-radio :value="PermissionLevel.FullControl">{{ $t('filesView.fullControl') }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="有效期">
+        <el-form-item :label="$t('filesView.expiryLabel')">
           <el-radio-group v-model="expiresOption">
-            <el-radio value="never">永久</el-radio>
-            <el-radio value="1d">1天</el-radio>
-            <el-radio value="7d">7天</el-radio>
-            <el-radio value="30d">30天</el-radio>
-            <el-radio value="custom">自定义</el-radio>
+            <el-radio value="never">{{ $t('filesView.neverExpire') }}</el-radio>
+            <el-radio value="1d">{{ $t('filesView.oneDay') }}</el-radio>
+            <el-radio value="7d">{{ $t('filesView.sevenDays') }}</el-radio>
+            <el-radio value="30d">{{ $t('filesView.thirtyDays') }}</el-radio>
+            <el-radio value="custom">{{ $t('filesView.custom') }}</el-radio>
           </el-radio-group>
           <el-date-picker
             v-if="expiresOption === 'custom'"
             v-model="shareForm.expiresAt"
             type="datetime"
-            placeholder="选择过期时间"
+            :placeholder="$t('filesView.expiryLabel')"
             style="margin-top: 8px; width: 100%"
           />
         </el-form-item>
 
-        <el-form-item label="下载限制">
+        <el-form-item :label="$t('filesView.downloadLimitLabel')">
           <el-radio-group v-model="maxDownloadsOption">
-            <el-radio value="unlimited">不限</el-radio>
-            <el-radio value="1">1次</el-radio>
-            <el-radio value="10">10次</el-radio>
-            <el-radio value="100">100次</el-radio>
-            <el-radio value="custom">自定义</el-radio>
+            <el-radio value="unlimited">{{ $t('filesView.unlimited') }}</el-radio>
+            <el-radio value="1">{{ $t('filesView.once') }}</el-radio>
+            <el-radio value="10">{{ $t('filesView.times10') }}</el-radio>
+            <el-radio value="100">{{ $t('filesView.times100') }}</el-radio>
+            <el-radio value="custom">{{ $t('filesView.custom') }}</el-radio>
           </el-radio-group>
           <el-input-number
             v-if="maxDownloadsOption === 'custom'"
             v-model="shareForm.maxDownloads"
             :min="1"
             :max="10000"
-            placeholder="下载次数"
+            :placeholder="$t('filesView.downloadLimitLabel')"
             style="margin-top: 8px; width: 100%"
           />
         </el-form-item>
       </el-form>
 
       <template #footer>
-        <el-button @click="shareDialogVisible = false">{{ shareResult ? '关闭' : '取消' }}</el-button>
+        <el-button @click="shareDialogVisible = false">{{ shareResult ? $t('filesView.closeText') : $t('filesView.cancel') }}</el-button>
         <el-button v-if="!shareResult" type="primary" @click="handleCreateShare" :loading="shareLoading">
-          创建分享
+          {{ $t('filesView.createShareBtn') }}
         </el-button>
         <el-button v-else type="primary" @click="copyShareLink">
           <el-icon><Link /></el-icon>
-          复制链接
+          {{ $t('filesView.copyLinkBtn') }}
         </el-button>
       </template>
     </el-dialog>
