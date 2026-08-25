@@ -6,7 +6,8 @@
 namespace NasSystem.Api.Extensions;
 
 using System.Security.Claims;
-using NasSystem.Application.Thumbnails;
+using NasSystem.Application.Files;
+
 using NasSystem.Shared;
 
 /// <summary>

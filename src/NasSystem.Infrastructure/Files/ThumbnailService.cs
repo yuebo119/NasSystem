@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using NasSystem.Application.Thumbnails;
+using NasSystem.Application.Files;
 using NasSystem.Shared;
 
 /// <summary>

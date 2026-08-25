@@ -55,7 +55,6 @@ public static class DependencyInjection
         // 注册领域服务
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IFileHasher, FileHasher>();
-        services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 
         // 领域事件处理器注册（ITM-N29 批次：机制接通首个订阅者）
@@ -69,9 +68,9 @@ public static class DependencyInjection
         services.AddSingleton<IFileSystemService, FileSystemService>();
 
         // 注册缩略图服务
-        services.Configure<Application.Thumbnails.ThumbnailOptions>(
+        services.Configure<Application.Files.ThumbnailOptions>(
             configuration.GetSection("Thumbnails"));
-        services.AddSingleton<Application.Thumbnails.IThumbnailService, Files.ThumbnailService>();
+        services.AddSingleton<Application.Files.IThumbnailService, Files.ThumbnailService>();
 
         // 内存缓存
         services.AddMemoryCache();

@@ -6,10 +6,10 @@
 namespace NasSystem.Infrastructure.Services;
 
 using Microsoft.Extensions.Logging;
-using NasSystem.Application.Thumbnails;
-using NasSystem.Domain.Services;
+using NasSystem.Application.Files;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Events;
+using NasSystem.Domain.Services;
 
 /// <summary>
 /// 文件删除事件的副作用处理：清除对应缩略图缓存条目。

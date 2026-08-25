@@ -34,7 +34,6 @@ try
 
     // 注册服务
     builder.Services
-        .AddSharedServices()
         .AddApplicationServices()
         .AddInfrastructureServices(builder.Configuration)
         .AddJwtAuthentication(builder.Configuration, builder.Environment)

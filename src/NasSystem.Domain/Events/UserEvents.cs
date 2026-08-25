@@ -23,17 +23,5 @@ public sealed record UserPasswordChangedEvent(Guid UserId) : DomainEvent;
 /// </summary>
 public sealed record UserRoleChangedEvent(Guid UserId, UserRole OldRole, UserRole NewRole) : DomainEvent;
 
-/// <summary>
-/// 用户登录事件
-/// </summary>
-public sealed record UserLoggedInEvent(Guid UserId, string IpAddress) : DomainEvent;
 
-/// <summary>
-/// 用户登出事件
-/// </summary>
-public sealed record UserLoggedOutEvent(Guid UserId) : DomainEvent;
 
-/// <summary>
-/// 用户删除事件
-/// </summary>
-public sealed record UserDeletedEvent(Guid UserId, string Username) : DomainEvent;
