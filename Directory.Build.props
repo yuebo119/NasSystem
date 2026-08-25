@@ -19,9 +19,9 @@
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <TieredCompilation>true</TieredCompilation>
     
-    <!-- Native AOT 准备 -->
-    <IsAotCompatible>true</IsAotCompatible>
-    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <!-- ITM-N8（2026-08-25 裁决执行）：IsAotCompatible 假声明已移除——
+         EF Core 动态查询与原 Mapster 反射编译不兼容 Native AOT，
+         声明 true 却无法通过 publish 验证即自欺；未来若需 AOT 再按全链路验证引入 -->
   </PropertyGroup>
   
   <!-- 全局包版本管理 -->

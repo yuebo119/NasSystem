@@ -25,8 +25,17 @@ public sealed class UnitOfWork(
         // 发布领域事件
         await DispatchDomainEventsAsync(cancellationToken);
 
-        // 保存更改
-        return await context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            // 保存更改
+            return await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 19)
+        {
+            // ITM-N7：并发插入撞上唯一索引时，把提供方异常转译为领域异常，
+            // 服务层据此返回 AlreadyExists 业务错误而非 500
+            throw new UniqueConstraintException(ex.Message, "唯一约束冲突：相同记录已被并发请求创建", ex);
+        }
     }
 
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)

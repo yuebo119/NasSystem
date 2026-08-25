@@ -6,6 +6,7 @@
 namespace NasSystem.Api.Hubs;
 
 using Microsoft.AspNetCore.SignalR;
+using NasSystem.Application.Notifications;
 
 /// <summary>
 /// NAS 系统实时通信 Hub
@@ -66,48 +67,6 @@ public sealed class NasHub : Hub
     }
 }
 
-/// <summary>
-/// Hub 通知服务接口
-/// </summary>
-public interface IHubNotificationService
-{
-    /// <summary>
-    /// 通知文件变更
-    /// </summary>
-    Task NotifyFileChangedAsync(string path, FileChangeType changeType, object? data = null);
-
-    /// <summary>
-    /// 通知上传进度
-    /// </summary>
-    Task NotifyUploadProgressAsync(string taskId, long uploaded, long total);
-
-    /// <summary>
-    /// 通知任务完成
-    /// </summary>
-    Task NotifyTaskCompletedAsync(string taskId, bool success, string? message = null);
-
-    /// <summary>
-    /// 通知系统消息
-    /// </summary>
-    Task NotifySystemMessageAsync(string message, string level = "info");
-
-    /// <summary>
-    /// 通知存储空间变更
-    /// </summary>
-    Task NotifyStorageChangedAsync(long totalBytes, long usedBytes, long availableBytes);
-}
-
-/// <summary>
-/// 文件变更类型
-/// </summary>
-public enum FileChangeType
-{
-    Created,
-    Modified,
-    Deleted,
-    Renamed,
-    Moved
-}
 
 /// <summary>
 /// Hub 通知服务实现
@@ -117,7 +76,9 @@ public sealed class HubNotificationService(IHubContext<NasHub> hubContext) : IHu
     public async Task NotifyFileChangedAsync(string path, FileChangeType changeType, object? data = null)
     {
         // 通知订阅该路径的客户端
-        var parentPath = Path.GetDirectoryName(path)?.Replace('\\', '/') ?? "/";
+        var parentPath = Path.GetDirectoryName(path)?.Replace('\\', '/');
+        if (string.IsNullOrEmpty(parentPath))
+            parentPath = "/"; // 根目录文件的父目录归一为 /（与前端订阅串一致）
         
         await hubContext.Clients.Group($"path:{parentPath}").SendAsync("FileChanged", new
         {

@@ -28,6 +28,7 @@ public class FileServiceTests
     private readonly Mock<IFileHasher> _fileHasherMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IConfiguration> _configurationMock;
+    private readonly Mock<NasSystem.Application.Notifications.IHubNotificationService> _notifierMock;
     private readonly FileService _sut;
 
     public FileServiceTests()
@@ -38,6 +39,7 @@ public class FileServiceTests
         _fileHasherMock = new Mock<IFileHasher>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _configurationMock = new Mock<IConfiguration>();
+        _notifierMock = new Mock<NasSystem.Application.Notifications.IHubNotificationService>();
         _configurationMock.Setup(x => x["NasSystem:StoragePath"]).Returns("/mnt/storage");
 
         _sut = new FileService(
@@ -46,7 +48,8 @@ public class FileServiceTests
             _unitOfWorkMock.Object,
             _fileSystemServiceMock.Object,
             _fileHasherMock.Object,
-            _configurationMock.Object);
+            _configurationMock.Object,
+            _notifierMock.Object);
     }
 
     #region GetDirectoryContentsAsync Tests

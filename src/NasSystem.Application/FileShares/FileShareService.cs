@@ -73,7 +73,17 @@ public sealed class FileShareService(
         }
 
         await fileShareRepository.AddAsync(share, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (UniqueConstraintException)
+        {
+            // ITM-N7：并发生成相同分享码由 ShareCode 唯一索引兜底
+            share.RegenerateShareCode();
+            await fileShareRepository.UpdateAsync(share, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
 
         return Result<FileShareDto>.Success(await MapToDtoAsync(share, fileItem, baseUrl, cancellationToken));
     }

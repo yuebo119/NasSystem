@@ -12,6 +12,8 @@ using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
+using NasSystem.Application.Notifications;
+using NasSystem.Domain.Common;
 using NasSystem.Domain.Services;
 using NasSystem.Shared;
 
@@ -25,6 +27,7 @@ public sealed class FileService : IFileService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileSystemService _fileSystemService;
     private readonly IFileHasher _fileHasher;
+    private readonly IHubNotificationService _notifier;
 
     public FileService(
         IFileItemRepository fileRepository,
@@ -32,14 +35,20 @@ public sealed class FileService : IFileService
         IUnitOfWork unitOfWork,
         IFileSystemService fileSystemService,
         IFileHasher fileHasher,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IHubNotificationService notifier)
     {
         _fileRepository = fileRepository;
         _storagePoolRepository = storagePoolRepository;
         _unitOfWork = unitOfWork;
         _fileSystemService = fileSystemService;
         _fileHasher = fileHasher;
+        _notifier = notifier;
     }
+
+    /// <summary>操作成功后向父目录订阅组推送变更（SignalR 实时刷新闭环）</summary>
+    private Task NotifyChangedAsync(string parentPath, FileChangeType changeType, string path) =>
+        _notifier.NotifyFileChangedAsync(parentPath, changeType, new { path });
 
     public async Task<Result<DirectoryContentDto>> GetDirectoryContentsAsync(
         string path,
@@ -130,8 +139,17 @@ public sealed class FileService : IFileService
             parentId: parentId);
 
         await _fileRepository.AddAsync(folder, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (UniqueConstraintException)
+        {
+            // ITM-N7：并发创建同名目录由 Path 唯一部分索引兜底
+            return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(newPath));
+        }
 
+        await NotifyChangedAsync(parentPath, FileChangeType.Created, folder.Path);
         return Result<FileItemDto>.Success(MapToDto(folder));
     }
 
@@ -200,8 +218,16 @@ public sealed class FileService : IFileService
             hash: hash);
 
         await _fileRepository.AddAsync(file, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (UniqueConstraintException)
+        {
+            return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(filePath));
+        }
 
+        await NotifyChangedAsync(destPath, FileChangeType.Created, file.Path);
         return Result<FileItemDto>.Success(MapToDto(file));
     }
 
@@ -254,6 +280,7 @@ public sealed class FileService : IFileService
         await RewriteDescendantPathsAsync(item.Id, GetParentPath(path), newPath, newPhysicalPath, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyChangedAsync(GetParentPath(newPath), FileChangeType.Renamed, item.Path);
 
         return Result<FileItemDto>.Success(MapToDto(item));
     }
@@ -322,6 +349,8 @@ public sealed class FileService : IFileService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        if (results.Count > 0)
+            await NotifyChangedAsync(destPath, FileChangeType.Moved, destPath);
         return Result<IReadOnlyList<FileItemDto>>.Success(results);
     }
 
@@ -378,6 +407,8 @@ public sealed class FileService : IFileService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        if (results.Count > 0)
+            await NotifyChangedAsync(destPath, FileChangeType.Created, destPath);
         return Result<IReadOnlyList<FileItemDto>>.Success(results);
     }
 
@@ -582,6 +613,8 @@ public sealed class FileService : IFileService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        foreach (var path in request.Paths)
+            await NotifyChangedAsync(GetParentPath(NormalizePath(path)), FileChangeType.Deleted, path);
         return Result<DeleteResultDto>.Success(result);
     }
 

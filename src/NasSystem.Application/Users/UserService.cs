@@ -85,7 +85,15 @@ public sealed class UserService(
             user.SetQuota(dto.QuotaBytes.Value);
 
         await userRepository.AddAsync(user, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (UniqueConstraintException)
+        {
+            // ITM-N7：并发创建同名用户由 Users.Username 唯一索引兜底
+            return Result<UserDto>.Failure(UserErrors.UsernameExists(dto.Username));
+        }
 
         return Result<UserDto>.Success(MapToDto(user));
     }

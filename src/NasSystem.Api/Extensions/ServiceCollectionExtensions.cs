@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using System.Threading.RateLimiting;
 using NasSystem.Api.Hubs;
+using NasSystem.Application.Notifications;
 using Scalar.AspNetCore;
 
 /// <summary>

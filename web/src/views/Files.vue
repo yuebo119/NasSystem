@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick } from 'vue'
+import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { subscribeDirectory } from '@/utils/signalr'
 import { useRoute, useRouter } from 'vue-router'
 import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api/file'
@@ -975,6 +976,28 @@ async function copyShareLink() {
 function openContextMenu(_event: MouseEvent, item: FileItem) {
   fileStore.selectItem(item)
 }
+
+// ═══ 实时刷新（ITM-N5 收尾：SignalR 目录订阅，多标签页/多用户变更自动同步）═══
+let unsubscribe: (() => void) | null = null
+
+async function resubscribe(path: string) {
+  try {
+    await unsubscribe?.()
+    unsubscribe = await subscribeDirectory(path, (changedPath) => {
+      // 仅当变更位于当前目录的直接层级时静默刷新（子目录深处的批量变更不打断浏览）
+      const parent = changedPath.slice(0, changedPath.lastIndexOf('/')) || '/'
+      if (parent === fileStore.currentPath && !fileStore.isLoading) {
+        void fileStore.loadDirectory(fileStore.currentPath)
+      }
+    })
+  } catch {
+    // SignalR 不可达时静默降级为纯 HTTP 轮询语义（进入目录仍会拉取）
+  }
+}
+
+onMounted(() => void resubscribe(fileStore.currentPath))
+watch(() => fileStore.currentPath, (path) => void resubscribe(path))
+onUnmounted(() => void unsubscribe?.())
 </script>
 
 <template>
