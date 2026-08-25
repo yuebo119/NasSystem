@@ -271,14 +271,9 @@ public sealed class FileItem : Entity
     }
 
     /// <summary>
-    /// 标准化路径
+    /// 标准化路径（单一真源委托，见 FilePath.Normalize 的保留论证）
     /// </summary>
-    private static string NormalizePath(string path)
-    {
-        // 统一使用正斜杠，确保以 / 开头
-        var normalized = path.Replace('\\', '/').TrimEnd('/');
-        return normalized.StartsWith('/') ? normalized : "/" + normalized;
-    }
+    private static string NormalizePath(string path) => ValueObjects.FilePath.Normalize(path);
 
     /// <summary>
     /// 是否为文件夹

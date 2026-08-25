@@ -134,10 +134,20 @@ public sealed class FilePath : ValueObject
     }
 
     /// <summary>
-    /// 标准化路径
+    /// 全项目唯一的虚拟路径规范化真源。
     /// </summary>
-    private static string Normalize(string path)
+    /// <remarks>
+    /// 【单一真源论证】规范化逻辑曾以四份私有拷贝散布（FileItem/FileItemRepository/
+    /// FileService/本类），其中仅本类解析 <c>..</c> 相对段与重复斜杠——行为漂移意味着
+    /// 同一输入在不同层得到不同 Path，直接威胁唯一索引兜底与物理映射一致性
+    /// （误判库 NPD-2：合并必须以最强防护版为收敛目标）。故统一委托至此。
+    /// </remarks>
+    public static string Normalize(string path)
     {
+        // 空白输入归一为根路径（对齐历史契约：GetDirectoryContents("") == 浏览根目录）
+        if (string.IsNullOrWhiteSpace(path))
+            return "/";
+
         // 替换反斜杠
         var normalized = path.Replace('\\', '/');
         

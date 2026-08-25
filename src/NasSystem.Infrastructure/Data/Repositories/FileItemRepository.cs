@@ -247,9 +247,8 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
             .SumAsync(f => f.SizeBytes, cancellationToken);
     }
 
-    private static string NormalizePath(string path)
-    {
-        var normalized = path.Replace('\\', '/').TrimEnd('/');
-        return normalized.StartsWith('/') ? normalized : "/" + normalized;
-    }
+    /// <summary>
+    /// 标准化路径（单一真源委托，见 FilePath.Normalize 的保留论证）
+    /// </summary>
+    private static string NormalizePath(string path) => Domain.ValueObjects.FilePath.Normalize(path);
 }

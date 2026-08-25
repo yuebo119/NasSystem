@@ -1052,14 +1052,8 @@ public sealed class FileService : IFileService
 
     #region 辅助方法
 
-    private static string NormalizePath(string path)
-    {
-        if (string.IsNullOrEmpty(path)) return "/";
-        path = path.Replace('\\', '/').Trim();
-        if (!path.StartsWith('/')) path = "/" + path;
-        if (path.Length > 1 && path.EndsWith('/')) path = path.TrimEnd('/');
-        return path;
-    }
+    // 【单一真源】规范化委托 FilePath.Normalize（解析 .. 与重复斜杠的强防护版），见该处保留论证
+    private static string NormalizePath(string path) => Domain.ValueObjects.FilePath.Normalize(path);
 
     private static string GetFileName(string path) =>
         path == "/" ? "根目录" : path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "根目录";
