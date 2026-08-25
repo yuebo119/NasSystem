@@ -69,8 +69,14 @@ public sealed class NasHub : Hub
 
 
 /// <summary>
-/// Hub 通知服务实现
+/// Hub 通知服务实现。
 /// </summary>
+/// <remarks>
+/// 【分层论证】为什么实现放在 Api 层而接口在 Application/Notifications：
+/// 推送的技术载体（IHubContext/SignalR）是表现层基础设施，Domain/Application 不应感知；
+/// Application 服务仅依赖抽象接口在用例成功路径发出事件，实现经 DI 注入。
+/// 这与 ILogger/MailKit 等横切关注点的"接口在内、实现在外"布局一致。
+/// </remarks>
 public sealed class HubNotificationService(IHubContext<NasHub> hubContext) : IHubNotificationService
 {
     public async Task NotifyFileChangedAsync(string path, FileChangeType changeType, object? data = null)

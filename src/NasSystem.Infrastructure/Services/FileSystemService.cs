@@ -182,6 +182,15 @@ public sealed class FileSystemService : IFileSystemService
             DefaultBufferSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 
+    public Stream OpenWrite(string path) =>
+        new FileStream(
+            path,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            DefaultBufferSize,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+
     public long GetAvailableSpace(string path)
     {
         var drive = new DriveInfo(Path.GetPathRoot(path) ?? path);

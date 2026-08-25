@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Repositories;
+using NasSystem.Domain.Services;
 using NasSystem.Shared;
 
 /// <summary>
@@ -20,17 +21,20 @@ public class FileVersionService : IFileVersionService
     private readonly IFileItemRepository _fileItemRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<FileVersionService> _logger;
+    private readonly IFileSystemService _fileSystemService;
 
     public FileVersionService(
         IFileVersionRepository versionRepository,
         IFileItemRepository fileItemRepository,
         IUnitOfWork unitOfWork,
-        ILogger<FileVersionService> logger)
+        ILogger<FileVersionService> logger,
+        IFileSystemService fileSystemService)
     {
         _versionRepository = versionRepository;
         _fileItemRepository = fileItemRepository;
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _fileSystemService = fileSystemService;
     }
 
     /// <inheritdoc />
@@ -207,7 +211,8 @@ public class FileVersionService : IFileVersionService
 
         var fileItem = await _fileItemRepository.GetByIdAsync(fileItemId, cancellationToken);
         var fileName = fileItem?.Name ?? $"version_{versionNumber}";
-        var contentType = GetContentType(fileName);
+        // MIME 统一经 IFileSystemService 真源（原本地映射表为漂移副本，ITM-N2 批次收敛）
+        var contentType = _fileSystemService.GetMimeType(fileName);
 
         var stream = new FileStream(
             version.StoragePath,
@@ -313,22 +318,4 @@ public class FileVersionService : IFileVersionService
             CreatedAt: version.CreatedAt);
     }
 
-    private static string GetContentType(string fileName)
-    {
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        return extension switch
-        {
-            ".txt" => "text/plain",
-            ".pdf" => "application/pdf",
-            ".doc" or ".docx" => "application/msword",
-            ".xls" or ".xlsx" => "application/vnd.ms-excel",
-            ".png" => "image/png",
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".gif" => "image/gif",
-            ".zip" => "application/zip",
-            ".json" => "application/json",
-            ".xml" => "application/xml",
-            _ => "application/octet-stream"
-        };
-    }
 }

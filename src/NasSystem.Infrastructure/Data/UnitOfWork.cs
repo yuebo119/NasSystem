@@ -30,6 +30,11 @@ public sealed class UnitOfWork(
             // 保存更改
             return await context.SaveChangesAsync(cancellationToken);
         }
+        // 【分层论证】为什么在这里转译而不是让 Application 层直接 catch SqliteException：
+        // Clean Architecture 中 Application 层禁止引用基础设施包（gate NAS-G3 强制），
+        // Microsoft.Data.Sqlite 属于 Infrastructure 专有依赖。提供方异常在跨出基础设施层
+        // 的边界处统一转译为 Domain 异常，Application 只认知领域语义——提供方更换
+        // （SQLite→PostgreSQL）时仅需修改本文件，服务层零改动。
         catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 19)
         {
             // ITM-N7：并发插入撞上唯一索引时，把提供方异常转译为领域异常，

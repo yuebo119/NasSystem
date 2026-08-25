@@ -89,7 +89,12 @@ public static class AuthenticationExtensions
                     
                     var path = context.HttpContext.Request.Path;
 
-                    // 如果是 SignalR Hub 或文件下载请求，从查询参数获取令牌
+                    // 【保留论证】为什么允许 query string 传令牌（看似违反安全惯例）：
+                    // ① SignalR 的 WebSocket 握手协议无法携带自定义 Header，query 是规范允许的唯一通道；
+                    // ② 前端下载/预览已改走 fetch+Authorization 头，此处保留 download/thumbnails 白名单
+                    //    仅服务于 <img>/<video> 标签直接引用 URL 的场景（标签无法设头）。
+                    // 风险收窄三件套：路径白名单（仅 3 段前缀）+ JWT 短时效 + 不落浏览器历史
+                    // （前端经 blob objectURL 引用）。扩大白名单需重新评审。
                     if (!string.IsNullOrEmpty(accessToken) && 
                         (path.StartsWithSegments("/hubs") || 
                          path.StartsWithSegments("/api/v1/files/download") ||

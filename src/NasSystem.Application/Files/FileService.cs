@@ -16,6 +16,7 @@ using NasSystem.Application.Notifications;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Services;
 using NasSystem.Shared;
+using static NasSystem.Shared.ByteSizeFormatter;
 
 /// <summary>
 /// 文件服务实现
@@ -180,26 +181,40 @@ public sealed class FileService : IFileService
         if (defaultPool is null)
             return Result<FileItemDto>.Failure(StorageErrors.PoolNotFound(Guid.Empty));
 
-        // 写入物理文件
+        // 写入物理文件并同步计算哈希——单遍 IO 流水线。
+        // 【性能精炼记录】原实现"写盘 → 重开读盘 → 整流哈希"，大文件场景读放大 ×2；
+        // 精炼为复制缓冲循环内增量喂入 SHA256（IncrementalHash），IO 量减半且语义不变。
+        // 缓冲区与 FileHasher 保持同规格（80KB），ArrayPool 复用避免大文件反复分配。
         var physicalPath = GetPhysicalPath(filePath, defaultPool.MountPath);
         var physicalDir = Path.GetDirectoryName(physicalPath)!;
         _fileSystemService.CreateDirectory(physicalDir);
 
-        await using (var fs = File.Create(physicalPath))
+        long totalBytes = 0;
+        string hash;
+        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(80 * 1024);
+        try
         {
-            await fileStream.CopyToAsync(fs, cancellationToken);
-        }
+            await using var fs = _fileSystemService.OpenWrite(physicalPath);
+            using var incrementalHash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+            int bytesRead;
+            while ((bytesRead = await fileStream.ReadAsync(buffer, cancellationToken)) > 0)
+            {
+                await fs.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                incrementalHash.AppendData(buffer, 0, bytesRead);
+                totalBytes += bytesRead;
+            }
 
-        // 计算文件哈希
-        await using var hashStream = _fileSystemService.OpenRead(physicalPath);
-        var hashValue = await _fileHasher.ComputeHashAsync(hashStream, cancellationToken);
-        var hash = hashValue.Value;
-        var fileInfo = new FileInfo(physicalPath);
+            hash = Convert.ToBase64String(incrementalHash.GetHashAndReset());
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+        }
 
         // 创建或更新记录
         if (existingItem != null && metadata.Overwrite)
         {
-            existingItem.UpdateSize(fileInfo.Length);
+            existingItem.UpdateSize(totalBytes);
             existingItem.UpdateHash(hash);
             await _fileRepository.UpdateAsync(existingItem, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -212,8 +227,8 @@ public sealed class FileService : IFileService
             name: metadata.FileName,
             path: filePath,
             physicalPath: physicalPath,
-            sizeBytes: fileInfo.Length,
-            mimeType: metadata.ContentType ?? GetMimeType(metadata.FileName),
+            sizeBytes: totalBytes,
+            mimeType: metadata.ContentType ?? _fileSystemService.GetMimeType(metadata.FileName),
             ownerId: userId,
             storagePoolId: defaultPool.Id,
             parentId: parentId,
@@ -926,7 +941,10 @@ public sealed class FileService : IFileService
             else
             {
                 folder = existingFolder;
-                // ITM-N26：软删记录保持回收站态，不做任何修复/更新
+                // 【保留论证】软删命中物理存在时为何"什么都不做"而不是恢复或重建：
+                // 软删语义=用户明确不要了但暂存回收站；扫描只负责"物理↔数据库对齐"，
+                // 无权替用户改变删除决定（NPD-4 同族：扫描不是所有权/状态改写工具）。
+                // 若外部把文件放回原位，正确动作仍是保持回收站态由用户手动恢复。
                 if (existingFolder.IsDeleted)
                     continue;
 
@@ -969,7 +987,7 @@ public sealed class FileService : IFileService
                     path: fileVirtualPath,
                     physicalPath: file,
                     sizeBytes: fileInfo.Length,
-                    mimeType: GetMimeType(fileName),
+                    mimeType: _fileSystemService.GetMimeType(fileName),
                     storagePoolId: storagePoolId,
                     ownerId: userId,
                     parentId: currentDirId);
@@ -980,7 +998,7 @@ public sealed class FileService : IFileService
             }
             else
             {
-                // ITM-N26：软删文件保持回收站态
+                // 【保留论证】同上——扫描无权解除用户的软删决定（ITM-N26 交互语义）
                 if (existingFile.IsDeleted)
                     continue;
 
@@ -1096,35 +1114,7 @@ public sealed class FileService : IFileService
         UpdatedAt = item.UpdatedAt
     };
 
-    private static string FormatSize(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] sizes = ["B", "KB", "MB", "GB", "TB"];
-        double len = bytes;
-        int order = 0;
-        while (len >= 1024 && order < sizes.Length - 1) { order++; len /= 1024; }
-        return $"{len:0.##} {sizes[order]}";
-    }
 
-    private static string GetMimeType(string fileName)
-    {
-        var ext = Path.GetExtension(fileName).ToLowerInvariant();
-        return ext switch
-        {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".gif" => "image/gif",
-            ".pdf" => "application/pdf",
-            ".txt" => "text/plain",
-            ".html" => "text/html",
-            ".json" => "application/json",
-            ".xml" => "application/xml",
-            ".zip" => "application/zip",
-            ".mp4" => "video/mp4",
-            ".mp3" => "audio/mpeg",
-            _ => "application/octet-stream"
-        };
-    }
 
     #endregion
 }

@@ -94,4 +94,6 @@ public interface IFileSystemService
     /// 读取文件
     /// </summary>
     Stream OpenRead(string path);
+    /// <summary>打开写入流（FileMode.Create 语义）——上传写入走此抽象而非裸 File.Create</summary>
+    Stream OpenWrite(string path);
 }
