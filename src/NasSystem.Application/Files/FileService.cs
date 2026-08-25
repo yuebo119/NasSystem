@@ -263,6 +263,16 @@ public sealed class FileService : IFileService
         if (item is null)
             return Result<FileItemDto>.Failure(FileErrors.NotFound(path));
 
+        // ITM-N20：新名先过名称不变量，防止 "../x" 类输入经路径拼接逃逸挂载根
+        try
+        {
+            FileItem.ValidateName(request.NewName);
+        }
+        catch (ArgumentException ex)
+        {
+            return Result<FileItemDto>.Failure(new Error("File.InvalidName", ex.Message));
+        }
+
         var parentPath = GetParentPath(path);
         var newPath = CombinePath(parentPath, request.NewName);
         

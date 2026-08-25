@@ -90,6 +90,8 @@ public sealed class StoragePool : Entity
     /// </summary>
     public void Update(string name, string? description, long? maxCapacityBytes = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentOutOfRangeException.ThrowIfNegative(maxCapacityBytes ?? 0);
         Name = name;
         Description = description;
         if (maxCapacityBytes.HasValue)

@@ -158,6 +158,7 @@ public sealed class User : Entity
     /// </summary>
     public void SetQuota(long? quotaBytes)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(quotaBytes ?? 0);
         QuotaBytes = quotaBytes;
         MarkAsModified();
     }
@@ -167,6 +168,7 @@ public sealed class User : Entity
     /// </summary>
     public void UpdateUsedSpace(long usedBytes)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(usedBytes);
         UsedBytes = usedBytes;
         MarkAsModified();
     }
