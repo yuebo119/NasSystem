@@ -16,8 +16,7 @@ using NasSystem.Shared;
 /// 缩略图生成服务实现
 /// </summary>
 /// <remarks>
-/// 注意：此实现使用 Windows GDI+ 通过 System.Drawing
-/// 在生产环境中，建议使用跨平台库如 ImageSharp 或 SkiaSharp
+/// 图片使用 SkiaSharp 跨平台缩放；视频帧提取需 FFmpeg，当前返回占位图。
 /// </remarks>
 public class ThumbnailService : IThumbnailService
 {
@@ -198,7 +197,7 @@ public class ThumbnailService : IThumbnailService
     {
         var extension = Path.GetExtension(filePath).ToLowerInvariant();
 
-        // 对于视频文件，生成占位符或使用默认图标
+        // 视频帧提取需 FFmpeg 集成（独立事项）；当前返回占位图并在响应中如实标记
         if (_options.SupportedVideoExtensions.Contains(extension))
         {
             return GenerateVideoPlaceholder(targetWidth, targetHeight);
@@ -208,26 +207,37 @@ public class ThumbnailService : IThumbnailService
         return await GenerateImageThumbnailAsync(filePath, targetWidth, targetHeight, cancellationToken);
     }
 
-    private static async Task<byte[]> GenerateImageThumbnailAsync(
+    /// <summary>
+    /// 使用 SkiaSharp 生成等比缩放的 JPEG 缩略图（ITM-N5 收尾：替换"返回原图字节"的占位实现）。
+    /// 解码失败（损坏/不支持的编码）抛出异常，由上层统一转 Thumbnail.GenerationFailed。
+    /// </summary>
+    private static Task<byte[]> GenerateImageThumbnailAsync(
         string filePath,
         int targetWidth,
         int targetHeight,
         CancellationToken cancellationToken)
     {
-        // 简单实现：读取原图并返回（实际生产环境应使用图像处理库）
-        // 这里使用占位实现，真实项目应集成 SkiaSharp 或 ImageSharp
-        var sourceBytes = await File.ReadAllBytesAsync(filePath, cancellationToken);
-        
-        // 如果文件较小，直接返回原图
-        if (sourceBytes.Length < 100 * 1024) // 小于 100KB
-        {
-            return sourceBytes;
-        }
+        cancellationToken.ThrowIfCancellationRequested();
 
-        // 对于较大文件，返回简化版本
-        // 注意：实际实现应该进行真正的图像缩放
-        // 这里仅作为占位实现
-        return sourceBytes;
+        using var source = SkiaSharp.SKBitmap.Decode(filePath)
+            ?? throw new InvalidOperationException($"图像解码失败: {Path.GetFileName(filePath)}");
+
+        // 等比缩放适配目标框（不放大小图、不留白边）
+        var scale = Math.Min(
+            (float)targetWidth / source.Width,
+            (float)targetHeight / source.Height);
+        if (scale >= 1f)
+            scale = Math.Min(scale, 1f);
+
+        var width = Math.Max(1, (int)Math.Round(source.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(source.Height * scale));
+
+        using var resized = source.Resize(new SkiaSharp.SKImageInfo(width, height), SkiaSharp.SKFilterQuality.Medium)
+            ?? throw new InvalidOperationException("图像缩放失败");
+        using var image = SkiaSharp.SKImage.FromBitmap(resized);
+        using var encoded = image.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, 82);
+
+        return Task.FromResult(encoded.ToArray());
     }
 
     private static byte[] GenerateVideoPlaceholder(int width, int height)

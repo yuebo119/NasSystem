@@ -12,6 +12,7 @@ using NasSystem.Application.Common;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Repositories;
 using NasSystem.Domain.Services;
+using Microsoft.Extensions.Logging;
 using NasSystem.Infrastructure.Data;
 using NasSystem.Infrastructure.Data.Repositories;
 using NasSystem.Infrastructure.Services;
@@ -82,6 +83,7 @@ public static class DependencyInjection
         using var scope = serviceProvider.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<NasDbContext>();
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<NasDbContext>>();
 
         // 确保数据库目录存在
         var connectionString = configuration.GetConnectionString("DefaultConnection") ?? "Data Source=data/nas.db";
@@ -100,17 +102,42 @@ public static class DependencyInjection
         // 应用迁移或创建数据库
         await context.Database.EnsureCreatedAsync();
 
-        // 执行架构迁移（添加缺失的列）
-        await MigrateSchemaAsync(context);
+        // 执行架构迁移（添加缺失的列与索引）
+        await MigrateSchemaAsync(context, logger);
+
+        // ITM-N7：SQLite 并发三件套——WAL 读写分离、busy_timeout 防 SQLITE_BUSY、NORMAL 同步级别
+        await EnsureSqlitePragmasAsync(context);
 
         // 初始化种子数据
         await SeedDataAsync(context);
     }
 
     /// <summary>
+    /// 启用 SQLite 并发配置（CONVENTIONS §3.1）。WAL 模式持久化在库文件中，
+    /// busy_timeout/synchronous 为连接级参数，每次打开需重设。
+    /// </summary>
+    private static async Task EnsureSqlitePragmasAsync(NasDbContext context)
+    {
+        // 集成测试使用 InMemory provider，PRAGMA 仅对 SQLite 生效
+        if (!context.Database.IsSqlite())
+            return;
+
+        var connection = context.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            await connection.OpenAsync();
+
+        foreach (var pragma in new[] { "PRAGMA journal_mode=WAL;", "PRAGMA busy_timeout=5000;", "PRAGMA synchronous=NORMAL;" })
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = pragma;
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    /// <summary>
     /// 迁移数据库架构（添加缺失的列）
     /// </summary>
-    private static async Task MigrateSchemaAsync(NasDbContext context)
+    private static async Task MigrateSchemaAsync(NasDbContext context, Microsoft.Extensions.Logging.ILogger logger)
     {
         try
         {
@@ -138,16 +165,38 @@ public static class DependencyInjection
 
             if (!hasMaxCapacityBytes)
             {
-                Console.WriteLine("添加 MaxCapacityBytes 列到 StoragePools 表...");
                 using var alterCommand = connection.CreateCommand();
                 alterCommand.CommandText = "ALTER TABLE StoragePools ADD COLUMN MaxCapacityBytes INTEGER NULL;";
                 await alterCommand.ExecuteNonQueryAsync();
-                Console.WriteLine("MaxCapacityBytes 列添加成功");
+            }
+
+            // ITM-N7：EnsureCreated 不更新已有库的索引——旧库用 DDL 补业务唯一性兜底
+            // （新库由 EF 配置的 HasFilter 唯一索引覆盖，IF NOT EXISTS 双向幂等）
+            var uniqueIndexes = new[]
+            {
+                "CREATE UNIQUE INDEX IF NOT EXISTS UX_FileItems_Path ON FileItems(Path) WHERE [IsDeleted] = 0;",
+                "CREATE UNIQUE INDEX IF NOT EXISTS UX_FileShares_ShareCode ON FileShares(ShareCode);",
+                "CREATE UNIQUE INDEX IF NOT EXISTS UX_Users_Username ON Users(Username);",
+                "CREATE UNIQUE INDEX IF NOT EXISTS UX_FileVersions_Item_Version ON FileVersions(FileItemId, VersionNumber);"
+            };
+            foreach (var ddl in uniqueIndexes)
+            {
+                try
+                {
+                    using var indexCommand = connection.CreateCommand();
+                    indexCommand.CommandText = ddl;
+                    await indexCommand.ExecuteNonQueryAsync();
+                }
+                catch (Exception indexEx)
+                {
+                    // 存量数据含重复值时建索引失败——记录并放行，由人工清理后重启重试
+                    logger.LogWarning(indexEx, "唯一索引创建失败（存量数据可能存在重复），DDL: {Ddl}", ddl);
+                }
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"数据库架构迁移时出现警告: {ex.Message}");
+            logger.LogWarning(ex, "数据库架构迁移时出现警告");
         }
     }
 

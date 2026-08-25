@@ -25,7 +25,6 @@ public sealed class FileService : IFileService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileSystemService _fileSystemService;
     private readonly IFileHasher _fileHasher;
-    private readonly string _storagePath;
 
     public FileService(
         IFileItemRepository fileRepository,
@@ -40,7 +39,6 @@ public sealed class FileService : IFileService
         _unitOfWork = unitOfWork;
         _fileSystemService = fileSystemService;
         _fileHasher = fileHasher;
-        _storagePath = configuration["NasSystem:StoragePath"] ?? "storage";
     }
 
     public async Task<Result<DirectoryContentDto>> GetDirectoryContentsAsync(
@@ -925,16 +923,6 @@ public sealed class FileService : IFileService
                 }
             }
         }
-    }
-
-    public Task<Result<Stream>> GetThumbnailAsync(
-        string path,
-        int size,
-        Guid userId,
-        CancellationToken cancellationToken = default)
-    {
-        // TODO: 实现缩略图生成
-        return Task.FromResult(Result<Stream>.Failure(new Error("NotImplemented", "缩略图功能暂未实现")));
     }
 
 

@@ -64,7 +64,10 @@ public sealed class FileItemConfiguration : IEntityTypeConfiguration<FileItem>
             .OnDelete(DeleteBehavior.Restrict);
 
         // 索引
-        builder.HasIndex(f => f.Path);
+        // ITM-N7：Path 唯一索引兜底 TOCTOU——软删记录不占用路径（部分索引）
+        builder.HasIndex(f => f.Path)
+            .IsUnique()
+            .HasFilter("[IsDeleted] = 0");
         builder.HasIndex(f => f.ParentId);
         builder.HasIndex(f => f.OwnerId);
         builder.HasIndex(f => f.StoragePoolId);

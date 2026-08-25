@@ -21,8 +21,6 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     
     <!-- 任务调度 -->
-    <PackageReference Include="Hangfire.Core" />
-    <PackageReference Include="Hangfire.MemoryStorage" />
     
     <!-- 日志 -->
     <PackageReference Include="Serilog.AspNetCore" />
@@ -35,12 +33,11 @@
 
   <ItemGroup>
     <PackageVersion Update="Dapper" Version="2.1.66" />
-    <PackageVersion Update="Hangfire.Core" Version="1.8.22" />
-    <PackageVersion Update="Hangfire.MemoryStorage" Version="1.8.1.2" />
     <PackageVersion Update="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Update="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Update="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Update="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
+    <PackageReference Include="SkiaSharp" />
   </ItemGroup>
 
 </Project>

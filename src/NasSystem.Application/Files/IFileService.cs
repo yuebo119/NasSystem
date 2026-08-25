@@ -117,14 +117,6 @@ public interface IFileService
         Guid userId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// 获取文件缩略图
-    /// </summary>
-    Task<Result<Stream>> GetThumbnailAsync(
-        string path,
-        int size,
-        Guid userId,
-        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取文件统计信息
