@@ -5,7 +5,6 @@
 
 namespace NasSystem.Infrastructure.Services;
 
-using System.IO.Pipelines;
 using NasSystem.Domain.Services;
 
 /// <summary>
@@ -95,9 +94,13 @@ public sealed class FileSystemService : IFileSystemService
 
     public void Move(string sourcePath, string destinationPath)
     {
+        // ITM-N22：源不存在必须显式失败——静默 no-op 会让调用方误判移动成功
+        if (!File.Exists(sourcePath) && !Directory.Exists(sourcePath))
+            throw new FileNotFoundException($"源文件或目录不存在: {sourcePath}", sourcePath);
+
         if (File.Exists(sourcePath))
             File.Move(sourcePath, destinationPath, overwrite: false);
-        else if (Directory.Exists(sourcePath))
+        else
             Directory.Move(sourcePath, destinationPath);
     }
 
@@ -165,74 +168,10 @@ public sealed class FileSystemService : IFileSystemService
             DefaultBufferSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-        // 使用 Pipelines 实现高性能写入
-        var pipe = new Pipe();
-        
-        // 启动读取任务
-        var readTask = FillPipeAsync(sourceStream, pipe.Writer, cancellationToken);
-        
-        // 启动写入任务
-        var writeTask = ReadPipeAsync(pipe.Reader, fileStream, cancellationToken);
-
-        await Task.WhenAll(readTask, writeTask);
+        // ITM-N22：CopyToAsync 内部即为缓冲复制循环，与手写 Pipe 管道语义等价且更简
+        await sourceStream.CopyToAsync(fileStream, DefaultBufferSize, cancellationToken);
     }
 
-    private static async Task FillPipeAsync(
-        Stream source, 
-        PipeWriter writer,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            while (true)
-            {
-                var memory = writer.GetMemory(DefaultBufferSize);
-                var bytesRead = await source.ReadAsync(memory, cancellationToken);
-                
-                if (bytesRead == 0)
-                    break;
-
-                writer.Advance(bytesRead);
-                var result = await writer.FlushAsync(cancellationToken);
-
-                if (result.IsCompleted)
-                    break;
-            }
-        }
-        finally
-        {
-            await writer.CompleteAsync();
-        }
-    }
-
-    private static async Task ReadPipeAsync(
-        PipeReader reader, 
-        Stream destination,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            while (true)
-            {
-                var result = await reader.ReadAsync(cancellationToken);
-                var buffer = result.Buffer;
-
-                foreach (var segment in buffer)
-                {
-                    await destination.WriteAsync(segment, cancellationToken);
-                }
-
-                reader.AdvanceTo(buffer.End);
-
-                if (result.IsCompleted)
-                    break;
-            }
-        }
-        finally
-        {
-            await reader.CompleteAsync();
-        }
-    }
 
     public Stream OpenRead(string path) =>
         new FileStream(

@@ -70,8 +70,10 @@ public static class ResultExtensions
             var code when code.Contains("Validation") => Results.BadRequest(response),
             var code when code.Contains("Conflict") || code.Contains("Exists") => Results.Conflict(response),
             var code when code.Contains("Unauthorized") || code.Contains("Credentials") => Results.Unauthorized(),
-            var code when code.Contains("Forbidden") || code.Contains("AccessDenied") => Results.Forbid(),
-            _ => Results.BadRequest(response)
+            var code when code.Contains("Forbidden") || code.Contains("AccessDenied") || code.Contains("Disabled") => Results.Forbid(),
+            // ITM-N21：未知错误码默认按服务端故障处理——400 只留给已白名单的客户端错误，
+            // 否则 Scan.Failed 等运行时故障会被客户端误读为请求格式错误
+            _ => Results.InternalServerError(response)
         };
     }
 }

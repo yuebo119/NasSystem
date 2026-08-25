@@ -66,6 +66,11 @@ public sealed class StoragePool : Entity
         string? description = null,
         long? maxCapacityBytes = null)
     {
+        // ITM-N20：挂载点与名称是存储池寻址根，禁止空白；容量上限不可为负
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(mountPath);
+        ArgumentOutOfRangeException.ThrowIfNegative(maxCapacityBytes ?? 0);
+
         var pool = new StoragePool
         {
             Name = name,
@@ -106,6 +111,8 @@ public sealed class StoragePool : Entity
     /// </summary>
     public void UpdateCapacity(long totalBytes, long usedBytes)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(totalBytes);
+        ArgumentOutOfRangeException.ThrowIfNegative(usedBytes);
         TotalBytes = totalBytes;
         UsedBytes = usedBytes;
         MarkAsModified();

@@ -114,6 +114,10 @@ public sealed class FileItem : Entity
         Guid ownerId,
         Guid? parentId = null)
     {
+        ValidateName(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentException.ThrowIfNullOrWhiteSpace(physicalPath);
+
         var folder = new FileItem
         {
             Name = name,
@@ -144,6 +148,11 @@ public sealed class FileItem : Entity
         Guid? parentId = null,
         string? hash = null)
     {
+        ValidateName(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentException.ThrowIfNullOrWhiteSpace(physicalPath);
+        ArgumentOutOfRangeException.ThrowIfNegative(sizeBytes);
+
         var extension = System.IO.Path.GetExtension(name);
         
         var file = new FileItem
@@ -246,6 +255,17 @@ public sealed class FileItem : Entity
         if (isHidden.HasValue) IsHidden = isHidden.Value;
         if (isReadOnly.HasValue) IsReadOnly = isReadOnly.Value;
         MarkAsModified();
+    }
+
+    /// <summary>
+    /// 名称不变量：非空白、不含路径分隔符、不得为 ".." 或 "." 段——
+    /// 防止经实体工厂构造出层级错乱的虚拟路径进而物理写入逃逸（ITM-N20）。
+    /// </summary>
+    private static void ValidateName(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (name.Contains('/') || name.Contains('\\') || name == ".." || name == ".")
+            throw new ArgumentException($"名称不能包含路径分隔符或相对段: {name}", nameof(name));
     }
 
     /// <summary>

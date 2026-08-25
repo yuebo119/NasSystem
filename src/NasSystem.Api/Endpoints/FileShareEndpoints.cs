@@ -53,6 +53,19 @@ public static class FileShareEndpoints
                   .WithSummary("重新生成分享码")
                   .RequireAuthorization();
 
+        // ITM-N23：认证用户的分享下载/浏览入口——Internal 型分享的唯一合法通道
+        // （公开组对 Internal 返回 LoginRequired；此处 isAuthenticated=true 放行）
+        fileShares.MapGet("/{shareCode}/download", DownloadAuthenticatedShareFile)
+                  .WithName("DownloadAuthenticatedShareFile")
+                  .WithSummary("认证用户下载分享文件")
+                  .Produces(404)
+                  .RequireAuthorization();
+
+        fileShares.MapGet("/{shareCode}/files/{*subPath}", GetAuthenticatedShareFolderContent)
+                  .WithName("GetAuthenticatedShareFolderContent")
+                  .WithSummary("认证用户浏览分享文件夹")
+                  .RequireAuthorization();
+
         // 公开访问 API（无需登录）- 注册到根路由
         return group;
     }
@@ -217,6 +230,33 @@ public static class FileShareEndpoints
 
         var (stream, fileName, contentType) = result.Value;
         return Results.File(stream, contentType, fileName);
+    }
+
+    /// <summary>
+    /// 认证用户下载（ITM-N23）：isAuthenticated=true 使 Internal 型分享可用；
+    /// 密码型分享仍要求 accessToken（认证身份不豁免密码校验）
+    /// </summary>
+    private static async Task<IResult> DownloadAuthenticatedShareFile(
+        string shareCode,
+        string? token,
+        IFileShareService fileShareService)
+    {
+        var result = await fileShareService.GetDownloadStreamAsync(shareCode, token, null, isAuthenticated: true);
+        if (!result.IsSuccess)
+            return result.ToHttpResult();
+
+        var (stream, fileName, contentType) = result.Value;
+        return Results.File(stream, contentType, fileName);
+    }
+
+    private static async Task<IResult> GetAuthenticatedShareFolderContent(
+        string shareCode,
+        string? subPath,
+        string? token,
+        IFileShareService fileShareService)
+    {
+        var result = await fileShareService.GetFolderContentAsync(shareCode, token, subPath, isAuthenticated: true);
+        return result.ToHttpResult();
     }
 
     private static async Task<IResult> GetShareFolderContent(

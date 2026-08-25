@@ -83,6 +83,12 @@ public sealed class FileShare : Entity
         DateTime? expiresAt = null,
         int? maxDownloads = null)
     {
+        // ITM-N20：分享必须锚定具体文件且创建者可追溯
+        ArgumentOutOfRangeException.ThrowIfEqual(fileItemId, Guid.Empty);
+        ArgumentOutOfRangeException.ThrowIfEqual(createdByUserId, Guid.Empty);
+        if (accessType == ShareAccessType.Password && string.IsNullOrEmpty(passwordHash))
+            throw new ArgumentException("密码型分享必须提供密码哈希", nameof(passwordHash));
+
         return new FileShare
         {
             ShareCode = GenerateShareCode(),

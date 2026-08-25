@@ -83,6 +83,11 @@ public sealed class User : Entity
         string? displayName = null,
         string? email = null)
     {
+        // ITM-N20：用户名与凭据字段是身份不变量的根，工厂入口强制非空
+        ArgumentException.ThrowIfNullOrWhiteSpace(username);
+        ArgumentException.ThrowIfNullOrWhiteSpace(passwordHash);
+        ArgumentException.ThrowIfNullOrWhiteSpace(passwordSalt);
+
         var user = new User
         {
             Username = username.ToLowerInvariant(),
