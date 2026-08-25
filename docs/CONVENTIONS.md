@@ -55,9 +55,10 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 | 3.4 | 列表查询数据库端分页，禁止 Take(N) 后内存二次过滤再分页 |
 | 3.5 | 删除语义 = 默认软删除（`IsDeleted=true` 子树标记），`Permanent=true` 才物理删除；回收站读软删记录 |
 
-### 现状基线（2026-08-24）
+### 现状基线（2026-08-25 更新）
 
-- WAL 未配置（启动脚本待加）；Path/ShareCode/Username 唯一索引缺失 → 存量债务，action-items 登记
+- ✅ WAL/busy_timeout/synchronous 启动配置已落地；FileItems.Path 唯一部分索引 + ShareCode/Username/版本号唯一索引已兜底（旧库经幂等 DDL 迁移）
+- ⏳ 应用层 SqliteException(19) 冲突转译为业务错误待做（当前依赖前置查重 + 唯一索引硬约束）
 
 ## §4 安全
 
@@ -70,9 +71,10 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 | 4.5 | 网络端点四件套：认证端点限流、上传大小限制（`MaxRequestBodySize`）、错误路径测试、结构化日志（不含密钥/PII） |
 | 4.6 | 路径防穿越：虚拟路径 → 物理路径转换必须解析 `..` 并校验落在挂载根内（复用 `Domain.ValueObjects.FilePath`） |
 
-### 现状基线（2026-08-24）
+### 现状基线（2026-08-25 更新）
 
-- `appsettings.json:23` 含明文 SecretKey（FAIL 态债务）；生产策略 `AllowAnyOrigin`（FAIL 态债务）；无限流/无上传限制（FAIL 态债务）
+- ✅ SecretKey 占位符化 + 注册期 fail-fast；分享令牌 HMAC-SHA256 签名；分享码/前端密码加密随机数
+- ✅ Kestrel 上传 500MB 限制 + auth 端点限流（仅生产严格）；生产 CORS 白名单策略（SetIsOriginAllowed 拒绝制，来源清单待接入配置）
 
 ## §5 时间处理
 
@@ -105,11 +107,12 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 | 7.3 | API 封装返回类型与运行时一致（拦截器解包后签名必须是 `ApiResponse<T>`），禁止新增 `as any` |
 | 7.4 | 批量操作一次请求传数组，禁止前端循环逐项调用支持数组的 API |
 | 7.5 | 实时状态推送走 SignalR（`/hubs/nas`），轮询间隔 ≥30s 且后台标签页暂停 |
-| 7.6 | 认证 token 走 Header 或一次性签名 URL，禁止拼入 query string |
+| 7.6 | 认证用户 JWT 走 Header 或一次性签名 URL，禁止拼入 query string；公开分享访问令牌（匿名端点+媒体标签场景）经 query 传递属合法形态（NPD-6） |
 
-### 现状基线（2026-08-24）
+### 现状基线（2026-08-25 更新）
 
-- `main.ts:3-5` 全量导入 + `main.ts:19-21` 图标全量注册（FAIL 态债务）；`Files.vue` 三处 token 拼 URL（FAIL 态债务）
+- ✅ Element Plus 按需引入落地（全量 import/CSS/图标全局注册已移除）；认证 JWT 三处下载/预览改 Header+blob
+- ⏳ dayjs/file-saver/@vueuse 死依赖已卸载；虚拟滚动与 SignalR 接活仍待前端专项
 
 ## §8 构建与工程化
 
@@ -124,7 +127,7 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 
 | 数字 | 真源 |
 |------|------|
-| NAS-G 编号 | `.ai/scripts/gate-check.sh` |
+| NAS-G 编号 | `.ai/scripts/gate-check.sh`（现行 G1..G22） |
 | 基线数字（UtcNow 35 / 裸 IO 30 / 测试命名 6） | 本文件 §5.1 / §1.5 / §6.2，改动须同步脚本基线常量 |
 | 缺陷登记 ITM-N 编号 | `.ai/lessons.md` 第二章 |
 | 误判模式 NPD-N 编号 | `.ai/review/known-false-positives.md` |
