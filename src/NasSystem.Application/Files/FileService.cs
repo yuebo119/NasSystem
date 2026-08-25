@@ -695,7 +695,16 @@ public sealed class FileService : IFileService
             await _fileRepository.UpdateAsync(descendant, cancellationToken);
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (UniqueConstraintException)
+        {
+            // ITM-N26：并发场景下同路径可能已有活跃记录（或扫描前遗留）
+            return Result<FileItemDto>.Failure(
+                new Error("File.AlreadyExists", "同路径已存在记录，无法恢复"));
+        }
 
         return Result<FileItemDto>.Success(MapToDto(item));
     }
@@ -810,7 +819,15 @@ public sealed class FileService : IFileService
             // "物理不存在"而批量删除（多存储池数据销毁）。
             var allDbItems = await _fileRepository.GetAllAsync(cancellationToken);
             var dbItems = allDbItems.Where(x => x.StoragePoolId == defaultPool.Id).ToList();
-            var dbPathMap = dbItems.ToDictionary(x => x.Path, x => x);
+
+            // ITM-N26：软删记录也必须进入对比表——其物理文件仍存在于挂载点，
+            // 若缺席则会被扫描当作"新发现"重建（软删文件复活），且恢复时撞 Path 唯一索引
+            var softDeletedItems = await _fileRepository.GetDeletedItemsAsync(
+                ownerId: null, cancellationToken);
+            var softDeletedInPool = softDeletedItems.Where(x => x.StoragePoolId == defaultPool.Id);
+
+            var dbPathMap = dbItems.Concat(softDeletedInPool)
+                .ToDictionary(x => x.Path, x => x);
 
             // 扫描物理文件系统
             var physicalPaths = new HashSet<string>();
@@ -909,6 +926,10 @@ public sealed class FileService : IFileService
             else
             {
                 folder = existingFolder;
+                // ITM-N26：软删记录保持回收站态，不做任何修复/更新
+                if (existingFolder.IsDeleted)
+                    continue;
+
                 // 修复 parentId 如果不正确
                 if (existingFolder.ParentId != currentDirId)
                 {
@@ -959,6 +980,10 @@ public sealed class FileService : IFileService
             }
             else
             {
+                // ITM-N26：软删文件保持回收站态
+                if (existingFile.IsDeleted)
+                    continue;
+
                 // 修复 parentId 如果不正确
                 if (existingFile.ParentId != currentDirId)
                 {
