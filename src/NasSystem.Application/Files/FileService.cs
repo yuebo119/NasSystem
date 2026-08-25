@@ -203,6 +203,8 @@ public sealed class FileService : IFileService
             existingItem.UpdateHash(hash);
             await _fileRepository.UpdateAsync(existingItem, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            // ITM-N25：覆盖上传是 Modified 变更，与新建同等推送（否则订阅端不刷新）
+            await NotifyChangedAsync(destPath, FileChangeType.Modified, existingItem.Path);
             return Result<FileItemDto>.Success(MapToDto(existingItem));
         }
 
@@ -591,6 +593,7 @@ public sealed class FileService : IFileService
         CancellationToken cancellationToken = default)
     {
         var result = new DeleteResultDto();
+        var succeededPaths = new List<string>();
 
         foreach (var path in request.Paths)
         {
@@ -604,7 +607,8 @@ public sealed class FileService : IFileService
 
             if (request.Permanent)
             {
-                await PermanentDeleteAsync(item, result, cancellationToken);
+                if (await PermanentDeleteAsync(item, result, cancellationToken))
+                    succeededPaths.Add(normalized);
             }
             else
             {
@@ -619,12 +623,14 @@ public sealed class FileService : IFileService
                     await _fileRepository.UpdateAsync(descendant, cancellationToken);
                 }
                 result.DeletedCount++;
+                succeededPaths.Add(normalized);
             }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        foreach (var path in request.Paths)
-            await NotifyChangedAsync(GetParentPath(NormalizePath(path)), FileChangeType.Deleted, path);
+        // ITM-N25：只对成功项推送——失败项记录仍在，推送 Deleted 会误导订阅端
+        foreach (var path in succeededPaths)
+            await NotifyChangedAsync(GetParentPath(path), FileChangeType.Deleted, path);
         return Result<DeleteResultDto>.Success(result);
     }
 
@@ -632,7 +638,7 @@ public sealed class FileService : IFileService
     /// 永久删除：物理删除成功才删数据库记录（ITM-N14：物理失败仍删库会产生孤儿文件，
     /// 并在下次扫描时被当作新文件重新入库）；文件夹级联清理后代记录。
     /// </summary>
-    private async Task PermanentDeleteAsync(FileItem item, DeleteResultDto result, CancellationToken ct)
+    private async Task<bool> PermanentDeleteAsync(FileItem item, DeleteResultDto result, CancellationToken ct)
     {
         try
         {
@@ -652,10 +658,12 @@ public sealed class FileService : IFileService
             await _fileRepository.DeleteAsync(item, ct);
 
             result.DeletedCount++;
+            return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             result.FailedItems.Add($"{item.Name}: 物理删除失败，已保留记录（{ex.Message}）");
+            return false;
         }
     }
 

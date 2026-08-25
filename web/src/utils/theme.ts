@@ -15,7 +15,8 @@ export const getDefaultTheme = (): ThemeType => {
   return 'light'
 }
 
-// 应用主题
+// 应用主题（仅切 DOM class，不落盘——ITM-M7：无条件写 localStorage 会让
+// initTheme 的"未手动设置才跟随系统"判断永久失效）
 export const applyTheme = (theme: ThemeType) => {
   const html = document.documentElement
   if (theme === 'dark') {
@@ -23,15 +24,20 @@ export const applyTheme = (theme: ThemeType) => {
   } else {
     html.classList.remove('dark')
   }
-  localStorage.setItem('theme', theme)
 }
 
-// 切换主题
+// 用户主动设置主题：应用并持久化
+export const setTheme = (theme: ThemeType): ThemeType => {
+  applyTheme(theme)
+  localStorage.setItem('theme', theme)
+  return theme
+}
+
+// 切换主题（用户主动操作，持久化）
 export const toggleTheme = (): ThemeType => {
   const current = document.documentElement.classList.contains('dark') ? 'dark' : 'light'
   const newTheme: ThemeType = current === 'dark' ? 'light' : 'dark'
-  applyTheme(newTheme)
-  return newTheme
+  return setTheme(newTheme)
 }
 
 // 获取当前主题

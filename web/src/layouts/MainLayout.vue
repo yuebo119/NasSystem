@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { UserFilled, SwitchButton, Box, Moon, Sunny, Fold, Expand, Odometer, Folder, Share, Setting as SettingIcon, User as UserIcon } from '@element-plus/icons-vue'
-import { getCurrentTheme, applyTheme, type ThemeType } from '@/utils/theme'
+import { getCurrentTheme, type ThemeType, setTheme } from '@/utils/theme'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -45,7 +45,8 @@ function toggleCollapse() {
 function toggleTheme() {
   isDarkMode.value = !isDarkMode.value
   const theme: ThemeType = isDarkMode.value ? 'dark' : 'light'
-  applyTheme(theme)
+  // ITM-M7：用户主动切换需持久化（applyTheme 只改 DOM）
+  setTheme(theme)
 }
 
 // 监听主题变化

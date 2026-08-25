@@ -6,7 +6,7 @@ import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
 import http from '@/api/http'
-import { getCurrentTheme, applyTheme, type ThemeType } from '@/utils/theme'
+import { getCurrentTheme, type ThemeType, setTheme } from '@/utils/theme'
 import { setLocale, getLocale, localeOptions, type LocaleType } from '@/locales'
 
 const { t } = useI18n()
@@ -139,7 +139,8 @@ const changePassword = async () => {
 // 切换暗色模式
 const handleThemeChange = (value: boolean) => {
   const theme: ThemeType = value ? 'dark' : 'light'
-  applyTheme(theme)
+  // ITM-M7：用户主动切换需持久化（applyTheme 只改 DOM）
+  setTheme(theme)
   isDarkMode.value = value
 }
 
