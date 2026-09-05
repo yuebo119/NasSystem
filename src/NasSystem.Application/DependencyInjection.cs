@@ -30,7 +30,11 @@ public static class DependencyInjection
 
         // 注册应用服务
         services.AddScoped<IUserService, UserService>();
-        services.AddScoped<IFileService, FileService>();
+        // ITM-T3：ISP 窄接口——调用方只依赖自己需要的用例域
+        services.AddScoped<IFileBrowseService, FileService>();
+        services.AddScoped<IFileTransferService, FileService>();
+        services.AddScoped<IFileRecycleService, FileService>();
+        services.AddScoped<IFileSyncService, FileService>();
         services.AddScoped<IFileVersionService, FileVersionService>();
         services.AddScoped<IStorageService, StorageService>();
         services.AddScoped<IFileShareService, FileShareService>();

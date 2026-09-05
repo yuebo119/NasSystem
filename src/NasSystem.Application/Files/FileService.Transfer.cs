@@ -22,7 +22,7 @@ using static NasSystem.Shared.ByteSizeFormatter;
 
 /// <summary>
 /// 文件服务实现
-public sealed partial class FileService : IFileService
+public sealed partial class FileService 
 {
     public async Task<Result<FileItemDto>> CreateFolderAsync(
         CreateFolderRequest request,
@@ -231,7 +231,16 @@ public sealed partial class FileService : IFileService
         // ITM-N3：文件夹重命名必须同步重写后代路径，否则子树 Path/PhysicalPath 指向旧位置
         await RewriteDescendantPathsAsync(item.Id, GetParentPath(path), newPath, newPhysicalPath, cancellationToken);
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (UniqueConstraintException)
+        {
+            // ITM-N7：并发重命名撞 Path 唯一部分索引
+            return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(newPath));
+        }
+
         await NotifyChangedAsync(GetParentPath(newPath), FileChangeType.Renamed, item.Path);
 
         return Result<FileItemDto>.Success(MapToDto(item));

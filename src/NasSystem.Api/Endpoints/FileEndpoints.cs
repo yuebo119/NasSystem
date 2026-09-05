@@ -133,7 +133,7 @@ public static class FileEndpoints
     private static async Task<IResult> GetDirectoryContents(
         string? path,
         bool includeHidden = false,
-        IFileService fileService = null!,
+        IFileBrowseService fileService = null!,
         ClaimsPrincipal user = null!)
     {
         var userId = GetUserId(user);
@@ -143,7 +143,7 @@ public static class FileEndpoints
 
     private static async Task<IResult> GetFileInfo(
         string path,
-        IFileService fileService,
+        IFileBrowseService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -153,7 +153,7 @@ public static class FileEndpoints
 
     private static async Task<IResult> UploadFile(
         HttpRequest request,
-        IFileService fileService,
+        IFileTransferService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -182,7 +182,7 @@ public static class FileEndpoints
 
     private static async Task<IResult> DownloadFile(
         string path,
-        IFileService fileService,
+        IFileTransferService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -197,7 +197,7 @@ public static class FileEndpoints
 
     private static async Task<IResult> CreateFolder(
         CreateFolderRequest request,
-        IFileService fileService,
+        IFileTransferService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -207,7 +207,7 @@ public static class FileEndpoints
 
     private static async Task<IResult> RenameItem(
         RenameItemRequest request,
-        IFileService fileService,
+        IFileTransferService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -217,7 +217,7 @@ public static class FileEndpoints
 
     private static async Task<IResult> DeleteItems(
         DeleteItemsRequest request,
-        IFileService fileService,
+        IFileRecycleService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -227,7 +227,7 @@ public static class FileEndpoints
 
     private static async Task<IResult> MoveItems(
         MoveOrCopyRequest request,
-        IFileService fileService,
+        IFileTransferService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -237,7 +237,7 @@ public static class FileEndpoints
 
     private static async Task<IResult> CopyItems(
         MoveOrCopyRequest request,
-        IFileService fileService,
+        IFileTransferService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -252,7 +252,7 @@ public static class FileEndpoints
         string? itemType,
         int page = 1,
         int pageSize = 50,
-        IFileService fileService = null!,
+        IFileBrowseService fileService = null!,
         ClaimsPrincipal user = null!)
     {
         var userId = GetUserId(user);
@@ -279,7 +279,7 @@ public static class FileEndpoints
     }
 
     private static async Task<IResult> GetRecycleBin(
-        IFileService fileService,
+        IFileRecycleService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -289,7 +289,7 @@ public static class FileEndpoints
 
     private static async Task<IResult> RestoreItem(
         Guid id,
-        IFileService fileService,
+        IFileRecycleService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -298,7 +298,7 @@ public static class FileEndpoints
     }
 
     private static async Task<IResult> EmptyRecycleBin(
-        IFileService fileService,
+        IFileRecycleService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -307,7 +307,7 @@ public static class FileEndpoints
     }
 
     private static async Task<IResult> GetFileStatistics(
-        IFileService fileService,
+        IFileBrowseService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);
@@ -316,7 +316,7 @@ public static class FileEndpoints
     }
 
     private static async Task<IResult> ScanAndSync(
-        IFileService fileService,
+        IFileSyncService fileService,
         ClaimsPrincipal user)
     {
         var userId = GetUserId(user);

@@ -22,7 +22,7 @@ using static NasSystem.Shared.ByteSizeFormatter;
 
 /// <summary>
 /// 文件服务实现
-public sealed partial class FileService : IFileService
+public sealed partial class FileService : IFileBrowseService, IFileTransferService, IFileRecycleService, IFileSyncService
 {
     private readonly IFileItemRepository _fileRepository;
     private readonly IStoragePoolRepository _storagePoolRepository;
