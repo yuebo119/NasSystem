@@ -307,7 +307,7 @@ onMounted(() => loadData())
           <div class="user-name">
             <span class="name">{{ user.displayName || user.username }}</span>
             <el-tag :type="getRoleTagType(user.role)" size="small">{{ getRoleInfo(user.role).label }}</el-tag>
-            <el-tag v-if="!user.isEnabled" type="info" size="small">已禁用</el-tag>
+            <el-tag v-if="!user.isEnabled" type="info" size="small">{{ $t('users.disabledTag') }}</el-tag>
           </div>
           <div class="user-meta">
             <span class="username">@{{ user.username }}</span>

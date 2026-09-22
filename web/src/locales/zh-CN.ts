@@ -49,6 +49,8 @@ export default {
 
   // 登录页
   login: {
+    defaultAdmin: '默认管理员: admin / admin123',
+    disabledTag: '已禁用',
     title: '登录',
     subtitle: 'NAS 系统',
     username: '用户名',

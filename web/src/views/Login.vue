@@ -102,7 +102,7 @@ async function handleLogin() {
       </el-form>
 
       <div class="login-footer">
-        <p>默认管理员: admin / admin123</p>
+        <p>{{ $t('login.defaultAdmin') }}</p>
       </div>
     </div>
   </div>

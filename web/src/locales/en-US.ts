@@ -49,6 +49,8 @@ export default {
 
   // Login
   login: {
+    defaultAdmin: 'Default admin: admin / admin123',
+    disabledTag: 'Disabled',
     title: 'Login',
     subtitle: 'NAS System',
     username: 'Username',

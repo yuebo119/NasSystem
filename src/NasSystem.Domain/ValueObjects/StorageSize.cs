@@ -10,6 +10,13 @@ using NasSystem.Domain.Common;
 /// <summary>
 /// 存储大小值对象 - 封装字节大小和格式化
 /// </summary>
+
+/// <remarks>
+/// 【当前状态】零引用——容量数值当前由 FileItem.SizeBytes / StoragePool
+/// 等实体上的 long 属性承载。这是一个有意识的保留决策：当容量计算用例
+/// （四舍五入策略、单位换算、比较语义）的复杂度上升到需要类型安全时，
+/// 直接启用本值对象即可。现在启用属于无消费方的过度设计。
+/// </remarks>
 public sealed class StorageSize : ValueObject, IComparable<StorageSize>
 {
     private static readonly string[] SizeUnits = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];

@@ -68,7 +68,7 @@ const loadData = async () => {
     const [overviewRes, poolsRes] = await Promise.all([storageApi.getOverview(), storageApi.getPools()]) as any[]
     if (overviewRes.success) overview.value = overviewRes.data as StorageOverview
     if (poolsRes.success) pools.value = poolsRes.data as StoragePool[]
-  } catch (e) { console.error('加载失败', e) }
+  } catch (e) { console.error('Failed to load storage pools', e) }
   finally { loading.value = false }
 }
 
@@ -92,7 +92,7 @@ const browseDirectory = async (path?: string) => {
       parentPath.value = result.data.parentPath
       directories.value = result.data.directories || []
     }
-  } catch (e) { console.error('浏览目录失败', e) }
+  } catch (e) { console.error('Failed to browse directory', e) }
   finally { browsingLoading.value = false }
 }
 
@@ -152,7 +152,7 @@ const handleUpdate = async () => {
   try {
     const maxCapacityBytes = poolForm.value.maxCapacityGB > 0 
       ? poolForm.value.maxCapacityGB * 1024 * 1024 * 1024 
-      : 0  // 0 表示取消限制
+      : 0  // 0 means no limit
     const result = await storageApi.updatePool(editingPool.value.id, {
       name: poolForm.value.name.trim(),
       description: poolForm.value.description.trim(),

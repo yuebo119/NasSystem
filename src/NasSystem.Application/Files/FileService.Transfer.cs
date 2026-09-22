@@ -376,7 +376,16 @@ public sealed partial class FileService
             }
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (UniqueConstraintException)
+        {
+            // ITM-N7/N35：并发复制同名目标由 Path 唯一部分索引兜底
+            return Result<IReadOnlyList<FileItemDto>>.Failure(FileErrors.AlreadyExists(destPath));
+        }
+
         if (results.Count > 0)
             await NotifyChangedAsync(destPath, FileChangeType.Created, destPath);
         return Result<IReadOnlyList<FileItemDto>>.Success(results);
