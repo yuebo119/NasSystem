@@ -166,9 +166,6 @@ public static class ServiceCollectionExtensions
         // 健康检查端点
         app.MapHealthChecks("/health");
 
-        // SPA 回退：对于 /s/* 路径，返回 index.html 让前端路由处理
-        app.MapFallbackToFile("/s/{*path}", "index.html");
-
         // 版本信息端点
         app.MapGet("/api/version", () => Results.Ok(new
         {
@@ -180,6 +177,37 @@ public static class ServiceCollectionExtensions
         .WithName("GetVersion")
         .WithTags("System")
         .WithSummary("获取系统版本信息");
+
+        // SPA 回退（单一 fallback 内部分流：注册多个 fallback 会互相冲突触发
+        // AmbiguousMatchException——fallback 端点共享 {*path:nonfile} 兜底模式）：
+        // 1. 未匹配的 API/hubs 路径返回 404 JSON，不能吞进 SPA HTML 回退，
+        //    否则前端把错误页当接口响应解析
+        // 2. 其余未匹配路径（/files、/users、/storage、/shares、/s/* 公开分享链接
+        //    等前端路由）返回 index.html 交由前端路由处理。此前仅 /s/* 有回退，
+        //    其余深链接刷新/直联均 404
+        app.MapFallback(async context =>
+        {
+            var path = context.Request.Path;
+            if (path.StartsWithSegments("/api") || path.StartsWithSegments("/hubs"))
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                await context.Response.WriteAsJsonAsync(new { error = "端点不存在" });
+                return;
+            }
+
+            // 走 WebRootFileProvider 显式定位：SendFileAsync(string) 按内容根解析，
+            // 会去找 {ContentRoot}/index.html 而非 wwwroot 下的产物
+            var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
+            var indexFile = env.WebRootFileProvider.GetFileInfo("index.html");
+            if (!indexFile.Exists)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                await context.Response.WriteAsJsonAsync(new { error = "前端未构建（wwwroot/index.html 不存在）" });
+                return;
+            }
+
+            await context.Response.SendFileAsync(indexFile);
+        });
 
         return app;
     }
