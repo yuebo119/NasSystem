@@ -13,10 +13,10 @@ import {
   Refresh, Upload, Delete, Download, 
   CopyDocument, Rank, MoreFilled, FolderAdd, Search,
   Grid, List, View, Hide, DeleteFilled, Back,
-  Document, Folder, Picture, VideoPlay, Headset,
-  FolderOpened, HomeFilled, Share, Link
+  Document, Folder, HomeFilled, Share, Link
 } from '@element-plus/icons-vue'
 import type { FileItem } from '@/types'
+import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
 
 // ITM-M3 收尾：Files 页 i18n 全量接入
 const { t } = useI18n()
@@ -683,49 +683,12 @@ function toggleShowHidden() {
   fileStore.loadDirectory(fileStore.currentPath)
 }
 
-// 格式化文件大小
-function formatSize(bytes: number): string {
-  if (bytes === 0) return '-'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + units[i]
-}
-
-// 格式化日期
-function formatDate(date: string): string {
-  return new Date(date).toLocaleString('zh-CN')
-}
-
-// 获取文件图标
-function getFileIcon(item: FileItem): any {
-  if (item.isFolder) return Folder
-  const ext = item.extension?.toLowerCase()
-  const iconMap: Record<string, any> = {
-    '.pdf': Document, '.doc': Document, '.docx': Document,
-    '.xls': Document, '.xlsx': Document, '.ppt': Document, '.pptx': Document,
-    '.txt': Document, '.md': Document, '.json': Document, '.xml': Document,
-    '.jpg': Picture, '.jpeg': Picture, '.png': Picture, '.gif': Picture, '.webp': Picture, '.bmp': Picture, '.svg': Picture,
-    '.mp4': VideoPlay, '.avi': VideoPlay, '.mkv': VideoPlay, '.mov': VideoPlay, '.webm': VideoPlay,
-    '.mp3': Headset, '.wav': Headset, '.flac': Headset, '.ogg': Headset,
-    '.zip': FolderOpened, '.rar': FolderOpened, '.7z': FolderOpened, '.tar': FolderOpened, '.gz': FolderOpened,
-  }
-  return iconMap[ext || ''] || Document
-}
-
-// 获取文件图标颜色
-function getFileIconColor(item: FileItem): string {
-  if (item.isFolder) return '#ffc107'
-  const ext = item.extension?.toLowerCase()
-  if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'].includes(ext || '')) return '#67C23A'
-  if (['.mp4', '.avi', '.mkv', '.mov', '.webm'].includes(ext || '')) return '#409EFF'
-  if (['.mp3', '.wav', '.flac', '.ogg'].includes(ext || '')) return '#E6A23C'
-  if (['.zip', '.rar', '.7z', '.tar', '.gz'].includes(ext || '')) return '#909399'
-  return '#909399'
-}
+// 选中项 id 集合：表格/网格每行选中判定从 O(行数×选中数) 降为 O(1)
+const selectedIds = computed(() => new Set(fileStore.selectedItems.map(i => i.id)))
 
 // 获取行样式类名
 function getRowClassName({ row }: { row: FileItem }): string {
-  return fileStore.selectedItems.some(i => i.id === row.id) ? 'selected-row' : ''
+  return selectedIds.value.has(row.id) ? 'selected-row' : ''
 }
 
 // 处理行点击
@@ -1175,7 +1138,7 @@ onUnmounted(() => void unsubscribe?.())
         v-for="item in visibleFiles"
         :key="item.id"
         class="grid-item"
-        :class="{ selected: fileStore.selectedItems.some(i => i.id === item.id) }"
+        :class="{ selected: selectedIds.has(item.id) }"
         @click="fileStore.selectItem(item, $event.ctrlKey)"
         @dblclick="navigateToFolder(item)"
         @contextmenu.prevent="openContextMenu($event, item)"

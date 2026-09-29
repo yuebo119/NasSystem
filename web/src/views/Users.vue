@@ -5,6 +5,7 @@ import { Plus, Refresh, Edit, Delete, Key, User, Search, UserFilled, Setting } f
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '@/api/user'
 import type { User as UserType } from '@/types'
+import { formatSize, formatDate } from '@/utils/format'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -65,26 +66,6 @@ const getRoleTagType = (role: string): 'danger' | 'warning' | 'info' | 'success'
     case 'Admin': return 'warning'
     default: return 'primary'
   }
-}
-
-const formatSize = (bytes: number): string => {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-const formatDate = (dateStr?: string): string => {
-  if (!dateStr) return t('common.neverLogin')
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-  if (days === 0) return t('common.today') + ' ' + date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-  if (days === 1) return t('common.yesterday')
-  if (days < 7) return t('common.daysAgo', { n: days })
-  return date.toLocaleDateString()
 }
 
 // 统计数据

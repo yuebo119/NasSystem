@@ -3,12 +3,11 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { 
   Refresh, Delete, Link, CopyDocument, Edit, View, 
-  Document, Folder, Picture, VideoPlay, Headset,
-  Share, Clock, Download, Lock, Unlock, MoreFilled,
-  Files, Tickets, DataBoard, Memo, Reading, Postcard
+  Share, Clock, Download, Lock, Unlock, MoreFilled
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fileShareApi, ShareAccessType, type FileShareDto, type UpdateFileShareRequest } from '@/api/fileShare'
+import { getFileIcon, formatDate } from '@/utils/format'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -47,39 +46,7 @@ const getAccessTypeInfo = (type: ShareAccessType) => {
   return map[type] || { icon: Share, color: '#6b7280', bg: '#f3f4f6' }
 }
 
-// 更丰富的文件图标映射
-const getFileIcon = (share: FileShareDto) => {
-  if (share.isFolder) return Folder
-  const ext = share.fileName.substring(share.fileName.lastIndexOf('.')).toLowerCase()
-  
-  // 文档类
-  if (['.pdf'].includes(ext)) return Reading
-  if (['.doc', '.docx'].includes(ext)) return Memo
-  if (['.xls', '.xlsx', '.csv'].includes(ext)) return DataBoard
-  if (['.ppt', '.pptx'].includes(ext)) return Postcard
-  if (['.txt', '.md', '.rtf'].includes(ext)) return Document
-  
-  // 图片类
-  if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.ico'].includes(ext)) return Picture
-  
-  // 视频类
-  if (['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'].includes(ext)) return VideoPlay
-  
-  // 音频类
-  if (['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a'].includes(ext)) return Headset
-  
-  // 压缩包
-  if (['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'].includes(ext)) return Files
-  
-  // 代码文件
-  if (['.js', '.ts', '.jsx', '.tsx', '.vue', '.py', '.java', '.c', '.cpp', '.h', '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt'].includes(ext)) return Tickets
-  
-  // 配置文件
-  if (['.json', '.xml', '.yaml', '.yml', '.ini', '.conf', '.env'].includes(ext)) return DataBoard
-  
-  return Document
-}
-
+// 文件图标样式（渐变徽章， Shares 页专有视觉，保留私有实现）
 const getFileIconStyle = (share: FileShareDto) => {
   if (share.isFolder) return { bg: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#fff' }
   const ext = share.fileName.substring(share.fileName.lastIndexOf('.')).toLowerCase()
@@ -125,8 +92,6 @@ const getFileIconStyle = (share: FileShareDto) => {
   
   return { bg: 'linear-gradient(135deg, #6b7280, #9ca3af)', color: '#fff' }
 }
-
-const formatDate = (date: string) => new Date(date).toLocaleDateString()
 
 const copyLink = async (share: FileShareDto) => {
   try {

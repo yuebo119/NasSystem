@@ -48,6 +48,10 @@ export default defineConfig({
         manualChunks: {
           'element-plus': ['element-plus'],
           'vue-vendor': ['vue', 'vue-router', 'pinia'],
+          // 此前 signalr/vue-i18n/axios 全部落入 index chunk，首屏体积虚高
+          'signalr': ['@microsoft/signalr'],
+          'vue-i18n': ['vue-i18n'],
+          'axios': ['axios'],
         },
       },
     },

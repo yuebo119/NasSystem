@@ -3,12 +3,12 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { 
-  Download, Lock, Document, Folder, Picture, VideoPlay, 
-  Headset, FolderOpened, Warning, User, ArrowLeft,
+import {
+  Download, Lock, Warning, User, ArrowLeft,
   Clock, View, Link as LinkIcon
 } from '@element-plus/icons-vue'
 import { publicShareApi, ShareAccessType, type PublicShareInfoDto, type ShareFolderContentDto, type ShareFileItemDto } from '@/api/fileShare'
+import { getFileIcon, getFileIconColor } from '@/utils/format'
 
 const route = useRoute()
 // ITM-M3 收尾：对外访客页接入 i18n（外部用户此前无法切换语言）
@@ -108,34 +108,6 @@ const goBack = () => {
   const parts = currentPath.value.split('/')
   parts.pop()
   loadFolderContent(parts.join('/') || undefined)
-}
-
-// 获取文件图标
-const getFileIcon = (item: ShareFileItemDto | PublicShareInfoDto) => {
-  if (item.isFolder) return Folder
-  const name = 'fileName' in item ? item.fileName : item.name
-  const ext = name.substring(name.lastIndexOf('.')).toLowerCase()
-  const iconMap: Record<string, any> = {
-    '.pdf': Document, '.doc': Document, '.docx': Document,
-    '.txt': Document, '.md': Document, '.json': Document,
-    '.jpg': Picture, '.jpeg': Picture, '.png': Picture, '.gif': Picture, '.webp': Picture,
-    '.mp4': VideoPlay, '.avi': VideoPlay, '.mkv': VideoPlay, '.mov': VideoPlay,
-    '.mp3': Headset, '.wav': Headset, '.flac': Headset,
-    '.zip': FolderOpened, '.rar': FolderOpened, '.7z': FolderOpened,
-  }
-  return iconMap[ext] || Document
-}
-
-// 获取文件图标颜色
-const getFileIconColor = (item: ShareFileItemDto | PublicShareInfoDto) => {
-  if (item.isFolder) return '#ffc107'
-  const name = 'fileName' in item ? item.fileName : item.name
-  const ext = name.substring(name.lastIndexOf('.')).toLowerCase()
-  if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) return '#67C23A'
-  if (['.mp4', '.avi', '.mkv', '.mov'].includes(ext)) return '#409EFF'
-  if (['.mp3', '.wav', '.flac'].includes(ext)) return '#E6A23C'
-  if (['.pdf', '.doc', '.docx'].includes(ext)) return '#F56C6C'
-  return '#909399'
 }
 
 // 是否可以访问

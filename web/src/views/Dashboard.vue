@@ -10,6 +10,7 @@ import {
   Monitor, Timer, Cpu, Connection, Refresh,
   Picture, VideoPlay, Headset, Document, FolderOpened
 } from '@element-plus/icons-vue'
+import { formatSize, getPoolStatusInfo } from '@/utils/format'
 
 const { t } = useI18n()
 const userStore = useUserStore()
@@ -68,15 +69,6 @@ const lastUpdateTime = ref<Date | null>(null)
 const autoRefresh = ref(true)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-// 格式化大小
-const formatSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
 // 格式化运行时间
 const formatUptime = (uptime: string): string => {
   const parts = uptime.split('.')
@@ -89,29 +81,6 @@ const formatUptime = (uptime: string): string => {
     return time
   }
   return uptime
-}
-
-// 获取存储池状态颜色
-const getPoolStatusColor = (status: number): string => {
-  switch (status) {
-    case 1: return '#67C23A' // Healthy
-    case 2: return '#E6A23C' // Degraded
-    case 3: return '#F56C6C' // Critical
-    case 4: return '#409EFF' // Rebuilding
-    default: return '#909399' // Unknown/Offline
-  }
-}
-
-// 获取存储池状态名称
-const getPoolStatusName = (status: number): string => {
-  switch (status) {
-    case 1: return t('storage.healthy')
-    case 2: return t('dashboard.degraded')
-    case 3: return t('dashboard.critical')
-    case 4: return t('dashboard.rebuilding')
-    case 5: return t('dashboard.offline')
-    default: return t('dashboard.unknown')
-  }
 }
 
 // 获取 RAID 级别名称
@@ -233,9 +202,11 @@ const startAutoRefresh = () => {
   tick()
   refreshTimer = setInterval(tick, REFRESH_INTERVAL_MS)
 }
-document.addEventListener('visibilitychange', () => {
+// 标签页可见性变化时恢复自动刷新（具名函数，与 onUnmounted 的 removeEventListener 必须是同一引用，否则每次进入页面叠加一个匿名监听器）
+const handleVisibilityChange = () => {
   if (document.visibilityState === 'visible') startAutoRefresh()
-})
+}
+document.addEventListener('visibilitychange', handleVisibilityChange)
 
 // 停止自动刷新
 const stopAutoRefresh = () => {
@@ -260,6 +231,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopAutoRefresh()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 
@@ -531,8 +503,8 @@ onUnmounted(() => {
         </el-table-column>
         <el-table-column prop="status" :label="t('common.status')" width="100">
           <template #default="{ row }">
-            <el-tag :color="getPoolStatusColor(row.status)" effect="dark" size="small">
-              {{ getPoolStatusName(row.status) }}
+            <el-tag :color="getPoolStatusInfo(row.status).color" effect="dark" size="small">
+              {{ getPoolStatusInfo(row.status).text }}
             </el-tag>
           </template>
         </el-table-column>

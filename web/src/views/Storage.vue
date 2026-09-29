@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Plus, Refresh, Delete, Check, FolderOpened, Box, InfoFilled, Edit, Warning, Back, Folder } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storageApi, type StoragePool, type StorageOverview, type DirectoryItem } from '@/api/storage'
+import { formatSize, getPoolStatusInfo } from '@/utils/format'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -24,14 +25,6 @@ const parentPath = ref<string | null>(null)
 const directories = ref<DirectoryItem[]>([])
 const browsingLoading = ref(false)
 
-const formatSize = (bytes: number): string => {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
 const getUsageColor = (percentage: number): string => {
   if (percentage >= 90) return '#ef4444'
   if (percentage >= 70) return '#f59e0b'
@@ -42,16 +35,6 @@ const getUsageGradient = (percentage: number): string => {
   if (percentage >= 90) return 'linear-gradient(90deg, #ef4444, #f87171)'
   if (percentage >= 70) return 'linear-gradient(90deg, #f59e0b, #fbbf24)'
   return 'linear-gradient(90deg, #10b981, #34d399)'
-}
-
-const getStatusInfo = (status: number) => {
-  const map: Record<number, { text: string; type: 'success' | 'warning' | 'danger' | 'info'; color: string }> = {
-    1: { text: t('storage.healthy'), type: 'success', color: '#10b981' },
-    2: { text: t('common.warning'), type: 'warning', color: '#f59e0b' },
-    3: { text: t('common.error'), type: 'danger', color: '#ef4444' },
-    4: { text: t('dashboard.offline'), type: 'info', color: '#6b7280' },
-  }
-  return map[status] || { text: t('storage.healthy'), type: 'success', color: '#10b981' }
 }
 
 const healthStatus = computed(() => {
@@ -251,7 +234,7 @@ onMounted(() => loadData())
               <div class="pool-name">
                 {{ pool.name }}
                 <el-tag v-if="pool.isDefault" type="primary" size="small" effect="light">{{ t('storage.default') }}</el-tag>
-                <el-tag :type="getStatusInfo(pool.status).type" size="small">{{ getStatusInfo(pool.status).text }}</el-tag>
+                <el-tag :type="getPoolStatusInfo(pool.status).type" size="small">{{ getPoolStatusInfo(pool.status).text }}</el-tag>
               </div>
               <div class="pool-path">{{ pool.mountPath }}</div>
               <div class="pool-desc" v-if="pool.description">{{ pool.description }}</div>

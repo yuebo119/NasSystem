@@ -88,10 +88,6 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
-  function selectAll() {
-    selectedItems.value = [...files.value]
-  }
-
   function clearSelection() {
     selectedItems.value = []
   }
@@ -115,15 +111,6 @@ export const useFileStore = defineStore('file', () => {
 
   async function createFolder(name: string) {
     const response = await fileApi.createFolder(currentPath.value, name)
-    if (response.success) {
-      await loadDirectory(currentPath.value)
-    }
-    return response
-  }
-
-  async function deleteSelected(permanent = false) {
-    const paths = selectedItems.value.map(item => item.path)
-    const response = await fileApi.delete(paths, permanent)
     if (response.success) {
       await loadDirectory(currentPath.value)
     }
@@ -155,13 +142,11 @@ export const useFileStore = defineStore('file', () => {
     selectionCount,
     loadDirectory,
     selectItem,
-    selectAll,
     clearSelection,
     toggleViewMode,
     setSort,
     setFocusItem,
     createFolder,
-    deleteSelected,
     rename
   }
 })
