@@ -45,13 +45,17 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'element-plus': ['element-plus'],
-          'vue-vendor': ['vue', 'vue-router', 'pinia'],
-          // 此前 signalr/vue-i18n/axios 全部落入 index chunk，首屏体积虚高
-          'signalr': ['@microsoft/signalr'],
-          'vue-i18n': ['vue-i18n'],
-          'axios': ['axios'],
+        // vite 8（Rolldown）起 manualChunks 对象字面量形式不再入类型，改函数形式；
+        // 各 chunk 与升级前的划分保持一致
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('element-plus') || id.includes('@element-plus')) return 'element-plus'
+          if (id.includes('@microsoft/signalr')) return 'signalr'
+          if (id.includes('vue-i18n')) return 'vue-i18n'
+          if (id.includes('axios')) return 'axios'
+          if (id.includes('/vue/') || id.includes('vue-router') || id.includes('pinia'))
+            return 'vue-vendor'
+          return undefined
         },
       },
     },
