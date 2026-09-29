@@ -70,6 +70,9 @@ public static class StorageErrors
     public static Error MountPathExists(string path) =>
         new("StoragePool.MountPathExists", $"挂载路径 '{path}' 已被使用");
 
+    public static Error InsufficientSpace =>
+        new("Storage.InsufficientSpace", "存储空间不足");
+
     public static Error CannotDeleteDefaultPool =>
         new("StoragePool.CannotDeleteDefault", "不能删除默认存储池");
 }

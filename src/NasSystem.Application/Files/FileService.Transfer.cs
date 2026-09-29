@@ -98,6 +98,12 @@ public sealed partial class FileService
         if (defaultPool.IsFailure)
             return Result<FileItemDto>.Failure(defaultPool.Error);
 
+        // ITM-F：上传预检——用户配额与存储池容量（先于任何物理写入，失败即拒绝）
+        var preflight = await PreflightUploadAsync(
+            metadata.FileSize, userId, defaultPool.Value.Id, cancellationToken);
+        if (preflight.IsFailure)
+            return Result<FileItemDto>.Failure(preflight.Error);
+
         // 写入物理文件并同步计算哈希——单遍 IO 流水线。
         // 【性能精炼记录】原实现"写盘 → 重开读盘 → 整流哈希"，大文件场景读放大 ×2；
         // 精炼为复制缓冲循环内增量喂入 SHA256（IncrementalHash），IO 量减半且语义不变。

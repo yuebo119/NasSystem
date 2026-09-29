@@ -24,6 +24,7 @@ public class FileServiceTests
 {
     private readonly Mock<IFileItemRepository> _fileRepositoryMock;
     private readonly Mock<IStoragePoolRepository> _storagePoolRepositoryMock;
+    private readonly Mock<IUserRepository> _userRepositoryMock;
     private readonly Mock<IFileSystemService> _fileSystemServiceMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IConfiguration> _configurationMock;
@@ -34,6 +35,7 @@ public class FileServiceTests
     {
         _fileRepositoryMock = new Mock<IFileItemRepository>();
         _storagePoolRepositoryMock = new Mock<IStoragePoolRepository>();
+        _userRepositoryMock = new Mock<IUserRepository>();
         _fileSystemServiceMock = new Mock<IFileSystemService>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _configurationMock = new Mock<IConfiguration>();
@@ -43,6 +45,7 @@ public class FileServiceTests
         _sut = new FileService(
             _fileRepositoryMock.Object,
             _storagePoolRepositoryMock.Object,
+            _userRepositoryMock.Object,
             _unitOfWorkMock.Object,
             _fileSystemServiceMock.Object,
             _configurationMock.Object,
@@ -279,6 +282,86 @@ public class FileServiceTests
         // Assert
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("File.NotFound");
+    }
+
+    #endregion
+
+    #region UploadFileAsync 预检 Tests
+
+    [Fact]
+    public async Task UploadFileAsync_WhenUserOverQuota_ReturnsQuotaExceededError()
+    {
+        // Arrange：已用 95 + 待传 10 > 配额 100
+        var userId = Guid.NewGuid();
+        var user = NasSystem.Domain.Entities.User.Create(
+            username: "quotauser", passwordHash: "h", passwordSalt: "s");
+        user.SetQuota(100);
+
+        _userRepositoryMock
+            .Setup(x => x.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        _fileRepositoryMock
+            .Setup(x => x.CalculateUserUsedSpaceAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(95);
+
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateStoragePool(Guid.NewGuid(), "default", "C:/storage"));
+
+        var metadata = new UploadFileMetadata
+        {
+            FileName = "big.bin",
+            DestinationPath = "/",
+            FileSize = 10
+        };
+
+        // Act
+        var result = await _sut.UploadFileAsync(metadata, new MemoryStream(new byte[10]), userId);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("User.QuotaExceeded");
+
+        // 预检必须先于任何物理写入
+        _fileSystemServiceMock.Verify(x => x.CreateDirectory(It.IsAny<string>()), Times.Never);
+        _fileSystemServiceMock.Verify(x => x.OpenWrite(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UploadFileAsync_WhenPoolHasNoSpace_ReturnsInsufficientSpaceError()
+    {
+        // Arrange：用户无配额（跳过配额检查）；池未刷新容量，AvailableBytes=0 < 声明大小
+        var userId = Guid.NewGuid();
+        var pool = CreateStoragePool(Guid.NewGuid(), "default", "C:/storage");
+
+        _userRepositoryMock
+            .Setup(x => x.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((NasSystem.Domain.Entities.User?)null);
+
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetByIdAsync(pool.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+
+        var metadata = new UploadFileMetadata
+        {
+            FileName = "big.bin",
+            DestinationPath = "/",
+            FileSize = 1024
+        };
+
+        // Act
+        var result = await _sut.UploadFileAsync(metadata, new MemoryStream(new byte[1024]), userId);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Storage.InsufficientSpace");
+
+        _fileSystemServiceMock.Verify(x => x.OpenWrite(It.IsAny<string>()), Times.Never);
     }
 
     #endregion

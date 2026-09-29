@@ -33,6 +33,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
 
     private readonly IFileItemRepository _fileRepository;
     private readonly IStoragePoolRepository _storagePoolRepository;
+    private readonly IUserRepository _userRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileSystemService _fileSystemService;
     private readonly IHubNotificationService _notifier;
@@ -41,6 +42,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     public FileService(
         IFileItemRepository fileRepository,
         IStoragePoolRepository storagePoolRepository,
+        IUserRepository userRepository,
         IUnitOfWork unitOfWork,
         IFileSystemService fileSystemService,
         IConfiguration configuration,
@@ -49,6 +51,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     {
         _fileRepository = fileRepository;
         _storagePoolRepository = storagePoolRepository;
+        _userRepository = userRepository;
         _unitOfWork = unitOfWork;
         _fileSystemService = fileSystemService;
         _notifier = notifier;
@@ -76,6 +79,40 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         var projection = (defaultPool.Id, defaultPool.MountPath);
         _cache.Set(DefaultPoolCacheKey, projection, DefaultPoolCacheDuration);
         return Result<(Guid, string)>.Success(projection);
+    }
+
+    /// <summary>
+    /// 上传预检：用户配额 + 存储池容量。
+    /// </summary>
+    /// <remarks>
+    /// 用户用量取实时聚合查询——User.UsedBytes 字段没有生产维护者（前端展示口径滞后），
+    /// 用它判定会永远放行；池容量用库内 UsedBytes（容量刷新有 60s 节流窗口，
+    /// 此处为 best-effort 前置拦截，物理写失败由 IO 层兜底）。
+    /// 声明大小来自客户端 metadata.FileSize；超大谎报由物理写失败兜底，
+    /// 上传后不对账声明值（record 记账用实际写入字节）。
+    /// </remarks>
+    private async Task<Result> PreflightUploadAsync(
+        long declaredSize,
+        Guid userId,
+        Guid poolId,
+        CancellationToken cancellationToken)
+    {
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user?.QuotaBytes.HasValue == true)
+        {
+            var usedBytes = await _fileRepository.CalculateUserUsedSpaceAsync(userId, cancellationToken);
+            if (usedBytes + declaredSize > user.QuotaBytes.Value)
+                return Result.Failure(UserErrors.QuotaExceeded);
+        }
+
+        if (declaredSize > 0)
+        {
+            var pool = await _storagePoolRepository.GetByIdAsync(poolId, cancellationToken);
+            if (pool is not null && !pool.HasEnoughSpace(declaredSize))
+                return Result.Failure(StorageErrors.InsufficientSpace);
+        }
+
+        return Result.Success();
     }
 
     /// <summary>

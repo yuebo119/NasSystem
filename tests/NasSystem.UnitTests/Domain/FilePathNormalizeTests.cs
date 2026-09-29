@@ -84,6 +84,7 @@ public class FilePathNormalizeTests
         return new FileService(
             repoMock.Object,
             new Moq.Mock<IStoragePoolRepository>().Object,
+            new Moq.Mock<IUserRepository>().Object,
             new Moq.Mock<IUnitOfWork>().Object,
             new Moq.Mock<NasSystem.Domain.Services.IFileSystemService>().Object,
             new Moq.Mock<Microsoft.Extensions.Configuration.IConfiguration>().Object,

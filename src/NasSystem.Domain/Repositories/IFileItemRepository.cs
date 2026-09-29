@@ -68,6 +68,13 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 计算用户已使用空间（上传配额预检取实时聚合，不依赖滞后的 UsedBytes 字段）
+    /// </summary>
+    Task<long> CalculateUserUsedSpaceAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 检查路径是否存在
     /// </summary>
     Task<bool> PathExistsAsync(string path, CancellationToken cancellationToken = default);

@@ -192,6 +192,15 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<long> CalculateUserUsedSpaceAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return await QueryNoTracking()
+            .Where(f => f.OwnerId == userId && !f.IsDeleted && f.ItemType == Domain.Enums.FileItemType.File)
+            .SumAsync(f => f.SizeBytes, cancellationToken);
+    }
+
     public async Task<bool> PathExistsAsync(string path, CancellationToken cancellationToken = default)
     {
         var normalizedPath = NormalizePath(path);
