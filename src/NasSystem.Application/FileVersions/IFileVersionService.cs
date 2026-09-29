@@ -30,18 +30,6 @@ public interface IFileVersionService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 创建新版本（在文件更新时自动调用）
-    /// </summary>
-    Task<Result<FileVersionDto>> CreateVersionAsync(
-        Guid fileItemId,
-        string storagePath,
-        long fileSize,
-        string fileHash,
-        Guid userId,
-        string? comment = null,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// 恢复到指定版本
     /// </summary>
     Task<Result<FileVersionDto>> RestoreVersionAsync(

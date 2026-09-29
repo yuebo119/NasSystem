@@ -14,21 +14,20 @@ using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
-using NasSystem.Application.Notifications;
-using NasSystem.Domain.Common;
 using NasSystem.Domain.Services;
+using NasSystem.Application.Notifications;
 using NasSystem.Shared;
 using static NasSystem.Shared.ByteSizeFormatter;
 
 /// <summary>
 /// 文件服务实现
+/// </summary>
 public sealed partial class FileService : IFileBrowseService, IFileTransferService, IFileRecycleService, IFileSyncService
 {
     private readonly IFileItemRepository _fileRepository;
     private readonly IStoragePoolRepository _storagePoolRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileSystemService _fileSystemService;
-    private readonly IFileHasher _fileHasher;
     private readonly IHubNotificationService _notifier;
 
     public FileService(
@@ -36,7 +35,6 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         IStoragePoolRepository storagePoolRepository,
         IUnitOfWork unitOfWork,
         IFileSystemService fileSystemService,
-        IFileHasher fileHasher,
         IConfiguration configuration,
         IHubNotificationService notifier)
     {
@@ -44,7 +42,6 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         _storagePoolRepository = storagePoolRepository;
         _unitOfWork = unitOfWork;
         _fileSystemService = fileSystemService;
-        _fileHasher = fileHasher;
         _notifier = notifier;
     }
 

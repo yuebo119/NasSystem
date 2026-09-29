@@ -30,13 +30,6 @@ public interface IUserService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 根据用户名获取用户
-    /// </summary>
-    Task<Result<UserDto>> GetByUsernameAsync(
-        string username,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// 创建用户
     /// </summary>
     Task<Result<UserDto>> CreateAsync(
@@ -80,13 +73,5 @@ public interface IUserService
     /// </summary>
     Task<Result<LoginResultDto>> LoginAsync(
         LoginDto request,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 验证用户凭据
-    /// </summary>
-    Task<Result<bool>> ValidateCredentialsAsync(
-        string username,
-        string password,
         CancellationToken cancellationToken = default);
 }

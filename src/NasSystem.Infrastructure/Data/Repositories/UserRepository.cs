@@ -21,12 +21,6 @@ public sealed class UserRepository(NasDbContext context) : RepositoryBase<User>(
             .FirstOrDefaultAsync(u => u.Username == normalizedUsername, cancellationToken);
     }
 
-    public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
-    {
-        return await QueryNoTracking()
-            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
-    }
-
     public async Task<bool> UsernameExistsAsync(string username, CancellationToken cancellationToken = default)
     {
         var normalizedUsername = username.ToLowerInvariant();
@@ -38,14 +32,6 @@ public sealed class UserRepository(NasDbContext context) : RepositoryBase<User>(
     {
         return await QueryNoTracking()
             .AnyAsync(u => u.Email == email, cancellationToken);
-    }
-
-    public async Task<IReadOnlyList<User>> GetEnabledUsersAsync(CancellationToken cancellationToken = default)
-    {
-        return await QueryNoTracking()
-            .Where(u => u.IsEnabled)
-            .OrderBy(u => u.Username)
-            .ToListAsync(cancellationToken);
     }
 
     public async Task<(IReadOnlyList<User> Users, int TotalCount)> GetPagedAsync(

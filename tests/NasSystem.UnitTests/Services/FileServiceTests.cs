@@ -25,7 +25,6 @@ public class FileServiceTests
     private readonly Mock<IFileItemRepository> _fileRepositoryMock;
     private readonly Mock<IStoragePoolRepository> _storagePoolRepositoryMock;
     private readonly Mock<IFileSystemService> _fileSystemServiceMock;
-    private readonly Mock<IFileHasher> _fileHasherMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IConfiguration> _configurationMock;
     private readonly Mock<NasSystem.Application.Notifications.IHubNotificationService> _notifierMock;
@@ -36,7 +35,6 @@ public class FileServiceTests
         _fileRepositoryMock = new Mock<IFileItemRepository>();
         _storagePoolRepositoryMock = new Mock<IStoragePoolRepository>();
         _fileSystemServiceMock = new Mock<IFileSystemService>();
-        _fileHasherMock = new Mock<IFileHasher>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _configurationMock = new Mock<IConfiguration>();
         _notifierMock = new Mock<NasSystem.Application.Notifications.IHubNotificationService>();
@@ -47,7 +45,6 @@ public class FileServiceTests
             _storagePoolRepositoryMock.Object,
             _unitOfWorkMock.Object,
             _fileSystemServiceMock.Object,
-            _fileHasherMock.Object,
             _configurationMock.Object,
             _notifierMock.Object);
     }

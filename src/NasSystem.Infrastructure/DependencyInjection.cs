@@ -50,11 +50,9 @@ public static class DependencyInjection
         services.AddScoped<IFileVersionRepository, FileVersionRepository>();
         services.AddScoped<IStoragePoolRepository, StoragePoolRepository>();
         services.AddScoped<IFileShareRepository, FileShareRepository>();
-        services.AddScoped<IFilePermissionRepository, FilePermissionRepository>();
 
         // 注册领域服务
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
-        services.AddSingleton<IFileHasher, FileHasher>();
         services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
 
         // 领域事件处理器注册（ITM-N29 批次：机制接通首个订阅者）

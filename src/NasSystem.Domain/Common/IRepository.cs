@@ -38,11 +38,6 @@ public interface IRepository<TEntity, TId>
     /// 删除实体
     /// </summary>
     Task DeleteAsync(TEntity entity, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 检查实体是否存在
-    /// </summary>
-    Task<bool> ExistsAsync(TId id, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

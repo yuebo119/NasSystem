@@ -38,11 +38,6 @@ public sealed class NasDbContext(DbContextOptions<NasDbContext> options) : DbCon
     /// </summary>
     public DbSet<FileShare> FileShares => Set<FileShare>();
 
-    /// <summary>
-    /// 文件权限表
-    /// </summary>
-    public DbSet<FilePermission> FilePermissions => Set<FilePermission>();
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

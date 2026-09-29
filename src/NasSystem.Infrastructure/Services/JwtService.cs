@@ -21,7 +21,6 @@ public sealed class JwtService : IJwtService
 {
     private readonly JwtSettings _settings;
     private readonly SigningCredentials _signingCredentials;
-    private readonly TokenValidationParameters _validationParameters;
 
     public JwtService(IOptions<JwtSettings> settings)
     {
@@ -29,18 +28,6 @@ public sealed class JwtService : IJwtService
 
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.SecretKey));
         _signingCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-
-        _validationParameters = new TokenValidationParameters
-        {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = securityKey,
-            ValidateIssuer = _settings.ValidateIssuer,
-            ValidIssuer = _settings.Issuer,
-            ValidateAudience = _settings.ValidateAudience,
-            ValidAudience = _settings.Audience,
-            ValidateLifetime = _settings.ValidateLifetime,
-            ClockSkew = TimeSpan.FromSeconds(_settings.ClockSkewSeconds)
-        };
     }
 
     public string GenerateAccessToken(User user)
@@ -83,49 +70,6 @@ public sealed class JwtService : IJwtService
         return Convert.ToBase64String(randomBytes);
     }
 
-    public ClaimsPrincipal? ValidateToken(string token)
-    {
-        try
-        {
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var principal = tokenHandler.ValidateToken(token, _validationParameters, out var validatedToken);
-
-            // 确保使用正确的算法
-            if (validatedToken is JwtSecurityToken jwtToken &&
-                !jwtToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
-            {
-                return null;
-            }
-
-            return principal;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    public Guid? GetUserIdFromToken(string token)
-    {
-        try
-        {
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var jwtToken = tokenHandler.ReadJwtToken(token);
-
-            var userIdClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub);
-            if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
-            {
-                return userId;
-            }
-
-            return null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     public DateTime? GetTokenExpiration(string token)
     {
         try
@@ -138,11 +82,5 @@ public sealed class JwtService : IJwtService
         {
             return null;
         }
-    }
-
-    public bool IsTokenExpired(string token)
-    {
-        var expiration = GetTokenExpiration(token);
-        return expiration == null || expiration <= DateTime.UtcNow;
     }
 }

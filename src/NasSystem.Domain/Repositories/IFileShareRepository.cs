@@ -19,11 +19,6 @@ public interface IFileShareRepository : IRepository<FileShare>
     Task<FileShare?> GetByShareCodeAsync(string shareCode, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 根据文件 ID 获取分享列表
-    /// </summary>
-    Task<IReadOnlyList<FileShare>> GetByFileItemIdAsync(Guid fileItemId, CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// 根据创建者获取分享列表
     /// </summary>
     Task<IReadOnlyList<FileShare>> GetByCreatorAsync(Guid userId, CancellationToken cancellationToken = default);
@@ -32,14 +27,4 @@ public interface IFileShareRepository : IRepository<FileShare>
     /// 检查分享码是否存在
     /// </summary>
     Task<bool> ShareCodeExistsAsync(string shareCode, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 获取所有分享
-    /// </summary>
-    Task<IReadOnlyList<FileShare>> GetAllAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 删除文件相关的所有分享
-    /// </summary>
-    Task DeleteByFileItemIdAsync(Guid fileItemId, CancellationToken cancellationToken = default);
 }

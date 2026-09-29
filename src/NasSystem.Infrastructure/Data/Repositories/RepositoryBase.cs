@@ -48,11 +48,6 @@ public abstract class RepositoryBase<TEntity, TId>(NasDbContext context) : IRepo
         return Task.CompletedTask;
     }
 
-    public virtual async Task<bool> ExistsAsync(TId id, CancellationToken cancellationToken = default)
-    {
-        return await DbSet.AnyAsync(e => e.Id.Equals(id), cancellationToken);
-    }
-
     /// <summary>
     /// 获取可查询对象
     /// </summary>

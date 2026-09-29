@@ -27,21 +27,6 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 根据路径获取目录下的子项
-    /// </summary>
-    Task<IReadOnlyList<FileItem>> GetChildrenByPathAsync(
-        string parentPath,
-        bool includeDeleted = false,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 获取用户的文件列表
-    /// </summary>
-    Task<IReadOnlyList<FileItem>> GetByOwnerAsync(
-        Guid ownerId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// 获取所有文件列表（用于扫描同步）
     /// </summary>
     Task<IReadOnlyList<FileItem>> GetAllAsync(
@@ -81,30 +66,9 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 计算目录大小
-    /// </summary>
-    Task<long> CalculateFolderSizeAsync(
-        Guid folderId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 计算用户已使用空间
-    /// </summary>
-    Task<long> CalculateUserUsedSpaceAsync(
-        Guid userId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// 检查路径是否存在
     /// </summary>
     Task<bool> PathExistsAsync(string path, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 批量添加文件项
-    /// </summary>
-    Task AddRangeAsync(
-        IEnumerable<FileItem> items,
-        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 批量删除文件项

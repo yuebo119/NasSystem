@@ -73,7 +73,6 @@ public class NasSystemWebApplicationFactory : WebApplicationFactory<Program>
         
         // 清空所有表数据
         db.FileShares.RemoveRange(db.FileShares);
-        db.FilePermissions.RemoveRange(db.FilePermissions);
         db.FileVersions.RemoveRange(db.FileVersions);
         db.FileItems.RemoveRange(db.FileItems);
         db.StoragePools.RemoveRange(db.StoragePools);

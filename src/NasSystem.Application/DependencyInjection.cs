@@ -5,7 +5,6 @@
 
 namespace NasSystem.Application;
 
-using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Application.Files;
 using NasSystem.Application.FileShares;
@@ -23,11 +22,6 @@ public static class DependencyInjection
     /// </summary>
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
-        var assembly = typeof(DependencyInjection).Assembly;
-
-        // 注册 FluentValidation 验证器
-        services.AddValidatorsFromAssembly(assembly);
-
         // 注册应用服务
         services.AddScoped<IUserService, UserService>();
         // ITM-T3：ISP 窄接口——调用方只依赖自己需要的用例域

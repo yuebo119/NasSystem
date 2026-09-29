@@ -76,56 +76,6 @@ public class FileVersionService : IFileVersionService
     }
 
     /// <inheritdoc />
-    public async Task<Result<FileVersionDto>> CreateVersionAsync(
-        Guid fileItemId,
-        string storagePath,
-        long fileSize,
-        string fileHash,
-        Guid userId,
-        string? comment = null,
-        CancellationToken cancellationToken = default)
-    {
-        var fileItem = await _fileItemRepository.GetByIdAsync(fileItemId, cancellationToken);
-        if (fileItem is null)
-        {
-            return Result<FileVersionDto>.Failure(
-                new Error("FileVersion.FileNotFound", "文件不存在"));
-        }
-
-        // 获取最新版本号
-        var latestVersionNumber = await _versionRepository.GetLatestVersionNumberAsync(
-            fileItemId, cancellationToken);
-
-        // 将当前版本标记为旧版本
-        var currentVersion = await _versionRepository.GetCurrentVersionAsync(
-            fileItemId, cancellationToken);
-        if (currentVersion is not null)
-        {
-            currentVersion.MarkAsOld();
-            _versionRepository.Update(currentVersion);
-        }
-
-        // 创建新版本
-        var newVersion = FileVersion.Create(
-            fileItemId,
-            latestVersionNumber + 1,
-            storagePath,
-            fileSize,
-            fileHash,
-            userId,
-            comment);
-
-        await _versionRepository.AddAsync(newVersion, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "创建文件版本: FileItemId={FileItemId}, Version={Version}",
-            fileItemId, newVersion.VersionNumber);
-
-        return Result<FileVersionDto>.Success(MapToDto(newVersion));
-    }
-
-    /// <inheritdoc />
     public async Task<Result<FileVersionDto>> RestoreVersionAsync(
         Guid fileItemId,
         int versionNumber,

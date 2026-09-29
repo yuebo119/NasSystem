@@ -38,33 +38,6 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<FileItem>> GetChildrenByPathAsync(
-        string parentPath,
-        bool includeDeleted = false,
-        CancellationToken cancellationToken = default)
-    {
-        var normalizedPath = NormalizePath(parentPath);
-        
-        // 先获取父文件夹
-        var parent = await QueryNoTracking()
-            .FirstOrDefaultAsync(f => f.Path == normalizedPath, cancellationToken);
-
-        if (parent is null)
-            return [];
-
-        return await GetChildrenAsync(parent.Id, includeDeleted, cancellationToken);
-    }
-
-    public async Task<IReadOnlyList<FileItem>> GetByOwnerAsync(
-        Guid ownerId,
-        CancellationToken cancellationToken = default)
-    {
-        return await QueryNoTracking()
-            .Where(f => f.OwnerId == ownerId && !f.IsDeleted)
-            .OrderBy(f => f.Path)
-            .ToListAsync(cancellationToken);
-    }
-
     public async Task<IReadOnlyList<FileItem>> GetAllAsync(
         CancellationToken cancellationToken = default)
     {
@@ -199,35 +172,11 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<long> CalculateFolderSizeAsync(
-        Guid folderId,
-        CancellationToken cancellationToken = default)
-    {
-        var descendants = await GetDescendantsAsync(folderId, cancellationToken);
-        return descendants.Where(f => f.IsFile).Sum(f => f.SizeBytes);
-    }
-
-    public async Task<long> CalculateUserUsedSpaceAsync(
-        Guid userId,
-        CancellationToken cancellationToken = default)
-    {
-        return await QueryNoTracking()
-            .Where(f => f.OwnerId == userId && !f.IsDeleted && f.IsFile)
-            .SumAsync(f => f.SizeBytes, cancellationToken);
-    }
-
     public async Task<bool> PathExistsAsync(string path, CancellationToken cancellationToken = default)
     {
         var normalizedPath = NormalizePath(path);
         return await QueryNoTracking()
             .AnyAsync(f => f.Path == normalizedPath && !f.IsDeleted, cancellationToken);
-    }
-
-    public async Task AddRangeAsync(
-        IEnumerable<FileItem> items,
-        CancellationToken cancellationToken = default)
-    {
-        await DbSet.AddRangeAsync(items, cancellationToken);
     }
 
     public Task DeleteRangeAsync(

@@ -49,22 +49,6 @@ public sealed class NasHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"path:{path}");
         _logger.LogDebug("客户端 {ConnectionId} 取消订阅路径: {Path}", Context.ConnectionId, path);
     }
-
-    /// <summary>
-    /// 订阅任务进度通知
-    /// </summary>
-    public async Task SubscribeToTask(string taskId)
-    {
-        await Groups.AddToGroupAsync(Context.ConnectionId, $"task:{taskId}");
-    }
-
-    /// <summary>
-    /// 取消订阅任务进度通知
-    /// </summary>
-    public async Task UnsubscribeFromTask(string taskId)
-    {
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"task:{taskId}");
-    }
 }
 
 
@@ -85,59 +69,12 @@ public sealed class HubNotificationService(IHubContext<NasHub> hubContext) : IHu
         var parentPath = Path.GetDirectoryName(path)?.Replace('\\', '/');
         if (string.IsNullOrEmpty(parentPath))
             parentPath = "/"; // 根目录文件的父目录归一为 /（与前端订阅串一致）
-        
+
         await hubContext.Clients.Group($"path:{parentPath}").SendAsync("FileChanged", new
         {
             Path = path,
             ChangeType = changeType.ToString(),
             Data = data,
-            Timestamp = DateTime.UtcNow
-        });
-    }
-
-    public async Task NotifyUploadProgressAsync(string taskId, long uploaded, long total)
-    {
-        var percentage = total > 0 ? (double)uploaded / total * 100 : 0;
-
-        await hubContext.Clients.Group($"task:{taskId}").SendAsync("UploadProgress", new
-        {
-            TaskId = taskId,
-            Uploaded = uploaded,
-            Total = total,
-            Percentage = Math.Round(percentage, 2),
-            Timestamp = DateTime.UtcNow
-        });
-    }
-
-    public async Task NotifyTaskCompletedAsync(string taskId, bool success, string? message = null)
-    {
-        await hubContext.Clients.Group($"task:{taskId}").SendAsync("TaskCompleted", new
-        {
-            TaskId = taskId,
-            Success = success,
-            Message = message,
-            Timestamp = DateTime.UtcNow
-        });
-    }
-
-    public async Task NotifySystemMessageAsync(string message, string level = "info")
-    {
-        await hubContext.Clients.All.SendAsync("SystemMessage", new
-        {
-            Message = message,
-            Level = level,
-            Timestamp = DateTime.UtcNow
-        });
-    }
-
-    public async Task NotifyStorageChangedAsync(long totalBytes, long usedBytes, long availableBytes)
-    {
-        await hubContext.Clients.All.SendAsync("StorageChanged", new
-        {
-            TotalBytes = totalBytes,
-            UsedBytes = usedBytes,
-            AvailableBytes = availableBytes,
-            UsagePercentage = totalBytes > 0 ? Math.Round((double)usedBytes / totalBytes * 100, 2) : 0,
             Timestamp = DateTime.UtcNow
         });
     }

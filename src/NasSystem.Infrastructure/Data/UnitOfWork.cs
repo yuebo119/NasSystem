@@ -6,7 +6,6 @@
 namespace NasSystem.Infrastructure.Data;
 
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Services;
 
@@ -17,10 +16,9 @@ public sealed class UnitOfWork(
     NasDbContext context,
     IDomainEventDispatcher? eventDispatcher = null) : IUnitOfWork
 {
-    private IDbContextTransaction? _transaction;
-
     // 【生命周期论证】不自行 Dispose DbContext：容器按 Scope 统一处置；
-    // 事务随连接关闭自动回滚，无需手动清理路径
+    // EF 的 SaveChanges 自带隐式事务，跨多用例的显式事务从未有调用方，故不保留
+    // Begin/Commit/Rollback 公开面（2026-09-29 清理，原实现零调用）
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -42,47 +40,6 @@ public sealed class UnitOfWork(
             // ITM-N7：并发插入撞上唯一索引时，把提供方异常转译为领域异常，
             // 服务层据此返回 AlreadyExists 业务错误而非 500
             throw new UniqueConstraintException(ex.Message, "唯一约束冲突：相同记录已被并发请求创建", ex);
-        }
-    }
-
-    public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
-    {
-        _transaction = await context.Database.BeginTransactionAsync(cancellationToken);
-    }
-
-    public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await SaveChangesAsync(cancellationToken);
-            
-            if (_transaction is not null)
-            {
-                await _transaction.CommitAsync(cancellationToken);
-            }
-        }
-        catch
-        {
-            await RollbackTransactionAsync(cancellationToken);
-            throw;
-        }
-        finally
-        {
-            if (_transaction is not null)
-            {
-                await _transaction.DisposeAsync();
-                _transaction = null;
-            }
-        }
-    }
-
-    public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
-    {
-        if (_transaction is not null)
-        {
-            await _transaction.RollbackAsync(cancellationToken);
-            await _transaction.DisposeAsync();
-            _transaction = null;
         }
     }
 

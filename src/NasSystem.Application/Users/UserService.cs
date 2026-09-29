@@ -33,15 +33,6 @@ public sealed class UserService(
         return Result<UserDto>.Success(MapToDto(user));
     }
 
-    public async Task<Result<UserDto>> GetByUsernameAsync(string username, CancellationToken cancellationToken = default)
-    {
-        var user = await userRepository.GetByUsernameAsync(username, cancellationToken);
-        if (user is null)
-            return Result<UserDto>.Failure(new Error("User.NotFound", $"用户 '{username}' 不存在"));
-
-        return Result<UserDto>.Success(MapToDto(user));
-    }
-
     public async Task<Result<PagedResult<UserDto>>> GetPagedAsync(
         int page,
         int pageSize,
@@ -227,19 +218,6 @@ public sealed class UserService(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();
-    }
-
-    public async Task<Result<bool>> ValidateCredentialsAsync(
-        string username,
-        string password,
-        CancellationToken cancellationToken = default)
-    {
-        var user = await userRepository.GetByUsernameAsync(username, cancellationToken);
-        if (user is null || !user.IsEnabled)
-            return Result<bool>.Success(false);
-
-        var isValid = passwordHasher.VerifyPassword(password, user.PasswordHash, user.PasswordSalt);
-        return Result<bool>.Success(isValid);
     }
 
     /// <summary>

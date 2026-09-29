@@ -68,23 +68,4 @@ public interface IFileVersionRepository
     Task<int> GetLatestVersionNumberAsync(
         Guid fileItemId,
         CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 获取文件的版本数量
-    /// </summary>
-    /// <param name="fileItemId">文件 ID</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>版本数量</returns>
-    Task<int> GetVersionCountAsync(
-        Guid fileItemId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 删除文件的所有版本
-    /// </summary>
-    /// <param name="fileItemId">文件 ID</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    Task DeleteByFileItemIdAsync(
-        Guid fileItemId,
-        CancellationToken cancellationToken = default);
 }

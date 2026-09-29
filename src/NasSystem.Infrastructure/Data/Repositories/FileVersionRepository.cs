@@ -86,25 +86,4 @@ public class FileVersionRepository : IFileVersionRepository
 
         return maxVersion ?? 0;
     }
-
-    /// <inheritdoc />
-    public async Task<int> GetVersionCountAsync(
-        Guid fileItemId,
-        CancellationToken cancellationToken = default)
-    {
-        return await DbSet
-            .CountAsync(v => v.FileItemId == fileItemId, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task DeleteByFileItemIdAsync(
-        Guid fileItemId,
-        CancellationToken cancellationToken = default)
-    {
-        var versions = await DbSet
-            .Where(v => v.FileItemId == fileItemId)
-            .ToListAsync(cancellationToken);
-
-        DbSet.RemoveRange(versions);
-    }
 }
