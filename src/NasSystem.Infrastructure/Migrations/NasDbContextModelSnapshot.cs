@@ -107,39 +107,6 @@ namespace NasSystem.Infrastructure.Migrations
                     b.ToTable("FileItems", (string)null);
                 });
 
-            modelBuilder.Entity("NasSystem.Domain.Entities.FilePermission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("FileItemId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Permission")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileItemId");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("FileItemId", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("FilePermissions", (string)null);
-                });
-
             modelBuilder.Entity("NasSystem.Domain.Entities.FileShare", b =>
                 {
                     b.Property<Guid>("Id")
@@ -401,25 +368,6 @@ namespace NasSystem.Infrastructure.Migrations
                     b.Navigation("Parent");
 
                     b.Navigation("StoragePool");
-                });
-
-            modelBuilder.Entity("NasSystem.Domain.Entities.FilePermission", b =>
-                {
-                    b.HasOne("NasSystem.Domain.Entities.FileItem", "FileItem")
-                        .WithMany()
-                        .HasForeignKey("FileItemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("NasSystem.Domain.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("FileItem");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("NasSystem.Domain.Entities.FileShare", b =>

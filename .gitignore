@@ -42,7 +42,9 @@ Desktop.ini
 /web/node_modules
 node_modules/
 wwwroot/
-data
+# 仅忽略根目录的 data（SQLite 运行数据）；src/NasSystem.Infrastructure/Data/ 是源码目录，
+# 无锚定的 data 规则历史上把它整棵排除出版本库，新文件会静默丢失
+/data
 
 # AI 工具运行时目录（.ai 为嵌套独立仓，独立版本化）
 .ai/

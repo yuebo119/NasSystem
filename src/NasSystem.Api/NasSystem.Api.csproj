@@ -24,6 +24,9 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="Scalar.AspNetCore" />
+
+    <!-- EF 设计期工具（dotnet ef 命令要求启动项目引用，PrivateAssets 不传递） -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     
     <!-- 日志集成 -->
     <PackageReference Include="Serilog.AspNetCore" />
