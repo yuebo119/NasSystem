@@ -3,6 +3,7 @@ import type { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axio
 import type { ApiResponse } from '@/types'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
+import i18n from '@/locales'
 
 // 创建 axios 实例
 const http: AxiosInstance = axios.create({
@@ -34,7 +35,9 @@ http.interceptors.response.use(
   },
   (error: AxiosError<ApiResponse>) => {
     const { response } = error
-    
+    // 模块级无组件上下文，经 i18n 全局实例取翻译函数（locales 不反向依赖 api，无循环导入）
+    const t = i18n.global.t
+
     if (response) {
       const { status, data } = response
       
@@ -43,24 +46,24 @@ http.interceptors.response.use(
           // 未授权，清除登录状态并跳转登录页
           localStorage.removeItem('token')
           router.push({ name: 'Login' })
-          ElMessage.error('登录已过期，请重新登录')
+          ElMessage.error(t('error.sessionExpired'))
           break
         case 403:
-          ElMessage.error('没有权限执行此操作')
+          ElMessage.error(t('error.forbidden'))
           break
         case 404:
-          ElMessage.error(data?.error?.message || '请求的资源不存在')
+          ElMessage.error(data?.error?.message || t('error.notFound'))
           break
         case 500:
-          ElMessage.error('服务器错误，请稍后重试')
+          ElMessage.error(t('error.serverError'))
           break
         default:
-          ElMessage.error(data?.error?.message || '请求失败')
+          ElMessage.error(data?.error?.message || t('error.requestFailed'))
       }
     } else if (error.code === 'ECONNABORTED') {
-      ElMessage.error('请求超时，请检查网络连接')
+      ElMessage.error(t('error.timeout'))
     } else {
-      ElMessage.error('网络错误，请检查网络连接')
+      ElMessage.error(t('error.network'))
     }
     
     return Promise.reject(error)

@@ -27,8 +27,6 @@ const fileStore = useFileStore()
 // 对话框状态
 const createFolderDialogVisible = ref(false)
 const renameDialogVisible = ref(false)
-const moveDialogVisible = ref(false)
-const copyDialogVisible = ref(false)
 const searchDialogVisible = ref(false)
 const recycleBinDialogVisible = ref(false)
 const uploadDialogVisible = ref(false)
@@ -38,8 +36,6 @@ const previewDialogVisible = ref(false)
 const newFolderName = ref('')
 const renameTarget = ref<FileItem | null>(null)
 const newName = ref('')
-const moveDestination = ref('/')
-const copyDestination = ref('/')
 const searchQuery = ref('')
 const searchResults = ref<FileItem[]>([])
 const searchLoading = ref(false)
@@ -55,7 +51,6 @@ let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // 上传相关
 const uploadFiles = ref<UploadFile[]>([])
-const batchOperationActive = ref(false)
 const uploading = ref(false)
 const uploadProgress = ref(0)
 
@@ -64,14 +59,6 @@ const textContent = ref('')
 
 // 剪贴板
 const clipboard = ref<{ items: FileItem[], action: 'copy' | 'cut' } | null>(null)
-
-// 操作进度
-const operationDialogVisible = ref(false)
-const operationTitle = ref('')
-const operationCurrent = ref(0)
-const operationTotal = ref(0)
-const operationCurrentItem = ref('')
-const operationCancelled = ref(false)
 
 // 扫描同步
 const scanning = ref(false)
@@ -263,7 +250,6 @@ async function handleDelete(permanent = false) {
     )
     
     // ITM-N19：一次数组请求（后端返回 per-item 结果），替代逐项循环
-    batchOperationActive.value = true
     try {
       const result = await fileApi.delete(items.map(i => i.path), permanent)
       const failed: string[] = (result.data as { failedItems?: string[] } | null)?.failedItems ?? []
@@ -274,8 +260,6 @@ async function handleDelete(permanent = false) {
       }
     } catch {
       // 拦截器已弹错
-    } finally {
-      batchOperationActive.value = false
     }
 
     fileStore.clearSelection()
@@ -338,7 +322,6 @@ async function handlePaste() {
   const destination = fileStore.currentPath
   
   // ITM-N19：一次数组请求，替代逐项循环
-  batchOperationActive.value = true
   let pasteFailed = 0
   try {
     const paths = items.map(i => i.path)
@@ -351,8 +334,6 @@ async function handlePaste() {
     }
   } catch {
     pasteFailed = items.length
-  } finally {
-    batchOperationActive.value = false
   }
 
   const okCount = items.length - pasteFailed
@@ -369,42 +350,11 @@ async function handlePaste() {
   await fileStore.loadDirectory(fileStore.currentPath)
 }
 
-// 取消操作
-function cancelOperation() {
-  operationCancelled.value = true
-}
-
 // 打开上传对话框
 function openUploadDialog() {
   uploadFiles.value = []
   uploadProgress.value = 0
   uploadDialogVisible.value = true
-}
-
-// 移动文件
-async function handleMove() {
-  const paths = fileStore.selectedItems.map(item => item.path)
-  const result = await fileApi.move(paths, moveDestination.value)
-  if (result.success) {
-    ElMessage.success(t('filesView.moveSuccess'))
-    moveDialogVisible.value = false
-    await fileStore.loadDirectory(fileStore.currentPath)
-  } else {
-    ElMessage.error(result.error?.message || t('filesView.moveFailed'))
-  }
-}
-
-// 复制文件
-async function handleCopy() {
-  const paths = fileStore.selectedItems.map(item => item.path)
-  const result = await fileApi.copy(paths, copyDestination.value)
-  if (result.success) {
-    ElMessage.success(t('filesView.copySuccessMsg'))
-    copyDialogVisible.value = false
-    await fileStore.loadDirectory(fileStore.currentPath)
-  } else {
-    ElMessage.error(result.error?.message || t('filesView.copyFailed'))
-  }
 }
 
 // 下载文件
@@ -1283,34 +1233,6 @@ onUnmounted(() => void unsubscribe?.())
       </template>
     </el-dialog>
 
-    <!-- 移动对话框 -->
-    <el-dialog v-model="moveDialogVisible" :title="$t('filesView.moveTo')" width="500">
-      <el-input v-model="moveDestination" :placeholder="$t('filesView.destPathPlaceholder')">
-        <template #prepend>{{ $t('filesView.destPathLabel') }}</template>
-      </el-input>
-      <div class="dialog-tip">
-        {{ $t('filesView.willMove', { count: fileStore.selectionCount }) }}
-      </div>
-      <template #footer>
-        <el-button @click="moveDialogVisible = false">{{ $t('filesView.cancel') }}</el-button>
-        <el-button type="primary" @click="handleMove">{{ $t('filesView.moveAction') }}</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 复制对话框 -->
-    <el-dialog v-model="copyDialogVisible" :title="$t('filesView.copyTo')" width="500">
-      <el-input v-model="copyDestination" :placeholder="$t('filesView.destPathPlaceholder')">
-        <template #prepend>{{ $t('filesView.destPathLabel') }}</template>
-      </el-input>
-      <div class="dialog-tip">
-        {{ $t('filesView.willCopy', { count: fileStore.selectionCount }) }}
-      </div>
-      <template #footer>
-        <el-button @click="copyDialogVisible = false">{{ $t('filesView.cancel') }}</el-button>
-        <el-button type="primary" @click="handleCopy">{{ $t('filesView.copyTip') }}</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 搜索对话框 -->
     <el-dialog v-model="searchDialogVisible" :title="$t('filesView.searchDialogTitle')" width="650" @close="resetSearch">
       <div class="search-form">
@@ -1463,33 +1385,6 @@ onUnmounted(() => void unsubscribe?.())
       <template #footer>
         <el-button @click="previewDialogVisible = false">{{ $t('filesView.close') }}</el-button>
         <el-button type="primary" @click="downloadFile(previewItem!)" v-if="previewItem">{{ $t('filesView.downloadTip') }}</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 操作进度对话框 -->
-    <el-dialog 
-      v-model="operationDialogVisible" 
-      :title="operationTitle"
-      width="400"
-      :close-on-click-modal="false"
-      :close-on-press-escape="false"
-      :show-close="false"
-    >
-      <div class="operation-progress">
-        <el-progress 
-          :percentage="operationTotal > 0 ? Math.round((operationCurrent / operationTotal) * 100) : 0" 
-          :stroke-width="20"
-          :text-inside="true"
-        />
-        <div class="operation-info">
-          <span class="current-item" :title="operationCurrentItem">{{ operationCurrentItem }}</span>
-          <span class="progress-text">{{ operationCurrent }} / {{ operationTotal }}</span>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="cancelOperation" :disabled="operationCancelled">
-          {{ operationCancelled ? $t('filesView.cancelling') : $t('filesView.cancel') }}
-        </el-button>
       </template>
     </el-dialog>
 
@@ -1757,12 +1652,6 @@ onUnmounted(() => void unsubscribe?.())
   }
 }
 
-.dialog-tip {
-  margin-top: 12px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-}
-
 .search-results {
   margin-top: 16px;
   max-height: 400px;
@@ -1920,29 +1809,6 @@ onUnmounted(() => void unsubscribe?.())
     
     p {
       margin: 16px 0;
-    }
-  }
-}
-
-.operation-progress {
-  .operation-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 16px;
-    font-size: 13px;
-    color: var(--el-text-color-secondary);
-    
-    .current-item {
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      margin-right: 16px;
-    }
-    
-    .progress-text {
-      flex-shrink: 0;
     }
   }
 }
