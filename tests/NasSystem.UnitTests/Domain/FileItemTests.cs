@@ -327,31 +327,6 @@ public class FileItemTests
 
     #endregion
 
-    #region SetAttributes Tests
-
-    [Fact]
-    public void SetAttributes_SetsHiddenAndReadOnly()
-    {
-        // Arrange
-        var file = FileItem.CreateFile(
-            name: "test.txt",
-            path: "/documents/test.txt",
-            physicalPath: "/mnt/storage/documents/test.txt",
-            sizeBytes: 100,
-            mimeType: "text/plain",
-            storagePoolId: _storagePoolId,
-            ownerId: _ownerId);
-
-        // Act
-        file.SetAttributes(isHidden: true, isReadOnly: true);
-
-        // Assert
-        file.IsHidden.Should().BeTrue();
-        file.IsReadOnly.Should().BeTrue();
-    }
-
-    #endregion
-
     #region UpdateSize and UpdateHash Tests
 
     [Fact]

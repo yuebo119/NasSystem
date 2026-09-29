@@ -100,15 +100,6 @@ public sealed class StoragePool : Entity
     }
 
     /// <summary>
-    /// 设置最大容量限制
-    /// </summary>
-    public void SetMaxCapacity(long? maxCapacityBytes)
-    {
-        MaxCapacityBytes = maxCapacityBytes;
-        MarkAsModified();
-    }
-
-    /// <summary>
     /// 更新容量信息（从文件系统读取）
     /// </summary>
     public void UpdateCapacity(long totalBytes, long usedBytes)

@@ -43,11 +43,6 @@ public abstract class Entity<TId> : IEquatable<Entity<TId>>
     protected void AddDomainEvent(IDomainEvent domainEvent) => _domainEvents.Add(domainEvent);
 
     /// <summary>
-    /// 移除领域事件
-    /// </summary>
-    public void RemoveDomainEvent(IDomainEvent domainEvent) => _domainEvents.Remove(domainEvent);
-
-    /// <summary>
     /// 清空领域事件
     /// </summary>
     public void ClearDomainEvents() => _domainEvents.Clear();

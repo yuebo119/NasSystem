@@ -132,16 +132,11 @@ public sealed partial class FileService
             await _fileRepository.UpdateAsync(descendant, cancellationToken);
         }
 
-        try
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        catch (UniqueConstraintException)
-        {
-            // ITM-N26：并发场景下同路径可能已有活跃记录（或扫描前遗留）
-            return Result<FileItemDto>.Failure(
-                new Error("File.AlreadyExists", "同路径已存在记录，无法恢复"));
-        }
+        var saved = await SaveChangesWithConflictGuardAsync(
+            new Error("File.AlreadyExists", "同路径已存在记录，无法恢复"),
+            cancellationToken);
+        if (saved.IsFailure)
+            return Result<FileItemDto>.Failure(saved.Error);
 
         return Result<FileItemDto>.Success(MapToDto(item));
     }

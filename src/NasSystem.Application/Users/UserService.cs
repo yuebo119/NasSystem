@@ -77,15 +77,10 @@ public sealed class UserService(
             user.SetQuota(dto.QuotaBytes.Value);
 
         await userRepository.AddAsync(user, cancellationToken);
-        try
-        {
-            await unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        catch (UniqueConstraintException)
-        {
-            // ITM-N7：并发创建同名用户由 Users.Username 唯一索引兜底
-            return Result<UserDto>.Failure(UserErrors.UsernameExists(dto.Username));
-        }
+        // ITM-N7：并发创建同名用户由 Users.Username 唯一索引兜底
+        var saved = await SaveChangesWithUniqueGuardAsync(UserErrors.UsernameExists(dto.Username), cancellationToken);
+        if (saved.IsFailure)
+            return Result<UserDto>.Failure(saved.Error);
 
         return Result<UserDto>.Success(MapToDto(user));
     }
@@ -221,6 +216,24 @@ public sealed class UserService(
     }
 
     /// <summary>
+    /// ITM-N7：保存更改的唯一约束兜底。并发写入撞唯一索引时返回调用方提供的冲突错误
+    /// </summary>
+    private async Task<Result> SaveChangesWithUniqueGuardAsync(
+        Error conflictError,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result.Success();
+        }
+        catch (UniqueConstraintException)
+        {
+            return Result.Failure(conflictError);
+        }
+    }
+
+    /// <summary>
     /// 映射实体到 DTO
     /// </summary>
     private static UserDto MapToDto(User user) => new(
@@ -238,18 +251,8 @@ public sealed class UserService(
         UsagePercentage: user.QuotaBytes > 0 ? Math.Round((double)user.UsedBytes / user.QuotaBytes.Value * 100, 2) : null,
         CreatedAt: user.CreatedAt);
 
-    private static string? FormatSize(long? bytes)
-    {
-        if (!bytes.HasValue || bytes.Value == 0) return null;
-        string[] sizes = ["B", "KB", "MB", "GB", "TB"];
-        double len = bytes.Value;
-        int order = 0;
-        while (len >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            len /= 1024;
-        }
-        return $"{len:0.##} {sizes[order]}";
-    }
+    // 【单一真源】尺标逻辑委托 ByteSizeFormatter；保留 0/无配额返回 null 的既有显示语义
+    private static string? FormatSize(long? bytes) =>
+        bytes is > 0 ? ByteSizeFormatter.FormatSize(bytes.Value) : null;
 
 }

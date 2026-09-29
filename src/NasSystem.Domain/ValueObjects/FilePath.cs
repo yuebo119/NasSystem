@@ -82,27 +82,6 @@ public sealed class FilePath : ValueObject
     }
 
     /// <summary>
-    /// 尝试创建文件路径
-    /// </summary>
-    public static bool TryCreate(string path, out FilePath? filePath)
-    {
-        filePath = null;
-        
-        if (string.IsNullOrWhiteSpace(path))
-            return false;
-        
-        try
-        {
-            filePath = new FilePath(path);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
     /// 合并路径
     /// </summary>
     public FilePath Combine(string relativePath)
@@ -112,17 +91,6 @@ public sealed class FilePath : ValueObject
         
         var combined = Value.TrimEnd('/') + "/" + relativePath.TrimStart('/');
         return new FilePath(combined);
-    }
-
-    /// <summary>
-    /// 获取相对路径
-    /// </summary>
-    public string GetRelativeTo(FilePath basePath)
-    {
-        if (!Value.StartsWith(basePath.Value, StringComparison.Ordinal))
-            throw new ArgumentException("路径不在基路径下", nameof(basePath));
-        
-        return Value[basePath.Value.Length..].TrimStart('/');
     }
 
     /// <summary>

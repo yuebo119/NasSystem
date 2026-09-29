@@ -23,7 +23,6 @@ public sealed record FileItemDto
     public string? Hash { get; init; }
     public Guid? ParentId { get; init; }
     public required Guid OwnerId { get; init; }
-    public string? OwnerName { get; init; }
     public required bool IsHidden { get; init; }
     public required bool IsReadOnly { get; init; }
     public required DateTime CreatedAt { get; init; }
@@ -115,20 +114,6 @@ public sealed record UploadFileMetadata
 }
 
 /// <summary>
-/// 上传进度 DTO
-/// </summary>
-public sealed record UploadProgressDto
-{
-    public required Guid UploadId { get; init; }
-    public required string FileName { get; init; }
-    public required long TotalBytes { get; init; }
-    public required long UploadedBytes { get; init; }
-    public required double Percentage { get; init; }
-    public required string Status { get; init; }
-    public string? ErrorMessage { get; init; }
-}
-
-/// <summary>
 /// 搜索请求
 /// </summary>
 public sealed record SearchFilesRequest
@@ -137,10 +122,6 @@ public sealed record SearchFilesRequest
     public string? Path { get; init; }
     public FileItemType? ItemType { get; init; }
     public string? Extension { get; init; }
-    public long? MinSize { get; init; }
-    public long? MaxSize { get; init; }
-    public DateTime? ModifiedAfter { get; init; }
-    public DateTime? ModifiedBefore { get; init; }
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 50;
 }

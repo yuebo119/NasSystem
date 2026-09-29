@@ -163,15 +163,6 @@ public sealed class FileShare : Entity
     }
 
     /// <summary>
-    /// 重置下载次数
-    /// </summary>
-    public void ResetDownloadCount()
-    {
-        DownloadCount = 0;
-        MarkAsModified();
-    }
-
-    /// <summary>
     /// 重新生成分享码
     /// </summary>
     public void RegenerateShareCode()

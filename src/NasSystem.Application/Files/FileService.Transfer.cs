@@ -7,7 +7,6 @@
 
 namespace NasSystem.Application.Files;
 
-using Microsoft.Extensions.Configuration;
 using NasSystem.Application.Common;
 using NasSystem.Application.Files.Dtos;
 using NasSystem.Domain.Common;
@@ -15,7 +14,6 @@ using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
 using NasSystem.Application.Notifications;
-using NasSystem.Domain.Common;
 using NasSystem.Domain.Services;
 using NasSystem.Shared;
 using static NasSystem.Shared.ByteSizeFormatter;
@@ -47,12 +45,12 @@ public sealed partial class FileService
         }
 
         // 获取默认存储池
-        var defaultPool = await _storagePoolRepository.GetDefaultAsync(cancellationToken);
-        if (defaultPool is null)
-            return Result<FileItemDto>.Failure(StorageErrors.PoolNotFound(Guid.Empty));
+        var defaultPool = await GetDefaultPoolOrFailureAsync(cancellationToken);
+        if (defaultPool.IsFailure)
+            return Result<FileItemDto>.Failure(defaultPool.Error);
 
         // 创建物理目录
-        var physicalPath = GetPhysicalPath(newPath, defaultPool.MountPath);
+        var physicalPath = GetPhysicalPath(newPath, defaultPool.Value.MountPath);
         _fileSystemService.CreateDirectory(physicalPath);
 
         // 创建文件项记录
@@ -61,19 +59,13 @@ public sealed partial class FileService
             path: newPath,
             physicalPath: physicalPath,
             ownerId: userId,
-            storagePoolId: defaultPool.Id,
+            storagePoolId: defaultPool.Value.Id,
             parentId: parentId);
 
         await _fileRepository.AddAsync(folder, cancellationToken);
-        try
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        catch (UniqueConstraintException)
-        {
-            // ITM-N7：并发创建同名目录由 Path 唯一部分索引兜底
-            return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(newPath));
-        }
+        var saved = await SaveChangesWithConflictGuardAsync(FileErrors.AlreadyExists(newPath), cancellationToken);
+        if (saved.IsFailure)
+            return Result<FileItemDto>.Failure(saved.Error);
 
         await NotifyChangedAsync(parentPath, FileChangeType.Created, folder.Path);
         return Result<FileItemDto>.Success(MapToDto(folder));
@@ -102,15 +94,15 @@ public sealed partial class FileService
         }
 
         // 获取默认存储池
-        var defaultPool = await _storagePoolRepository.GetDefaultAsync(cancellationToken);
-        if (defaultPool is null)
-            return Result<FileItemDto>.Failure(StorageErrors.PoolNotFound(Guid.Empty));
+        var defaultPool = await GetDefaultPoolOrFailureAsync(cancellationToken);
+        if (defaultPool.IsFailure)
+            return Result<FileItemDto>.Failure(defaultPool.Error);
 
         // 写入物理文件并同步计算哈希——单遍 IO 流水线。
         // 【性能精炼记录】原实现"写盘 → 重开读盘 → 整流哈希"，大文件场景读放大 ×2；
         // 精炼为复制缓冲循环内增量喂入 SHA256（IncrementalHash），IO 量减半且语义不变。
         // 缓冲区与 FileHasher 保持同规格（80KB），ArrayPool 复用避免大文件反复分配。
-        var physicalPath = GetPhysicalPath(filePath, defaultPool.MountPath);
+        var physicalPath = GetPhysicalPath(filePath, defaultPool.Value.MountPath);
         var physicalDir = Path.GetDirectoryName(physicalPath)!;
         _fileSystemService.CreateDirectory(physicalDir);
 
@@ -155,19 +147,14 @@ public sealed partial class FileService
             sizeBytes: totalBytes,
             mimeType: metadata.ContentType ?? _fileSystemService.GetMimeType(metadata.FileName),
             ownerId: userId,
-            storagePoolId: defaultPool.Id,
+            storagePoolId: defaultPool.Value.Id,
             parentId: parentId,
             hash: hash);
 
         await _fileRepository.AddAsync(file, cancellationToken);
-        try
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        catch (UniqueConstraintException)
-        {
-            return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(filePath));
-        }
+        var saved = await SaveChangesWithConflictGuardAsync(FileErrors.AlreadyExists(filePath), cancellationToken);
+        if (saved.IsFailure)
+            return Result<FileItemDto>.Failure(saved.Error);
 
         await NotifyChangedAsync(destPath, FileChangeType.Created, file.Path);
         return Result<FileItemDto>.Success(MapToDto(file));
@@ -231,15 +218,9 @@ public sealed partial class FileService
         // ITM-N3：文件夹重命名必须同步重写后代路径，否则子树 Path/PhysicalPath 指向旧位置
         await RewriteDescendantPathsAsync(item.Id, GetParentPath(path), newPath, newPhysicalPath, cancellationToken);
 
-        try
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        catch (UniqueConstraintException)
-        {
-            // ITM-N7：并发重命名撞 Path 唯一部分索引
-            return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(newPath));
-        }
+        var saved = await SaveChangesWithConflictGuardAsync(FileErrors.AlreadyExists(newPath), cancellationToken);
+        if (saved.IsFailure)
+            return Result<FileItemDto>.Failure(saved.Error);
 
         await NotifyChangedAsync(GetParentPath(newPath), FileChangeType.Renamed, item.Path);
 
@@ -254,21 +235,11 @@ public sealed partial class FileService
         var results = new List<FileItemDto>();
         var destPath = NormalizePath(request.DestinationPath);
 
-        // 获取默认存储池
-        var defaultPool = await _storagePoolRepository.GetDefaultAsync(cancellationToken);
-        if (defaultPool is null)
-            return Result<IReadOnlyList<FileItemDto>>.Failure(StorageErrors.PoolNotFound(Guid.Empty));
-
-        // 获取目标父目录 ID（根目录时为 null）
-        Guid? destParentId = null;
-        if (destPath != "/")
-        {
-            var destParent = await _fileRepository.GetByPathAsync(destPath, cancellationToken);
-            // 目标目录不存在且不是根目录，返回错误
-            if (destParent is null)
-                return Result<IReadOnlyList<FileItemDto>>.Failure(FileErrors.NotFound(destPath));
-            destParentId = destParent.Id;
-        }
+        // 默认池与目标目录准备（Move/Copy 共用的前奏，目标目录缺失统一报错）
+        var prepared = await PrepareTransferDestinationAsync(destPath, cancellationToken);
+        if (prepared.IsFailure)
+            return Result<IReadOnlyList<FileItemDto>>.Failure(prepared.Error);
+        var (defaultPool, destParentId) = prepared.Value;
 
         foreach (var sourcePath in request.SourcePaths)
         {
@@ -309,15 +280,9 @@ public sealed partial class FileService
             }
         }
 
-        try
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        catch (UniqueConstraintException)
-        {
-            // ITM-N7/N26：并发移动同名目标由 Path 唯一部分索引兜底
-            return Result<IReadOnlyList<FileItemDto>>.Failure(FileErrors.AlreadyExists(destPath));
-        }
+        var saved = await SaveChangesWithConflictGuardAsync(FileErrors.AlreadyExists(destPath), cancellationToken);
+        if (saved.IsFailure)
+            return Result<IReadOnlyList<FileItemDto>>.Failure(saved.Error);
 
         if (results.Count > 0)
             await NotifyChangedAsync(destPath, FileChangeType.Moved, destPath);
@@ -332,18 +297,11 @@ public sealed partial class FileService
         var results = new List<FileItemDto>();
         var destPath = NormalizePath(request.DestinationPath);
 
-        // 获取默认存储池
-        var defaultPool = await _storagePoolRepository.GetDefaultAsync(cancellationToken);
-        if (defaultPool is null)
-            return Result<IReadOnlyList<FileItemDto>>.Failure(StorageErrors.PoolNotFound(Guid.Empty));
-
-        // 获取目标父目录
-        Guid? destParentId = null;
-        if (destPath != "/")
-        {
-            var destParent = await _fileRepository.GetByPathAsync(destPath, cancellationToken);
-            destParentId = destParent?.Id;
-        }
+        // 默认池与目标目录准备（与 MoveAsync 共用同一前奏与报错语义）
+        var prepared = await PrepareTransferDestinationAsync(destPath, cancellationToken);
+        if (prepared.IsFailure)
+            return Result<IReadOnlyList<FileItemDto>>.Failure(prepared.Error);
+        var (defaultPool, destParentId) = prepared.Value;
 
         foreach (var sourcePath in request.SourcePaths)
         {
@@ -376,19 +334,37 @@ public sealed partial class FileService
             }
         }
 
-        try
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        catch (UniqueConstraintException)
-        {
-            // ITM-N7/N35：并发复制同名目标由 Path 唯一部分索引兜底
-            return Result<IReadOnlyList<FileItemDto>>.Failure(FileErrors.AlreadyExists(destPath));
-        }
+        var saved = await SaveChangesWithConflictGuardAsync(FileErrors.AlreadyExists(destPath), cancellationToken);
+        if (saved.IsFailure)
+            return Result<IReadOnlyList<FileItemDto>>.Failure(saved.Error);
 
         if (results.Count > 0)
             await NotifyChangedAsync(destPath, FileChangeType.Created, destPath);
         return Result<IReadOnlyList<FileItemDto>>.Success(results);
+    }
+
+    /// <summary>
+    /// 传输前准备：默认存储池 + 目标父目录 ID。
+    /// Move/Copy 共用；目标目录显式不存在时报错（两侧语义统一）
+    /// </summary>
+    private async Task<Result<(StoragePool Pool, Guid? ParentId)>> PrepareTransferDestinationAsync(
+        string destPath,
+        CancellationToken cancellationToken)
+    {
+        var poolResult = await GetDefaultPoolOrFailureAsync(cancellationToken);
+        if (poolResult.IsFailure)
+            return Result<(StoragePool, Guid?)>.Failure(poolResult.Error);
+
+        Guid? destParentId = null;
+        if (destPath != "/")
+        {
+            var destParent = await _fileRepository.GetByPathAsync(destPath, cancellationToken);
+            if (destParent is null)
+                return Result<(StoragePool, Guid?)>.Failure(FileErrors.NotFound(destPath));
+            destParentId = destParent.Id;
+        }
+
+        return Result<(StoragePool, Guid?)>.Success((poolResult.Value, destParentId));
     }
 
     /// <summary>

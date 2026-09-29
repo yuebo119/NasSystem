@@ -7,7 +7,6 @@
 
 namespace NasSystem.Application.Files;
 
-using Microsoft.Extensions.Configuration;
 using NasSystem.Application.Common;
 using NasSystem.Application.Files.Dtos;
 using NasSystem.Domain.Common;
@@ -15,7 +14,6 @@ using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
 using NasSystem.Application.Notifications;
-using NasSystem.Domain.Common;
 using NasSystem.Domain.Services;
 using NasSystem.Shared;
 using static NasSystem.Shared.ByteSizeFormatter;
@@ -34,11 +32,11 @@ public sealed partial class FileService
         try
         {
             // 获取默认存储池
-            var defaultPool = await _storagePoolRepository.GetDefaultAsync(cancellationToken);
-            if (defaultPool is null)
-                return Result<ScanResultDto>.Failure(StorageErrors.PoolNotFound(Guid.Empty));
+            var defaultPool = await GetDefaultPoolOrFailureAsync(cancellationToken);
+            if (defaultPool.IsFailure)
+                return Result<ScanResultDto>.Failure(defaultPool.Error);
 
-            var storagePath = defaultPool.MountPath;
+            var storagePath = defaultPool.Value.MountPath;
             
             if (!Directory.Exists(storagePath))
             {
@@ -49,13 +47,13 @@ public sealed partial class FileService
             // 物理扫描仅覆盖默认池挂载点，若对比全库记录，其他池的记录会被误判
             // "物理不存在"而批量删除（多存储池数据销毁）。
             var allDbItems = await _fileRepository.GetAllAsync(cancellationToken);
-            var dbItems = allDbItems.Where(x => x.StoragePoolId == defaultPool.Id).ToList();
+            var dbItems = allDbItems.Where(x => x.StoragePoolId == defaultPool.Value.Id).ToList();
 
             // ITM-N26：软删记录也必须进入对比表——其物理文件仍存在于挂载点，
             // 若缺席则会被扫描当作"新发现"重建（软删文件复活），且恢复时撞 Path 唯一索引
             var softDeletedItems = await _fileRepository.GetDeletedItemsAsync(
                 ownerId: null, cancellationToken);
-            var softDeletedInPool = softDeletedItems.Where(x => x.StoragePoolId == defaultPool.Id);
+            var softDeletedInPool = softDeletedItems.Where(x => x.StoragePoolId == defaultPool.Value.Id);
 
             var dbPathMap = dbItems.Concat(softDeletedInPool)
                 .ToDictionary(x => x.Path, x => x);
@@ -63,9 +61,9 @@ public sealed partial class FileService
             // 扫描物理文件系统
             var physicalPaths = new HashSet<string>();
             await ScanDirectoryAsync(
-                storagePath, 
-                "/", 
-                defaultPool.Id, 
+                storagePath,
+                "/",
+                defaultPool.Value.Id,
                 userId, 
                 dbPathMap, 
                 physicalPaths,
@@ -234,13 +232,4 @@ public sealed partial class FileService
             }
         }
     }
-
-
-    /// <summary>
-    /// 重写后代记录的路径前缀（ITM-N3）。ParentId 树保持不变——被移动的只有祖先链顶层。
-    /// </summary>
-    /// <param name="folderId">被重命名/移动的文件夹 Id</param>
-    /// <param name="oldBasePath">后代的旧虚拟路径前缀（Rename=所在父目录；Move=源目录）</param>
-    /// <param name="newVirtualBase">后代的虚拟路径新基底</param>
-    /// <param name="newPhysicalBase">后代的物理路径新基底</param>
 }

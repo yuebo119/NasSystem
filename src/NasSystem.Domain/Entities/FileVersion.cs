@@ -125,13 +125,4 @@ public class FileVersion
         IsCurrent = true;
         UpdatedAt = DateTime.UtcNow;
     }
-
-    /// <summary>
-    /// 更新版本说明
-    /// </summary>
-    public void UpdateComment(string? comment)
-    {
-        Comment = comment;
-        UpdatedAt = DateTime.UtcNow;
-    }
 }

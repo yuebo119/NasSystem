@@ -42,7 +42,6 @@ public sealed record StorageOverviewDto
     public string? UsedDisplay { get; init; }
     public string? AvailableDisplay { get; init; }
     public required int PoolCount { get; init; }
-    public string HealthStatus { get; init; } = "Healthy";
 }
 
 /// <summary>

@@ -5,6 +5,7 @@
 
 namespace NasSystem.Application.Storage;
 
+using NasSystem.Application.Common;
 using NasSystem.Application.Storage.Dtos;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
@@ -296,23 +297,4 @@ public sealed class StorageService(
 
 
     #endregion
-}
-
-
-/// <summary>
-/// 存储相关错误
-/// </summary>
-public static class StorageErrors
-{
-    public static Error PoolNotFound(Guid poolId) =>
-        Error.NotFound("StoragePool", poolId);
-
-    public static Error PoolNameExists(string name) =>
-        new("StoragePool.NameExists", $"存储池名称 '{name}' 已存在");
-
-    public static Error MountPathExists(string path) =>
-        new("StoragePool.MountPathExists", $"挂载路径 '{path}' 已被使用");
-
-    public static Error CannotDeleteDefaultPool =>
-        new("StoragePool.CannotDeleteDefault", "不能删除默认存储池");
 }

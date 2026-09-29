@@ -49,6 +49,36 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     private Task NotifyChangedAsync(string parentPath, FileChangeType changeType, string path) =>
         _notifier.NotifyFileChangedAsync(parentPath, changeType, new { path });
 
+    /// <summary>
+    /// 获取默认存储池，缺失时统一返回 PoolNotFound 失败（各用例域共用的前置检查）
+    /// </summary>
+    private async Task<Result<StoragePool>> GetDefaultPoolOrFailureAsync(CancellationToken cancellationToken)
+    {
+        var defaultPool = await _storagePoolRepository.GetDefaultAsync(cancellationToken);
+        return defaultPool is null
+            ? Result<StoragePool>.Failure(StorageErrors.PoolNotFound(Guid.Empty))
+            : Result<StoragePool>.Success(defaultPool);
+    }
+
+    /// <summary>
+    /// ITM-N7：保存更改的唯一约束兜底。并发写入撞唯一索引时返回调用方提供的冲突错误，
+    /// 收敛各用例重复的 try-catch(UniqueConstraintException) 样板
+    /// </summary>
+    private async Task<Result> SaveChangesWithConflictGuardAsync(
+        Error conflictError,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result.Success();
+        }
+        catch (UniqueConstraintException)
+        {
+            return Result.Failure(conflictError);
+        }
+    }
+
 
     #region 辅助方法
 

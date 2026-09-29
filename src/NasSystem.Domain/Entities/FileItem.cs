@@ -249,16 +249,6 @@ public sealed class FileItem : Entity
     }
 
     /// <summary>
-    /// 设置属性
-    /// </summary>
-    public void SetAttributes(bool? isHidden = null, bool? isReadOnly = null)
-    {
-        if (isHidden.HasValue) IsHidden = isHidden.Value;
-        if (isReadOnly.HasValue) IsReadOnly = isReadOnly.Value;
-        MarkAsModified();
-    }
-
-    /// <summary>
     /// 名称不变量：非空白、不含路径分隔符、不得为 ".." 或 "." 段——
     /// 防止经实体工厂或重命名构造出层级错乱的虚拟路径进而物理写入逃逸（ITM-N20）。
     /// 公开静态：应用层 Rename 等变更入口必须先行调用（实体变更方法无法回溯校验父路径拼接结果）。
