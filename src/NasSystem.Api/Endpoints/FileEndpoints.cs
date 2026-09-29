@@ -192,7 +192,8 @@ public static class FileEndpoints
             return result.ToHttpResult();
 
         var (stream, fileName, contentType) = result.Value;
-        return Results.File(stream, contentType, fileName);
+        // enableRangeProcessing：支持 Range 请求，大文件断点续传与视频拖动不再全量重下
+        return Results.File(stream, contentType, fileName, enableRangeProcessing: true);
     }
 
     private static async Task<IResult> CreateFolder(

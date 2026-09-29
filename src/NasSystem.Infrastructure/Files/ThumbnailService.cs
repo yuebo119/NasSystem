@@ -5,6 +5,7 @@
 
 namespace NasSystem.Infrastructure.Files;
 
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -17,11 +18,23 @@ using NasSystem.Shared;
 /// </summary>
 /// <remarks>
 /// 图片使用 SkiaSharp 跨平台缩放；视频帧提取需 FFmpeg，当前返回占位图。
+/// 生成链路带三道闸：全局并发信号量（CPU 密集的编解码不无限并行）、
+/// 同缓存键 in-flight 去重（同一张图的并发请求只生成一次）、
+/// 服务端尺寸档位吸附（客户端任意 width/height 不各自成缓存文件）。
 /// </remarks>
 public class ThumbnailService : IThumbnailService
 {
+    /// <summary>服务端尺寸白名单：客户端请求就近吸附，缓存文件数与档位挂钩可控</summary>
+    private static readonly int[] AllowedSizes = [64, 128, 256, 512, 1024];
+
     private readonly ThumbnailOptions _options;
     private readonly ILogger<ThumbnailService> _logger;
+
+    /// <summary>全局生成并发闸：编解码是 CPU 密集同步工作，无上限并行会打满线程池</summary>
+    private readonly SemaphoreSlim _generationGate = new(Math.Max(2, Environment.ProcessorCount / 2));
+
+    /// <summary>同缓存键的 in-flight 生成任务，供并发请求合并</summary>
+    private readonly ConcurrentDictionary<string, Task<byte[]>> _inFlightGenerations = new();
 
     public ThumbnailService(
         IOptions<ThumbnailOptions> options,
@@ -54,9 +67,10 @@ public class ThumbnailService : IThumbnailService
                 new Error("Thumbnail.NotSupported", $"文件类型不支持生成缩略图: {Path.GetExtension(filePath)}"));
         }
 
-        // 规范化尺寸
-        width = Math.Clamp(width, 16, _options.MaxWidth);
-        height = Math.Clamp(height, 16, _options.MaxHeight);
+        // 规范化尺寸：吸附到服务端档位并受选项上限约束
+        //（原实现按客户端原值建缓存，任意宽高组合会让缓存文件无限增长）
+        width = SnapToAllowedSize(width, _options.MaxWidth);
+        height = SnapToAllowedSize(height, _options.MaxHeight);
 
         // 检查缓存
         var cacheKey = GenerateCacheKey(filePath, width, height);
@@ -101,18 +115,21 @@ public class ThumbnailService : IThumbnailService
 
         try
         {
-            // 生成缩略图
-            var thumbnailData = await GenerateThumbnailAsync(filePath, width, height, cancellationToken);
+            // 同缓存键的并发请求合并到同一个生成任务（无去重时同图被并发重复生成，CPU 尖峰）
+            var generationTask = _inFlightGenerations.GetOrAdd(
+                cacheKey,
+                _ => GenerateAndCacheAsync(filePath, cachePath, width, height));
 
-            // 保存到缓存
+            byte[] thumbnailData;
             try
             {
-                await File.WriteAllBytesAsync(cachePath, thumbnailData, cancellationToken);
+                thumbnailData = await generationTask.WaitAsync(cancellationToken);
             }
-            catch (Exception ex)
+            finally
             {
-                _logger.LogWarning(ex, "保存缩略图缓存失败: {CachePath}", cachePath);
-                // 不影响返回结果
+                // 条件移除：仅移除自己这一份任务实例，避免误删后来的同键任务
+                _inFlightGenerations.TryRemove(
+                    new KeyValuePair<string, Task<byte[]>>(cacheKey, generationTask));
             }
 
             _logger.LogDebug("生成缩略图成功: {FilePath} ({Width}x{Height})", filePath, width, height);
@@ -129,6 +146,39 @@ public class ThumbnailService : IThumbnailService
             _logger.LogError(ex, "生成缩略图失败: {FilePath}", filePath);
             return Result<ThumbnailResult>.Failure(
                 new Error("Thumbnail.GenerationFailed", $"生成缩略图失败: {ex.Message}"));
+        }
+    }
+
+    /// <summary>
+    /// 过并发闸生成并写缓存。共享任务不跟随首个调用方的取消令牌——
+    /// 单个请求取消不应废掉其他等待方即将复用的同一份产物
+    /// </summary>
+    private async Task<byte[]> GenerateAndCacheAsync(
+        string filePath,
+        string cachePath,
+        int width,
+        int height)
+    {
+        await _generationGate.WaitAsync();
+        try
+        {
+            var thumbnailData = await GenerateThumbnailAsync(filePath, width, height, CancellationToken.None);
+
+            try
+            {
+                await File.WriteAllBytesAsync(cachePath, thumbnailData, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "保存缩略图缓存失败: {CachePath}", cachePath);
+                // 不影响返回结果
+            }
+
+            return thumbnailData;
+        }
+        finally
+        {
+            _generationGate.Release();
         }
     }
 
@@ -232,7 +282,9 @@ public class ThumbnailService : IThumbnailService
         var width = Math.Max(1, (int)Math.Round(source.Width * scale));
         var height = Math.Max(1, (int)Math.Round(source.Height * scale));
 
-        using var resized = source.Resize(new SkiaSharp.SKImageInfo(width, height), SkiaSharp.SKFilterQuality.Medium)
+        using var resized = source.Resize(
+            new SkiaSharp.SKImageInfo(width, height),
+            new SkiaSharp.SKSamplingOptions(SkiaSharp.SKFilterMode.Linear))
             ?? throw new InvalidOperationException("图像缩放失败");
         using var image = SkiaSharp.SKImage.FromBitmap(resized);
         using var encoded = image.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, 82);
@@ -279,6 +331,19 @@ public class ThumbnailService : IThumbnailService
             0x00, 0x00, 0x3F, 0x00, 0xFB, 0xD5, 0xDB, 0x20, 0xA8, 0xF0, 0x7F, 0xFF,
             0xD9
         ];
+    }
+
+    /// <summary>
+    /// 就近吸附到服务端尺寸档位（向上取最近档，超出最大档则收敛到上限）
+    /// </summary>
+    private static int SnapToAllowedSize(int requested, int max)
+    {
+        foreach (var size in AllowedSizes)
+        {
+            if (requested <= size)
+                return Math.Min(size, max);
+        }
+        return max;
     }
 
     private static string GenerateCacheKey(string filePath, int width, int height)

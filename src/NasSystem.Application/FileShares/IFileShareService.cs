@@ -90,7 +90,7 @@ public interface IFileShareService
     /// <summary>
     /// 获取分享文件下载流
     /// </summary>
-    Task<Result<(Stream Stream, string FileName, string ContentType)>> GetDownloadStreamAsync(
+    Task<Result<ShareDownloadTarget>> GetDownloadStreamAsync(
         string shareCode,
         string? accessToken,
         string? subPath,
@@ -108,4 +108,24 @@ public interface IFileShareService
         CancellationToken cancellationToken = default);
 
     #endregion
+}
+
+/// <summary>
+/// 分享下载目标：单文件走 Stream，文件夹走 ZipDirectory。
+/// </summary>
+/// <remarks>
+/// 文件夹下载不在服务层产出 ZIP 字节——压缩流由 Api 层 ZipDirectoryResult
+/// 直接写入 HTTP 响应体；原实现先整体打进 MemoryStream 再返回，匿名公开端点
+/// 被大目录触发时会 OOM。
+/// </remarks>
+public sealed record ShareDownloadTarget
+{
+    /// <summary>单文件下载流（文件夹下载为 null）</summary>
+    public Stream? Stream { get; init; }
+
+    /// <summary>文件夹 ZIP 的物理目录（单文件下载为 null，由 Api 层边扫边压缩）</summary>
+    public string? ZipDirectory { get; init; }
+
+    public required string FileName { get; init; }
+    public required string ContentType { get; init; }
 }

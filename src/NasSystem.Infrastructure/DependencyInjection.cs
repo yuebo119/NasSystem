@@ -39,6 +39,8 @@ public static class DependencyInjection
             {
                 sqliteOptions.MigrationsAssembly(typeof(NasDbContext).Assembly.FullName);
             });
+            // busy_timeout/synchronous 为连接级 PRAGMA，池内每个物理连接打开后重设
+            options.AddInterceptors(new SqlitePragmaInterceptor());
         });
 
         // 注册 UnitOfWork
@@ -164,8 +166,8 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// 启用 SQLite 并发配置（CONVENTIONS §3.1）。WAL 模式持久化在库文件中，
-    /// busy_timeout/synchronous 为连接级参数，每次打开需重设。
+    /// 启用 SQLite 库级配置。busy_timeout/synchronous 已移交 SqlitePragmaInterceptor
+    /// 在每个物理连接打开时重设（连接级参数）；此处仅设持久化在库文件的 journal_mode=WAL。
     /// </summary>
     private static async Task EnsureSqlitePragmasAsync(NasDbContext context)
     {
@@ -177,12 +179,9 @@ public static class DependencyInjection
         if (connection.State != System.Data.ConnectionState.Open)
             await connection.OpenAsync();
 
-        foreach (var pragma in new[] { "PRAGMA journal_mode=WAL;", "PRAGMA busy_timeout=5000;", "PRAGMA synchronous=NORMAL;" })
-        {
-            using var command = connection.CreateCommand();
-            command.CommandText = pragma;
-            await command.ExecuteNonQueryAsync();
-        }
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA journal_mode=WAL;";
+        await command.ExecuteNonQueryAsync();
     }
 
     /// <summary>

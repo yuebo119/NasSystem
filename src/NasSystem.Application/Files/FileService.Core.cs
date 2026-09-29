@@ -7,6 +7,7 @@
 
 namespace NasSystem.Application.Files;
 
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using NasSystem.Application.Common;
 using NasSystem.Application.Files.Dtos;
@@ -14,8 +15,8 @@ using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
-using NasSystem.Domain.Services;
 using NasSystem.Application.Notifications;
+using NasSystem.Domain.Services;
 using NasSystem.Shared;
 using static NasSystem.Shared.ByteSizeFormatter;
 
@@ -24,11 +25,18 @@ using static NasSystem.Shared.ByteSizeFormatter;
 /// </summary>
 public sealed partial class FileService : IFileBrowseService, IFileTransferService, IFileRecycleService, IFileSyncService
 {
+    /// <summary>默认池只读投影缓存键（缓存 Id+挂载点，不缓存可变实体实例）</summary>
+    private static readonly string DefaultPoolCacheKey = "fileservice:default-pool";
+
+    /// <summary>默认池缓存有效期：管理端改池后最长 30s 传播到写用例</summary>
+    private static readonly TimeSpan DefaultPoolCacheDuration = TimeSpan.FromSeconds(30);
+
     private readonly IFileItemRepository _fileRepository;
     private readonly IStoragePoolRepository _storagePoolRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileSystemService _fileSystemService;
     private readonly IHubNotificationService _notifier;
+    private readonly IMemoryCache _cache;
 
     public FileService(
         IFileItemRepository fileRepository,
@@ -36,13 +44,15 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         IUnitOfWork unitOfWork,
         IFileSystemService fileSystemService,
         IConfiguration configuration,
-        IHubNotificationService notifier)
+        IHubNotificationService notifier,
+        IMemoryCache cache)
     {
         _fileRepository = fileRepository;
         _storagePoolRepository = storagePoolRepository;
         _unitOfWork = unitOfWork;
         _fileSystemService = fileSystemService;
         _notifier = notifier;
+        _cache = cache;
     }
 
     /// <summary>操作成功后向父目录订阅组推送变更（SignalR 实时刷新闭环）</summary>
@@ -50,14 +60,22 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         _notifier.NotifyFileChangedAsync(parentPath, changeType, new { path });
 
     /// <summary>
-    /// 获取默认存储池，缺失时统一返回 PoolNotFound 失败（各用例域共用的前置检查）
+    /// 获取默认存储池的 Id 与挂载点，缺失时统一返回 PoolNotFound 失败。
+    /// 写用例每个请求都查一次默认池，而池极少变化——按只读投影缓存 30s，
+    /// 不缓存实体实例本身（调用方不得基于缓存值触发 Update/SaveChanges）
     /// </summary>
-    private async Task<Result<StoragePool>> GetDefaultPoolOrFailureAsync(CancellationToken cancellationToken)
+    private async Task<Result<(Guid Id, string MountPath)>> GetDefaultPoolOrFailureAsync(CancellationToken cancellationToken)
     {
+        if (_cache.TryGetValue(DefaultPoolCacheKey, out (Guid Id, string MountPath) cached))
+            return Result<(Guid, string)>.Success(cached);
+
         var defaultPool = await _storagePoolRepository.GetDefaultAsync(cancellationToken);
-        return defaultPool is null
-            ? Result<StoragePool>.Failure(StorageErrors.PoolNotFound(Guid.Empty))
-            : Result<StoragePool>.Success(defaultPool);
+        if (defaultPool is null)
+            return Result<(Guid, string)>.Failure(StorageErrors.PoolNotFound(Guid.Empty));
+
+        var projection = (defaultPool.Id, defaultPool.MountPath);
+        _cache.Set(DefaultPoolCacheKey, projection, DefaultPoolCacheDuration);
+        return Result<(Guid, string)>.Success(projection);
     }
 
     /// <summary>

@@ -106,7 +106,7 @@ public static class FileVersionEndpoints
         }
 
         var (stream, fileName, contentType) = result.Value;
-        return Results.File(stream, contentType, fileName);
+        return Results.File(stream, contentType, fileName, enableRangeProcessing: true);
     }
 
     private static async Task<IResult> RestoreVersion(

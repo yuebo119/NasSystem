@@ -46,7 +46,10 @@ public class FileServiceTests
             _unitOfWorkMock.Object,
             _fileSystemServiceMock.Object,
             _configurationMock.Object,
-            _notifierMock.Object);
+            _notifierMock.Object,
+            // 真实 MemoryCache：Moq 模拟 IMemoryCache 时扩展方法 Set 会踩 null
+            new Microsoft.Extensions.Caching.Memory.MemoryCache(
+                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
     }
 
     #region GetDirectoryContentsAsync Tests

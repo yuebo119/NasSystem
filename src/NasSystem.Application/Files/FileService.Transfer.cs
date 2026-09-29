@@ -239,7 +239,7 @@ public sealed partial class FileService
         var prepared = await PrepareTransferDestinationAsync(destPath, cancellationToken);
         if (prepared.IsFailure)
             return Result<IReadOnlyList<FileItemDto>>.Failure(prepared.Error);
-        var (defaultPool, destParentId) = prepared.Value;
+        var (poolId, poolMountPath, destParentId) = prepared.Value;
 
         foreach (var sourcePath in request.SourcePaths)
         {
@@ -252,7 +252,7 @@ public sealed partial class FileService
                 continue;
 
             var newPath = CombinePath(destPath, item.Name);
-            var newPhysicalPath = GetPhysicalPath(newPath, defaultPool.MountPath);
+            var newPhysicalPath = GetPhysicalPath(newPath, poolMountPath);
 
             try
             {
@@ -301,7 +301,7 @@ public sealed partial class FileService
         var prepared = await PrepareTransferDestinationAsync(destPath, cancellationToken);
         if (prepared.IsFailure)
             return Result<IReadOnlyList<FileItemDto>>.Failure(prepared.Error);
-        var (defaultPool, destParentId) = prepared.Value;
+        var (poolId, poolMountPath, destParentId) = prepared.Value;
 
         foreach (var sourcePath in request.SourcePaths)
         {
@@ -312,14 +312,14 @@ public sealed partial class FileService
             // 生成不重复的目标名称
             var targetName = await GenerateUniqueCopyNameAsync(destPath, sourceItem.Name, sourceItem.ItemType == FileItemType.Folder, cancellationToken);
             var targetPath = CombinePath(destPath, targetName);
-            var targetPhysicalPath = GetPhysicalPath(targetPath, defaultPool.MountPath);
+            var targetPhysicalPath = GetPhysicalPath(targetPath, poolMountPath);
 
             if (sourceItem.ItemType == FileItemType.Folder)
             {
                 // 复制文件夹（递归）
                 var copiedFolder = await CopyFolderRecursiveAsync(
-                    sourceItem, targetPath, targetPhysicalPath, destParentId, 
-                    userId, defaultPool, cancellationToken);
+                    sourceItem, targetPath, targetPhysicalPath, destParentId,
+                    userId, poolId, cancellationToken);
                 if (copiedFolder != null)
                     results.Add(MapToDto(copiedFolder));
             }
@@ -327,8 +327,8 @@ public sealed partial class FileService
             {
                 // 复制文件
                 var copiedFile = await CopyFileAsync(
-                    sourceItem, targetName, targetPath, targetPhysicalPath, 
-                    destParentId, userId, defaultPool.Id, cancellationToken);
+                    sourceItem, targetName, targetPath, targetPhysicalPath,
+                    destParentId, userId, poolId, cancellationToken);
                 if (copiedFile != null)
                     results.Add(MapToDto(copiedFile));
             }
@@ -344,27 +344,27 @@ public sealed partial class FileService
     }
 
     /// <summary>
-    /// 传输前准备：默认存储池 + 目标父目录 ID。
+    /// 传输前准备：默认存储池 Id/挂载点 + 目标父目录 ID。
     /// Move/Copy 共用；目标目录显式不存在时报错（两侧语义统一）
     /// </summary>
-    private async Task<Result<(StoragePool Pool, Guid? ParentId)>> PrepareTransferDestinationAsync(
+    private async Task<Result<(Guid PoolId, string MountPath, Guid? ParentId)>> PrepareTransferDestinationAsync(
         string destPath,
         CancellationToken cancellationToken)
     {
         var poolResult = await GetDefaultPoolOrFailureAsync(cancellationToken);
         if (poolResult.IsFailure)
-            return Result<(StoragePool, Guid?)>.Failure(poolResult.Error);
+            return Result<(Guid, string, Guid?)>.Failure(poolResult.Error);
 
         Guid? destParentId = null;
         if (destPath != "/")
         {
             var destParent = await _fileRepository.GetByPathAsync(destPath, cancellationToken);
             if (destParent is null)
-                return Result<(StoragePool, Guid?)>.Failure(FileErrors.NotFound(destPath));
+                return Result<(Guid, string, Guid?)>.Failure(FileErrors.NotFound(destPath));
             destParentId = destParent.Id;
         }
 
-        return Result<(StoragePool, Guid?)>.Success((poolResult.Value, destParentId));
+        return Result<(Guid, string, Guid?)>.Success((poolResult.Value.Id, poolResult.Value.MountPath, destParentId));
     }
 
     /// <summary>
@@ -475,7 +475,7 @@ public sealed partial class FileService
         string newPhysicalPath,
         Guid? parentId,
         Guid userId,
-        StoragePool storagePool,
+        Guid storagePoolId,
         CancellationToken cancellationToken)
     {
         try
@@ -492,7 +492,7 @@ public sealed partial class FileService
                 path: newPath,
                 physicalPath: newPhysicalPath,
                 ownerId: userId,
-                storagePoolId: storagePool.Id,
+                storagePoolId: storagePoolId,
                 parentId: parentId);
 
             await _fileRepository.AddAsync(newFolder, cancellationToken);
@@ -510,15 +510,15 @@ public sealed partial class FileService
                 {
                     // 递归复制子文件夹
                     await CopyFolderRecursiveAsync(
-                        child, childNewPath, childNewPhysicalPath, 
-                        newFolder.Id, userId, storagePool, cancellationToken);
+                        child, childNewPath, childNewPhysicalPath,
+                        newFolder.Id, userId, storagePoolId, cancellationToken);
                 }
                 else
                 {
                     // 复制子文件
                     await CopyFileAsync(
                         child, childNewName, childNewPath, childNewPhysicalPath,
-                        newFolder.Id, userId, storagePool.Id, cancellationToken);
+                        newFolder.Id, userId, storagePoolId, cancellationToken);
                 }
             }
 

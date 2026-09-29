@@ -303,40 +303,29 @@ public sealed class FileShareService(
     }
 
 
-    public async Task<Result<(Stream Stream, string FileName, string ContentType)>> GetDownloadStreamAsync(
+    public async Task<Result<ShareDownloadTarget>> GetDownloadStreamAsync(
         string shareCode,
         string? accessToken,
         string? subPath,
         bool isAuthenticated = false,
         CancellationToken cancellationToken = default)
     {
-        var share = await fileShareRepository.GetByShareCodeAsync(shareCode, cancellationToken);
-        if (share is null)
-            return Result<(Stream, string, string)>.Failure(FileShareErrors.ShareCodeNotFound(shareCode));
-
-        // 验证访问权限
-        var accessResult = ValidateAccess(share, accessToken, isAuthenticated);
-        if (!accessResult.IsSuccess)
-            return Result<(Stream, string, string)>.Failure(accessResult.Error);
-
-        var fileItem = await fileItemRepository.GetByIdAsync(share.FileItemId, cancellationToken);
-        if (fileItem is null)
-            return Result<(Stream, string, string)>.Failure(FileShareErrors.FileNotFound(share.FileItemId));
+        var loaded = await LoadShareForPublicAccessAsync(shareCode, accessToken, isAuthenticated, cancellationToken);
+        if (loaded.IsFailure)
+            return Result<ShareDownloadTarget>.Failure(loaded.Error);
+        var (share, fileItem) = loaded.Value;
 
         // 确定要下载的文件
         FileItem targetFile;
         if (fileItem.IsFolder && !string.IsNullOrEmpty(subPath))
         {
-            // ITM-N16：subPath 必须规范化（解析 ..）后仍落在分享目录内，否则拒绝——
-            // FilePath.Normalize 已解析 .. 与多余斜杠，IsUnder 校验防逃逸挂载范围
-            var shareRoot = FilePath.Create(fileItem.Path);
-            var resolved = FilePath.Create(shareRoot.Combine(subPath).Value);
-            if (!resolved.IsUnder(shareRoot))
-                return Result<(Stream, string, string)>.Failure(FileShareErrors.AccessDenied());
+            var resolved = await ResolveShareSubPathAsync(fileItem.Path, subPath, cancellationToken);
+            if (resolved.IsFailure)
+                return Result<ShareDownloadTarget>.Failure(resolved.Error);
 
             var target = await fileItemRepository.GetByPathAsync(resolved.Value, cancellationToken);
             if (target is null)
-                return Result<(Stream, string, string)>.Failure(FileShareErrors.FileNotFound(Guid.Empty));
+                return Result<ShareDownloadTarget>.Failure(FileShareErrors.FileNotFound(Guid.Empty));
 
             // 如果是子文件夹，也打包下载
             if (target.IsFolder)
@@ -357,7 +346,7 @@ public sealed class FileShareService(
 
         // 检查物理文件是否存在
         if (!File.Exists(targetFile.PhysicalPath))
-            return Result<(Stream, string, string)>.Failure(FileShareErrors.PhysicalFileNotFound());
+            return Result<ShareDownloadTarget>.Failure(FileShareErrors.PhysicalFileNotFound());
 
         // 增加下载计数
         share.IncrementDownloadCount();
@@ -367,80 +356,78 @@ public sealed class FileShareService(
         var stream = new FileStream(targetFile.PhysicalPath, FileMode.Open, FileAccess.Read, System.IO.FileShare.Read);
         var contentType = targetFile.MimeType ?? "application/octet-stream";
 
-        return Result<(Stream, string, string)>.Success((stream, targetFile.Name, contentType));
+        return Result<ShareDownloadTarget>.Success(new ShareDownloadTarget
+        {
+            Stream = stream,
+            FileName = targetFile.Name,
+            ContentType = contentType
+        });
     }
 
     /// <summary>
-    /// 创建文件夹的ZIP下载流
+    /// 公开访问前置加载：分享码取记录 + 访问校验 + 关联文件项（下载/浏览/子路径三处共用的序言）
     /// </summary>
-    private async Task<Result<(Stream Stream, string FileName, string ContentType)>> CreateZipDownloadAsync(
+    private async Task<Result<(FileShare Share, FileItem FileItem)>> LoadShareForPublicAccessAsync(
+        string shareCode,
+        string? accessToken,
+        bool isAuthenticated,
+        CancellationToken cancellationToken)
+    {
+        var share = await fileShareRepository.GetByShareCodeAsync(shareCode, cancellationToken);
+        if (share is null)
+            return Result<(FileShare, FileItem)>.Failure(FileShareErrors.ShareCodeNotFound(shareCode));
+
+        var accessResult = ValidateAccess(share, accessToken, isAuthenticated);
+        if (!accessResult.IsSuccess)
+            return Result<(FileShare, FileItem)>.Failure(accessResult.Error);
+
+        var fileItem = await fileItemRepository.GetByIdAsync(share.FileItemId, cancellationToken);
+        if (fileItem is null)
+            return Result<(FileShare, FileItem)>.Failure(FileShareErrors.FileNotFound(share.FileItemId));
+
+        return Result<(FileShare, FileItem)>.Success((share, fileItem));
+    }
+
+    /// <summary>
+    /// ITM-N16：subPath 规范化（解析 ..）后必须仍落在分享目录内，否则拒绝。
+    /// 下载与文件夹浏览两条路径共用同一防穿越判定
+    /// </summary>
+    private static async Task<Result<string>> ResolveShareSubPathAsync(
+        string shareRootPath,
+        string subPath,
+        CancellationToken cancellationToken)
+    {
+        var shareRoot = FilePath.Create(shareRootPath);
+        var resolved = FilePath.Create(shareRoot.Combine(subPath).Value);
+        if (!resolved.IsUnder(shareRoot))
+            return Result<string>.Failure(FileShareErrors.AccessDenied());
+
+        return Result<string>.Success(resolved.Value);
+    }
+
+    /// <summary>
+    /// 文件夹 ZIP 下载准备：校验物理目录并登记下载计数。
+    /// 压缩流由 Api 层 ZipDirectoryResult 直接写入响应体——原实现先整体打进
+    /// MemoryStream 再返回，匿名公开端点被大目录触发时会 OOM
+    /// </summary>
+    private async Task<Result<ShareDownloadTarget>> CreateZipDownloadAsync(
         FileShare share,
         FileItem folder,
         CancellationToken cancellationToken)
     {
         if (!Directory.Exists(folder.PhysicalPath))
-            return Result<(Stream, string, string)>.Failure(FileShareErrors.PhysicalFileNotFound());
+            return Result<ShareDownloadTarget>.Failure(FileShareErrors.PhysicalFileNotFound());
 
-        // 创建内存流来存储ZIP
-        var memoryStream = new MemoryStream();
-        
-        try
+        share.IncrementDownloadCount();
+        await fileShareRepository.UpdateAsync(share, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result<ShareDownloadTarget>.Success(new ShareDownloadTarget
         {
-            using (var archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true))
-            {
-                await AddDirectoryToZipAsync(archive, folder.PhysicalPath, "", cancellationToken);
-            }
-
-            // 重置流位置
-            memoryStream.Position = 0;
-
-            // 增加下载计数
-            share.IncrementDownloadCount();
-            await fileShareRepository.UpdateAsync(share, cancellationToken);
-            await unitOfWork.SaveChangesAsync(cancellationToken);
-
-            var fileName = $"{folder.Name}.zip";
-            return Result<(Stream, string, string)>.Success((memoryStream, fileName, "application/zip"));
-        }
-        catch (Exception ex)
-        {
-            memoryStream.Dispose();
-            return Result<(Stream, string, string)>.Failure(new Error("FileShare.ZipError", $"创建压缩文件失败: {ex.Message}"));
-        }
-    }
-
-    /// <summary>
-    /// 递归添加目录到ZIP
-    /// </summary>
-    private static async Task AddDirectoryToZipAsync(
-        System.IO.Compression.ZipArchive archive,
-        string sourceDir,
-        string entryPrefix,
-        CancellationToken cancellationToken)
-    {
-        // 添加文件
-        foreach (var filePath in Directory.GetFiles(sourceDir))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            
-            var fileName = Path.GetFileName(filePath);
-            var entryName = string.IsNullOrEmpty(entryPrefix) ? fileName : $"{entryPrefix}/{fileName}";
-            
-            var entry = archive.CreateEntry(entryName, System.IO.Compression.CompressionLevel.Optimal);
-            using var entryStream = entry.Open();
-            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, System.IO.FileShare.Read);
-            await fileStream.CopyToAsync(entryStream, cancellationToken);
-        }
-
-        // 递归添加子目录
-        foreach (var subDir in Directory.GetDirectories(sourceDir))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            
-            var dirName = Path.GetFileName(subDir);
-            var newPrefix = string.IsNullOrEmpty(entryPrefix) ? dirName : $"{entryPrefix}/{dirName}";
-            await AddDirectoryToZipAsync(archive, subDir, newPrefix, cancellationToken);
-        }
+            ZipDirectory = folder.PhysicalPath,
+            FileName = $"{folder.Name}.zip",
+            ContentType = "application/zip"
+        });
     }
 
     public async Task<Result<ShareFolderContentDto>> GetFolderContentAsync(
@@ -450,18 +437,10 @@ public sealed class FileShareService(
         bool isAuthenticated = false,
         CancellationToken cancellationToken = default)
     {
-        var share = await fileShareRepository.GetByShareCodeAsync(shareCode, cancellationToken);
-        if (share is null)
-            return Result<ShareFolderContentDto>.Failure(FileShareErrors.ShareCodeNotFound(shareCode));
-
-        // 验证访问权限
-        var accessResult = ValidateAccess(share, accessToken, isAuthenticated);
-        if (!accessResult.IsSuccess)
-            return Result<ShareFolderContentDto>.Failure(accessResult.Error);
-
-        var fileItem = await fileItemRepository.GetByIdAsync(share.FileItemId, cancellationToken);
-        if (fileItem is null)
-            return Result<ShareFolderContentDto>.Failure(FileShareErrors.FileNotFound(share.FileItemId));
+        var loaded = await LoadShareForPublicAccessAsync(shareCode, accessToken, isAuthenticated, cancellationToken);
+        if (loaded.IsFailure)
+            return Result<ShareFolderContentDto>.Failure(loaded.Error);
+        var (share, fileItem) = loaded.Value;
 
         if (!fileItem.IsFolder)
             return Result<ShareFolderContentDto>.Failure(FileShareErrors.NotAFolder());
@@ -472,11 +451,9 @@ public sealed class FileShareService(
 
         if (!string.IsNullOrEmpty(subPath))
         {
-            // ITM-N16：同下载路径——规范化 + IsUnder 防穿越
-            var shareRoot = FilePath.Create(fileItem.Path);
-            var resolved = FilePath.Create(shareRoot.Combine(subPath).Value);
-            if (!resolved.IsUnder(shareRoot))
-                return Result<ShareFolderContentDto>.Failure(FileShareErrors.AccessDenied());
+            var resolved = await ResolveShareSubPathAsync(fileItem.Path, subPath, cancellationToken);
+            if (resolved.IsFailure)
+                return Result<ShareFolderContentDto>.Failure(resolved.Error);
 
             var targetFolder = await fileItemRepository.GetByPathAsync(resolved.Value, cancellationToken);
             if (targetFolder is null || !targetFolder.IsFolder)

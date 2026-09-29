@@ -6,6 +6,7 @@
 namespace NasSystem.Api.Extensions;
 
 using System.Security.Claims;
+using NasSystem.Api.Endpoints;
 using NasSystem.Application.FileShares;
 using NasSystem.Application.FileShares.Dtos;
 using NasSystem.Shared;
@@ -205,31 +206,37 @@ public static class FileShareEndpoints
     }
 
 
+    /// <summary>
+    /// 分享下载统一出口：单文件走 Range 流式响应，文件夹走 ZipDirectoryResult 边扫边压缩
+    /// </summary>
+    private static IResult ToShareDownloadResult(Result<ShareDownloadTarget> result)
+    {
+        if (!result.IsSuccess)
+            return result.ToHttpResult();
+
+        var target = result.Value;
+        return target.Stream is not null
+            ? Results.File(target.Stream, target.ContentType, target.FileName, enableRangeProcessing: true)
+            : new ZipDirectoryResult(target.ZipDirectory!, target.FileName);
+    }
+
     private static async Task<IResult> DownloadShareFile(
         string shareCode,
         string? token,
         IFileShareService fileShareService)
     {
         var result = await fileShareService.GetDownloadStreamAsync(shareCode, token, null);
-        if (!result.IsSuccess)
-            return result.ToHttpResult();
-
-        var (stream, fileName, contentType) = result.Value;
-        return Results.File(stream, contentType, fileName);
+        return ToShareDownloadResult(result);
     }
 
     private static async Task<IResult> DownloadShareSubFile(
         string shareCode,
-        string subPath,
+        string? subPath,
         string? token,
         IFileShareService fileShareService)
     {
         var result = await fileShareService.GetDownloadStreamAsync(shareCode, token, subPath);
-        if (!result.IsSuccess)
-            return result.ToHttpResult();
-
-        var (stream, fileName, contentType) = result.Value;
-        return Results.File(stream, contentType, fileName);
+        return ToShareDownloadResult(result);
     }
 
     /// <summary>
@@ -242,11 +249,7 @@ public static class FileShareEndpoints
         IFileShareService fileShareService)
     {
         var result = await fileShareService.GetDownloadStreamAsync(shareCode, token, null, isAuthenticated: true);
-        if (!result.IsSuccess)
-            return result.ToHttpResult();
-
-        var (stream, fileName, contentType) = result.Value;
-        return Results.File(stream, contentType, fileName);
+        return ToShareDownloadResult(result);
     }
 
     private static async Task<IResult> GetAuthenticatedShareFolderContent(
