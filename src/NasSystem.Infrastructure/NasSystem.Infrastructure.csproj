@@ -32,11 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageVersion Update="Dapper" Version="2.1.66" />
-    <PackageVersion Update="Serilog.AspNetCore" Version="10.0.0" />
-    <PackageVersion Update="Serilog.Sinks.Console" Version="6.1.1" />
-    <PackageVersion Update="Serilog.Sinks.File" Version="7.0.0" />
-    <PackageVersion Update="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
+    <!-- 版本收敛至 Directory.Build.props 单一真源（原 csproj 覆盖条目会把版本钉低于中央） -->
     <PackageReference Include="SkiaSharp" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>
