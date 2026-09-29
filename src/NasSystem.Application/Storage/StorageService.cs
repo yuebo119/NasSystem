@@ -193,7 +193,8 @@ public sealed class StorageService(
 
         foreach (var pool in pools)
         {
-            await RefreshPoolCapacityAsync(pool, cancellationToken);
+            // 显式刷新端点：绕过节流窗口强制重算
+            await RefreshPoolCapacityAsync(pool, cancellationToken, force: true);
             await poolRepository.UpdateAsync(pool, cancellationToken);
         }
 
@@ -245,8 +246,24 @@ public sealed class StorageService(
 
     #region 辅助方法
 
-    private async Task RefreshPoolCapacityAsync(StoragePool pool, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 容量刷新节流窗口：读端点（GET overview/pools）高频触发，
+    /// 物理容量不会秒级变化；窗口内已刷新过的池直接复用存量数据，GET 不写库。
+    /// 显式 RefreshCapacityAsync 与写路径传 force=true 绕过窗口
+    /// </summary>
+    private static readonly TimeSpan CapacityRefreshInterval = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// 刷新单个池的容量信息（读路径受节流窗口保护）
+    /// </summary>
+    private async Task RefreshPoolCapacityAsync(
+        StoragePool pool,
+        CancellationToken cancellationToken,
+        bool force = false)
     {
+        if (!force && DateTime.UtcNow - (pool.UpdatedAt ?? pool.CreatedAt) < CapacityRefreshInterval)
+            return;
+
         try
         {
             // 获取磁盘总容量

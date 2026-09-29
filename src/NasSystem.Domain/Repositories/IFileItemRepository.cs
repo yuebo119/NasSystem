@@ -27,9 +27,10 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 获取所有文件列表（用于扫描同步）
+    /// 获取指定存储池的文件列表（扫描同步按池过滤，不载全表）
     /// </summary>
-    Task<IReadOnlyList<FileItem>> GetAllAsync(
+    Task<IReadOnlyList<FileItem>> GetByStoragePoolAsync(
+        Guid storagePoolId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -37,6 +38,7 @@ public interface IFileItemRepository : IRepository<FileItem>
     /// </summary>
     Task<IReadOnlyList<FileItem>> GetDeletedItemsAsync(
         Guid? ownerId = null,
+        Guid? storagePoolId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

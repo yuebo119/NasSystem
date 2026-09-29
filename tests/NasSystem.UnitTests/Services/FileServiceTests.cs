@@ -620,7 +620,7 @@ public class FileServiceTests
         };
 
         _fileRepositoryMock
-            .Setup(x => x.GetDeletedItemsAsync(userId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetDeletedItemsAsync(userId, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(deletedItems);
 
         // Act
@@ -638,7 +638,7 @@ public class FileServiceTests
         var userId = Guid.NewGuid();
 
         _fileRepositoryMock
-            .Setup(x => x.GetDeletedItemsAsync(userId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetDeletedItemsAsync(userId, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FileItem>());
 
         // Act
@@ -711,7 +711,7 @@ public class FileServiceTests
         };
 
         _fileRepositoryMock
-            .Setup(x => x.GetDeletedItemsAsync(userId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetDeletedItemsAsync(userId, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(deletedItems);
 
         _fileSystemServiceMock
@@ -734,7 +734,7 @@ public class FileServiceTests
         var userId = Guid.NewGuid();
 
         _fileRepositoryMock
-            .Setup(x => x.GetDeletedItemsAsync(userId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetDeletedItemsAsync(userId, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FileItem>());
 
         // Act

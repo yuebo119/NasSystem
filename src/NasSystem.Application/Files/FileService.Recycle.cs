@@ -15,7 +15,6 @@ using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
 using NasSystem.Application.Notifications;
-using NasSystem.Domain.Common;
 using NasSystem.Domain.Services;
 using NasSystem.Shared;
 using static NasSystem.Shared.ByteSizeFormatter;
@@ -108,7 +107,7 @@ public sealed partial class FileService
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        var items = await _fileRepository.GetDeletedItemsAsync(userId, cancellationToken);
+        var items = await _fileRepository.GetDeletedItemsAsync(ownerId: userId, cancellationToken: cancellationToken);
         return Result<IReadOnlyList<FileItemDto>>.Success(items.Select(MapToDto).ToList());
     }
 
@@ -146,7 +145,7 @@ public sealed partial class FileService
         CancellationToken cancellationToken = default)
     {
         var result = new DeleteResultDto();
-        var deletedItems = await _fileRepository.GetDeletedItemsAsync(userId, cancellationToken);
+        var deletedItems = await _fileRepository.GetDeletedItemsAsync(ownerId: userId, cancellationToken: cancellationToken);
 
         foreach (var item in deletedItems)
         {

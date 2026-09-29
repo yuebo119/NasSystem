@@ -43,17 +43,15 @@ public sealed partial class FileService
                 Directory.CreateDirectory(storagePath);
             }
 
-            // 获取数据库中文件记录——ITM-N13：只取默认池的记录。
-            // 物理扫描仅覆盖默认池挂载点，若对比全库记录，其他池的记录会被误判
-            // "物理不存在"而批量删除（多存储池数据销毁）。
-            var allDbItems = await _fileRepository.GetAllAsync(cancellationToken);
-            var dbItems = allDbItems.Where(x => x.StoragePoolId == defaultPool.Value.Id).ToList();
+            // 获取默认池的文件记录——池过滤下推 SQL（原实现载全表后内存 Where，
+            // 多池数据量随总条目线性放大）。物理扫描仅覆盖默认池挂载点，
+            // 若对比全库记录，其他池的记录会被误判"物理不存在"而批量删除
+            var dbItems = await _fileRepository.GetByStoragePoolAsync(defaultPool.Value.Id, cancellationToken);
 
             // ITM-N26：软删记录也必须进入对比表——其物理文件仍存在于挂载点，
             // 若缺席则会被扫描当作"新发现"重建（软删文件复活），且恢复时撞 Path 唯一索引
-            var softDeletedItems = await _fileRepository.GetDeletedItemsAsync(
-                ownerId: null, cancellationToken);
-            var softDeletedInPool = softDeletedItems.Where(x => x.StoragePoolId == defaultPool.Value.Id);
+            var softDeletedInPool = await _fileRepository.GetDeletedItemsAsync(
+                ownerId: null, storagePoolId: defaultPool.Value.Id, cancellationToken);
 
             var dbPathMap = dbItems.Concat(softDeletedInPool)
                 .ToDictionary(x => x.Path, x => x);

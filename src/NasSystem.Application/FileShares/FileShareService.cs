@@ -86,7 +86,7 @@ public sealed class FileShareService(
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
-        return Result<FileShareDto>.Success(await MapToDtoAsync(share, fileItem, baseUrl, cancellationToken));
+        return Result<FileShareDto>.Success(await MapToDtoWithCreatorAsync(share, fileItem, baseUrl, cancellationToken));
     }
 
     public async Task<Result<IReadOnlyList<FileShareDto>>> GetMySharesAsync(
@@ -94,17 +94,13 @@ public sealed class FileShareService(
         string baseUrl,
         CancellationToken cancellationToken = default)
     {
+        // GetByCreatorAsync 已 Include FileItem 与 CreatedByUser：直接经导航属性映射，
+        // 取代原先每 share 两次 GetByIdAsync 的 1+2N 查询
         var shares = await fileShareRepository.GetByCreatorAsync(userId, cancellationToken);
-        var dtos = new List<FileShareDto>();
-
-        foreach (var share in shares)
-        {
-            var fileItem = await fileItemRepository.GetByIdAsync(share.FileItemId, cancellationToken);
-            if (fileItem != null)
-            {
-                dtos.Add(await MapToDtoAsync(share, fileItem, baseUrl, cancellationToken));
-            }
-        }
+        var dtos = shares
+            .Where(s => s.FileItem != null)
+            .Select(s => MapToDto(s, s.FileItem!, baseUrl))
+            .ToList();
 
         return Result<IReadOnlyList<FileShareDto>>.Success(dtos);
     }
@@ -127,7 +123,7 @@ public sealed class FileShareService(
         if (fileItem is null)
             return Result<FileShareDto>.Failure(FileShareErrors.FileNotFound(share.FileItemId));
 
-        return Result<FileShareDto>.Success(await MapToDtoAsync(share, fileItem, baseUrl, cancellationToken));
+        return Result<FileShareDto>.Success(await MapToDtoWithCreatorAsync(share, fileItem, baseUrl, cancellationToken));
     }
 
 
@@ -185,7 +181,7 @@ public sealed class FileShareService(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var fileItem = await fileItemRepository.GetByIdAsync(share.FileItemId, cancellationToken);
-        return Result<FileShareDto>.Success(await MapToDtoAsync(share, fileItem!, baseUrl, cancellationToken));
+        return Result<FileShareDto>.Success(await MapToDtoWithCreatorAsync(share, fileItem!, baseUrl, cancellationToken));
     }
 
     public async Task<Result> DeleteAsync(
@@ -231,7 +227,7 @@ public sealed class FileShareService(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var fileItem = await fileItemRepository.GetByIdAsync(share.FileItemId, cancellationToken);
-        return Result<FileShareDto>.Success(await MapToDtoAsync(share, fileItem!, baseUrl, cancellationToken));
+        return Result<FileShareDto>.Success(await MapToDtoWithCreatorAsync(share, fileItem!, baseUrl, cancellationToken));
     }
 
     #endregion
@@ -250,11 +246,11 @@ public sealed class FileShareService(
         if (fileItem is null)
             return Result<PublicShareInfoDto>.Failure(FileShareErrors.FileNotFound(share.FileItemId));
 
-        // 获取创建者名称
-        string? creatorName = null;
-        var creator = await userRepository.GetByIdAsync(share.CreatedByUserId, cancellationToken);
-        if (creator != null)
-            creatorName = creator.DisplayName ?? creator.Username;
+        // 创建者名称直接用 Include 的导航属性（GetByShareCodeAsync 已 Include CreatedByUser），
+        // 不再按 share 单查一次用户表
+        string? creatorName = share.CreatedByUser != null
+            ? share.CreatedByUser.DisplayName ?? share.CreatedByUser.Username
+            : null;
 
         return Result<PublicShareInfoDto>.Success(new PublicShareInfoDto
         {
@@ -561,16 +557,31 @@ public sealed class FileShareService(
         }
     }
 
-    private async Task<FileShareDto> MapToDtoAsync(
+    /// <summary>
+    /// 单分享场景（GetById/Create/Update/Regenerate）：查一次创建者补全显示名
+    /// </summary>
+    private async Task<FileShareDto> MapToDtoWithCreatorAsync(
         FileShare share,
         FileItem fileItem,
         string baseUrl,
         CancellationToken cancellationToken)
     {
-        string? creatorName = null;
         var creator = await userRepository.GetByIdAsync(share.CreatedByUserId, cancellationToken);
-        if (creator != null)
-            creatorName = creator.DisplayName ?? creator.Username;
+        var dto = MapToDto(share, fileItem, baseUrl);
+        return dto with
+        {
+            CreatedByUserName = creator != null
+                ? creator.DisplayName ?? creator.Username
+                : null
+        };
+    }
+
+    private FileShareDto MapToDto(FileShare share, FileItem fileItem, string baseUrl)
+    {
+        // 创建者显示名优先用 Include 的导航属性；缺失（老数据/未 Include 路径）时回落查库
+        string? creatorName = null;
+        if (share.CreatedByUser != null)
+            creatorName = share.CreatedByUser.DisplayName ?? share.CreatedByUser.Username;
 
         return new FileShareDto
         {

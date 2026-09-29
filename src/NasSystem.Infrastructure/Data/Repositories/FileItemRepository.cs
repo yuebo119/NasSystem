@@ -38,17 +38,20 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<FileItem>> GetAllAsync(
+    public async Task<IReadOnlyList<FileItem>> GetByStoragePoolAsync(
+        Guid storagePoolId,
         CancellationToken cancellationToken = default)
     {
+        // 不含软删记录：调用方（扫描同步）另取软删集并入对比表，双集concat后按 Path 建字典
         return await QueryNoTracking()
-            .Where(f => !f.IsDeleted)
+            .Where(f => f.StoragePoolId == storagePoolId && !f.IsDeleted)
             .OrderBy(f => f.Path)
             .ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<FileItem>> GetDeletedItemsAsync(
         Guid? ownerId = null,
+        Guid? storagePoolId = null,
         CancellationToken cancellationToken = default)
     {
         var query = QueryNoTracking()
@@ -56,6 +59,9 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
 
         if (ownerId.HasValue)
             query = query.Where(f => f.OwnerId == ownerId.Value);
+
+        if (storagePoolId.HasValue)
+            query = query.Where(f => f.StoragePoolId == storagePoolId.Value);
 
         return await query
             .OrderByDescending(f => f.DeletedAt)
@@ -93,62 +99,76 @@ public sealed class FileItemRepository(NasDbContext context) : RepositoryBase<Fi
                 : query.Where(f => f.ItemType == Domain.Enums.FileItemType.File);
         }
 
-        // 先获取结果，再在内存中过滤扩展名（因为 EF Core 对复杂扩展名过滤支持有限）
-        var items = await query
-            .OrderByDescending(f => f.ItemType)
-            .ThenBy(f => f.Name)
-            .Take(500)
-            .ToListAsync(cancellationToken);
-
-        // 扩展名过滤（支持多个扩展名，用逗号分隔）
+        // 扩展名过滤（支持多个扩展名，用逗号分隔）——下推 SQL。
+        // 原实现先 Take(500) 截断再内存过滤：截断后的过滤既丢结果也让分页失真
         if (!string.IsNullOrEmpty(extension))
         {
             var extensions = extension.Split(',', StringSplitOptions.RemoveEmptyEntries)
                 .Select(e => e.Trim().StartsWith('.') ? e.Trim().ToLowerInvariant() : "." + e.Trim().ToLowerInvariant())
                 .ToHashSet();
-            
-            items = items.Where(f => f.Extension != null && extensions.Contains(f.Extension.ToLowerInvariant())).ToList();
+
+            query = query.Where(f => f.Extension != null && extensions.Contains(f.Extension.ToLower()));
         }
 
-        return items.Take(200).ToList();
+        // 结果集上限（服务端分页为独立事项：当前服务层做客户端分页，TotalCount
+        // 取的是本窗口计数；此上限防止无参搜索拖全表）
+        return await query
+            .OrderByDescending(f => f.ItemType)
+            .ThenBy(f => f.Name)
+            .Take(500)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<FileStatistics> GetStatisticsAsync(
         Guid? ownerId = null,
         CancellationToken cancellationToken = default)
     {
-        var query = QueryNoTracking().Where(f => !f.IsDeleted);
+        var baseQuery = QueryNoTracking().Where(f => !f.IsDeleted);
 
         if (ownerId.HasValue)
-            query = query.Where(f => f.OwnerId == ownerId.Value);
+            baseQuery = baseQuery.Where(f => f.OwnerId == ownerId.Value);
 
-        var items = await query.ToListAsync(cancellationToken);
-        
-        var files = items.Where(f => f.IsFile).ToList();
-        var folders = items.Where(f => f.IsFolder).ToList();
-
-        // 按扩展名分类
+        // 分类表（与原内存版口径一致：空扩展名归 Other）
         var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".ico" };
         var videoExtensions = new[] { ".mp4", ".avi", ".mkv", ".mov", ".webm", ".wmv", ".flv" };
         var audioExtensions = new[] { ".mp3", ".wav", ".flac", ".ogg", ".aac", ".wma" };
         var documentExtensions = new[] { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".json", ".xml" };
 
+        var files = baseQuery.Where(f => f.ItemType == Domain.Enums.FileItemType.File);
         var recentDate = DateTime.UtcNow.AddDays(-7);
+
+        // 全部聚合下推 SQL：原实现 ToListAsync 全表载入后内存 Count/Sum，
+        // 文件数上万时单接口即全表传输；此处每项均为服务端单行聚合
+        var totalFiles = await files.CountAsync(cancellationToken);
+        var totalFolders = await baseQuery.CountAsync(f => f.ItemType == Domain.Enums.FileItemType.Folder, cancellationToken);
+        var totalSizeBytes = await files.SumAsync(f => f.SizeBytes, cancellationToken);
+        var recentFilesCount = await files.CountAsync(f => f.CreatedAt >= recentDate, cancellationToken);
+
+        // 扩展名分组一次拿全（distinct 集合小，内存分类无放大风险）
+        var extensionCounts = await files
+            .GroupBy(f => f.Extension == null ? null : f.Extension.ToLower())
+            .Select(g => new { Extension = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        int CountIn(string[] set) =>
+            extensionCounts.Where(e => e.Extension != null && set.Contains(e.Extension)).Sum(e => e.Count);
+
+        var imageCount = CountIn(imageExtensions);
+        var videoCount = CountIn(videoExtensions);
+        var audioCount = CountIn(audioExtensions);
+        var documentCount = CountIn(documentExtensions);
 
         return new FileStatistics
         {
-            TotalFiles = files.Count,
-            TotalFolders = folders.Count,
-            TotalSizeBytes = files.Sum(f => f.SizeBytes),
-            ImageCount = files.Count(f => imageExtensions.Contains(f.Extension?.ToLower())),
-            VideoCount = files.Count(f => videoExtensions.Contains(f.Extension?.ToLower())),
-            AudioCount = files.Count(f => audioExtensions.Contains(f.Extension?.ToLower())),
-            DocumentCount = files.Count(f => documentExtensions.Contains(f.Extension?.ToLower())),
-            OtherCount = files.Count(f => !imageExtensions.Contains(f.Extension?.ToLower()) 
-                && !videoExtensions.Contains(f.Extension?.ToLower())
-                && !audioExtensions.Contains(f.Extension?.ToLower())
-                && !documentExtensions.Contains(f.Extension?.ToLower())),
-            RecentFilesCount = files.Count(f => f.CreatedAt >= recentDate)
+            TotalFiles = totalFiles,
+            TotalFolders = totalFolders,
+            TotalSizeBytes = totalSizeBytes,
+            ImageCount = imageCount,
+            VideoCount = videoCount,
+            AudioCount = audioCount,
+            DocumentCount = documentCount,
+            OtherCount = totalFiles - imageCount - videoCount - audioCount - documentCount,
+            RecentFilesCount = recentFilesCount
         };
     }
 

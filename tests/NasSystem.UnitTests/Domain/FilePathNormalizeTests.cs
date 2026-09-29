@@ -79,7 +79,7 @@ public class FilePathNormalizeTests
         // 归一化目标为根目录时的最小行为：父不存在、子列表为空
         repoMock.Setup(r => r.GetChildrenAsync(It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
-        repoMock.Setup(r => r.GetDeletedItemsAsync(It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        repoMock.Setup(r => r.GetDeletedItemsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);
         return new FileService(
             repoMock.Object,
