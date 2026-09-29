@@ -710,9 +710,9 @@ function handleSelectionChange(selection: FileItem[]) {
   fileStore.selectedItems = selection
 }
 
-// 处理表格排序变化
-function handleSortChange({ prop, order }: { prop: string, order: string | null }) {
-  if (!order) {
+// 处理表格排序变化（element-plus 2.14 收紧 sort-change 载荷类型：prop 可为 null）
+function handleSortChange({ prop, order }: { prop: string | null; order: string | null }) {
+  if (!order || !prop) {
     // 取消排序，恢复默认按名称排序
     fileStore.setSort('name')
     return
@@ -904,6 +904,19 @@ function loadMoreOnScroll(event: Event) {
   }
 }
 
+// el-table 的 scroll 载荷是 { scrollLeft, scrollTop }（element-plus 2.14 收紧类型后
+// 不再是 DOM Event）；滚动高度/视口高度取自表格内部滚动包裹元素
+function handleTableScroll({ scrollTop }: { scrollLeft: number; scrollTop: number }) {
+  if (!hasMoreToRender.value) return
+  const wrap = (fileTableRef.value?.$el as HTMLElement | undefined)
+    ?.querySelector<HTMLElement>('.el-table__body-wrapper .el-scrollbar__wrap')
+  const scrollHeight = wrap?.scrollHeight ?? 0
+  const clientHeight = wrap?.clientHeight ?? 0
+  if (scrollTop + clientHeight >= scrollHeight - 120) {
+    renderLimit.value += RENDER_BATCH
+  }
+}
+
 watch(() => fileStore.currentPath, () => {
   renderLimit.value = RENDER_BATCH
 })
@@ -1054,7 +1067,7 @@ onUnmounted(() => void unsubscribe?.())
       v-loading="fileStore.isLoading"
       :data="visibleFiles"
       height="calc(100vh - 260px)"
-      @scroll="loadMoreOnScroll"
+      @scroll="handleTableScroll"
       style="width: 100%"
       row-key="id"
       @row-click="handleRowClick"
@@ -1070,8 +1083,8 @@ onUnmounted(() => void unsubscribe?.())
       <el-table-column prop="name" :label="$t('filesView.colName')" min-width="300" sortable="custom">
         <template #default="{ row }">
           <div class="file-name">
-            <el-icon :size="20" :color="getFileIconColor(row)">
-              <component :is="getFileIcon(row)" />
+            <el-icon :size="20" :color="getFileIconColor(row as FileItem)">
+              <component :is="getFileIcon(row as FileItem)" />
             </el-icon>
             <span>{{ row.name }}</span>
             <el-tag v-if="row.isHidden" size="small" type="info">{{ $t('filesView.hiddenTag') }}</el-tag>
@@ -1099,14 +1112,14 @@ onUnmounted(() => void unsubscribe?.())
       
       <el-table-column :label="$t('filesView.colActions')" width="120" fixed="right" property="actions">
         <template #default="{ row }">
-          <el-dropdown trigger="click" @command="(cmd: string) => handleCommand(cmd, row)">
+          <el-dropdown trigger="click" @command="(cmd: string) => handleCommand(cmd, row as FileItem)">
             <el-button :icon="MoreFilled" circle size="small" />
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item v-if="!row.isFolder" command="download">
+                <el-dropdown-item v-if="!(row as FileItem).isFolder" command="download">
                   {{ $t('filesView.downloadTip') }}
                 </el-dropdown-item>
-                <el-dropdown-item v-if="canPreview(row)" command="preview">
+                <el-dropdown-item v-if="canPreview(row as FileItem)" command="preview">
                   {{ $t('filesView.actPreview') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="share">
@@ -1272,17 +1285,17 @@ onUnmounted(() => void unsubscribe?.())
         <el-table-column prop="name" :label="$t('filesView.colName')" min-width="200">
           <template #default="{ row }">
             <div class="file-name">
-              <el-icon :color="getFileIconColor(row)">
-                <component :is="getFileIcon(row)" />
+              <el-icon :color="getFileIconColor(row as FileItem)">
+                <component :is="getFileIcon(row as FileItem)" />
               </el-icon>
-              <span>{{ row.name }}</span>
+              <span>{{ (row as FileItem).name }}</span>
             </div>
           </template>
         </el-table-column>
         <el-table-column prop="path" :label="$t('filesView.colOriginalPath')" min-width="200" />
         <el-table-column :label="$t('filesView.colActions')" width="120">
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="restoreFile(row)">{{ $t('filesView.actRestore') }}</el-button>
+            <el-button size="small" type="primary" @click="restoreFile(row as FileItem)">{{ $t('filesView.actRestore') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
