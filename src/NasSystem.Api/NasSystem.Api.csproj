@@ -20,9 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- OpenAPI / Swagger -->
+    <!-- OpenAPI / Scalar（.NET 10 原生 MapOpenApi，Swashbuckle 无代码引用已移除） -->
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-    <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="Scalar.AspNetCore" />
 
     <!-- EF 设计期工具（dotnet ef 命令要求启动项目引用，PrivateAssets 不传递） -->

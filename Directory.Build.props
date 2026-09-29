@@ -37,11 +37,9 @@
     <PackageVersion Include="Hangfire.Core" Version="1.8.17" />
     <PackageVersion Include="Hangfire.MemoryStorage" Version="1.8.1.1" />
     <PackageVersion Include="Dapper" Version="2.1.89" />
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="8.0.0" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.17.10" />
     <PackageVersion Include="Mapster" Version="7.4.0" />
-    <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="Moq" Version="4.21.0" />
     <PackageVersion Include="FluentAssertions" Version="8.11.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />

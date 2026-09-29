@@ -128,13 +128,13 @@ npm run dev
 
 ```bash
 # 运行所有测试
-dotnet test
+dotnet test --solution NasSystem.sln
 
 # 运行单元测试
-dotnet test tests/NasSystem.UnitTests
+dotnet test --project tests/NasSystem.UnitTests
 
 # 运行集成测试
-dotnet test tests/NasSystem.IntegrationTests
+dotnet test --project tests/NasSystem.IntegrationTests
 ```
 
 ## 🔧 配置

@@ -543,13 +543,13 @@ public class FileEndpointsIntegrationTests : ApiTestBase
 
 ```bash
 # 运行所有测试
-dotnet test
+dotnet test --solution NasSystem.sln
 
 # 运行单元测试
-dotnet test tests/NasSystem.UnitTests
+dotnet test --project tests/NasSystem.UnitTests
 
 # 运行集成测试
-dotnet test tests/NasSystem.IntegrationTests
+dotnet test --project tests/NasSystem.IntegrationTests
 
 # 运行特定测试类
 dotnet test --filter "FullyQualifiedName~UserTests"
@@ -557,8 +557,8 @@ dotnet test --filter "FullyQualifiedName~UserTests"
 # 运行特定测试方法
 dotnet test --filter "FullyQualifiedName~Login_WithValidCredentials"
 
-# 生成测试覆盖率报告
-dotnet test --collect:"XPlat Code Coverage"
+# 生成测试覆盖率报告（MTP 模式由 coverlet.MTP 扩展提供）
+dotnet test --coverlet --coverlet-output-format cobertura
 ```
 
 ### 4.2 Visual Studio / Rider
