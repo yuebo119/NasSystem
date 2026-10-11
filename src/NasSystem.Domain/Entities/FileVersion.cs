@@ -125,4 +125,40 @@ public class FileVersion
         IsCurrent = true;
         UpdatedAt = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// 从持久化状态恢复实体（供基础设施层影子模型映射使用）。动因见 <see cref="FileItem.Restore"/>。
+    /// </summary>
+    internal static FileVersion Restore(
+        Guid id,
+        Guid fileItemId,
+        int versionNumber,
+        string storagePath,
+        long fileSize,
+        string fileHash,
+        string? comment,
+        bool isCurrent,
+        Guid createdByUserId,
+        DateTime createdAt,
+        DateTime? updatedAt,
+        FileItem? fileItem = null,
+        User? createdByUser = null)
+    {
+        return new FileVersion
+        {
+            Id = id,
+            FileItemId = fileItemId,
+            VersionNumber = versionNumber,
+            StoragePath = storagePath,
+            FileSize = fileSize,
+            FileHash = fileHash,
+            Comment = comment,
+            IsCurrent = isCurrent,
+            CreatedByUserId = createdByUserId,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt,
+            FileItem = fileItem,
+            CreatedByUser = createdByUser,
+        };
+    }
 }

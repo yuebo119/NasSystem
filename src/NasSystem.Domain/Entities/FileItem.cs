@@ -249,6 +249,60 @@ public sealed class FileItem : Entity
     }
 
     /// <summary>
+    /// 从持久化状态恢复实体（供基础设施层影子模型映射使用）。
+    /// </summary>
+    /// <remarks>
+    /// 领域实体没有公开的"从数据库重建"入口，而替换 ORM 后不能再依赖提供方的变更追踪
+    /// 悄悄填属性，故显式提供该工厂。它不做任何业务校验：数据既然已在库里即为合法状态，
+    /// 校验职责属于 CreateFolder/CreateFile 这类新建入口。
+    /// internal 而非 public：不扩大领域的公开面。
+    /// </remarks>
+    internal static FileItem Restore(
+        Guid id,
+        string name,
+        string path,
+        string physicalPath,
+        FileItemType itemType,
+        long sizeBytes,
+        string? mimeType,
+        string? extension,
+        string? hash,
+        Guid storagePoolId,
+        Guid ownerId,
+        Guid? parentId,
+        bool isDeleted,
+        DateTime? deletedAt,
+        bool isHidden,
+        bool isSystem,
+        bool isReadOnly,
+        DateTime createdAt,
+        DateTime? updatedAt)
+    {
+        return new FileItem
+        {
+            Id = id,
+            Name = name,
+            Path = path,
+            PhysicalPath = physicalPath,
+            ItemType = itemType,
+            SizeBytes = sizeBytes,
+            MimeType = mimeType,
+            Extension = extension,
+            Hash = hash,
+            StoragePoolId = storagePoolId,
+            OwnerId = ownerId,
+            ParentId = parentId,
+            IsDeleted = isDeleted,
+            DeletedAt = deletedAt,
+            IsHidden = isHidden,
+            IsSystem = isSystem,
+            IsReadOnly = isReadOnly,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt,
+        };
+    }
+
+    /// <summary>
     /// 名称不变量：非空白、不含路径分隔符、不得为 ".." 或 "." 段——
     /// 防止经实体工厂或重命名构造出层级错乱的虚拟路径进而物理写入逃逸（ITM-N20）。
     /// 公开静态：应用层 Rename 等变更入口必须先行调用（实体变更方法无法回溯校验父路径拼接结果）。

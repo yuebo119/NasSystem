@@ -155,4 +155,36 @@ public sealed class StoragePool : Entity
     /// 检查是否有足够空间上传指定大小的文件
     /// </summary>
     public bool HasEnoughSpace(long fileSize) => AvailableBytes >= fileSize;
+
+    /// <summary>
+    /// 从持久化状态恢复实体（供基础设施层影子模型映射使用）。动因见 <see cref="FileItem.Restore"/>。
+    /// </summary>
+    internal static StoragePool Restore(
+        Guid id,
+        string name,
+        string mountPath,
+        string? description,
+        bool isDefault,
+        bool isEnabled,
+        long totalBytes,
+        long usedBytes,
+        long? maxCapacityBytes,
+        DateTime createdAt,
+        DateTime? updatedAt)
+    {
+        return new StoragePool
+        {
+            Id = id,
+            Name = name,
+            MountPath = mountPath,
+            Description = description,
+            IsDefault = isDefault,
+            IsEnabled = isEnabled,
+            TotalBytes = totalBytes,
+            UsedBytes = usedBytes,
+            MaxCapacityBytes = maxCapacityBytes,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt,
+        };
+    }
 }

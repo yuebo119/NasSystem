@@ -13,20 +13,20 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 数据访问 -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
-    <PackageReference Include="Dapper" />
-    
+    <!-- 数据访问：PalORM（SQLite 方言）。SourceGen 必须显式引用——
+         PalORM.Sqlite 的 nuspec 不依赖它，漏掉时生成器完全不产出，
+         运行期报 "Type 'X' is not registered"。 -->
+    <PackageReference Include="PalORM.Sqlite" />
+    <PackageReference Include="PalORM.SourceGen" />
+
     <!-- JWT 认证 -->
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
-    
-    <!-- 任务调度 -->
-    
+
     <!-- 日志 -->
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Sinks.Console" />
-    
+
     <!-- 覆盖传递依赖的安全漏洞版本 -->
     <PackageReference Include="Newtonsoft.Json" />
   </ItemGroup>
@@ -34,7 +34,6 @@
   <ItemGroup>
     <!-- 版本收敛至 Directory.Build.props 单一真源（原 csproj 覆盖条目会把版本钉低于中央） -->
     <PackageReference Include="SkiaSharp" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

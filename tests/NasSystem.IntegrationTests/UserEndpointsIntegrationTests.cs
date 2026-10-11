@@ -12,7 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Application.Users.Dtos;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
-using NasSystem.Infrastructure.Data;
 using Xunit;
 
 /// <summary>
@@ -364,27 +363,28 @@ public class UserEndpointsIntegrationTests : ApiTestBase
     #region Helper Methods
 
     private async Task<Guid> SeedTestUserAsync(
-        string username, 
-        string password, 
+        string username,
+        string password,
         UserRole role = UserRole.User,
         bool isEnabled = true)
     {
-        using var scope = Factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<NasDbContext>();
-        var passwordHasher = scope.ServiceProvider.GetRequiredService<NasSystem.Domain.Services.IPasswordHasher>();
-
-        var (hash, salt) = passwordHasher.HashPassword(password);
-        var user = User.Create(username, hash, salt, role);
-        
-        if (!isEnabled)
+        var (scope, users, _, _, _, unitOfWork) = CreateDataScope();
+        using (scope)
         {
-            user.SetEnabled(false);
-        }
+            var passwordHasher = scope.ServiceProvider
+                .GetRequiredService<NasSystem.Domain.Services.IPasswordHasher>();
 
-        context.Users.Add(user);
-        await context.SaveChangesAsync();
-        
-        return user.Id;
+            var (hash, salt) = passwordHasher.HashPassword(password);
+            var user = User.Create(username, hash, salt, role);
+
+            if (!isEnabled)
+                user.SetEnabled(false);
+
+            await users.AddAsync(user);
+            await unitOfWork.SaveChangesAsync();
+
+            return user.Id;
+        }
     }
 
     private async Task<string> GetAuthTokenAsync(

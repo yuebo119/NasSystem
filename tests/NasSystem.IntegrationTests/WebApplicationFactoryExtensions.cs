@@ -7,60 +7,73 @@ namespace NasSystem.IntegrationTests;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using NasSystem.Infrastructure.Data;
+using NasSystem.Infrastructure;
+using NasSystem.Infrastructure.Persistence;
 
 /// <summary>
 /// 自定义 Web 应用工厂 - 每个测试类使用独立的数据库实例
 /// </summary>
+/// <remarks>
+/// EF 时代这里按服务名摘除 EF 注册再挂 InMemory provider。PalORM 没有内存 provider，
+/// 改用每个工厂一个独立的临时 SQLite 文件库：隔离语义不变（唯一库名），
+/// 且测的是真实 SQLite 行为（大小写敏感的 Guid 比较、部分索引、WAL）。
+/// 代价是每个测试类多几次文件 I/O，对本项目 54 个集成测试可接受。
+/// </remarks>
 public class NasSystemWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _dbName;
+    private readonly string _dbPath;
     private bool _databaseCreated;
 
     public NasSystemWebApplicationFactory()
     {
-        // 每个工厂实例使用唯一的数据库名称
-        _dbName = $"NasSystemTestDb_{Guid.NewGuid():N}";
+        // 每个工厂实例使用唯一的库文件
+        _dbPath = Path.Combine(Path.GetTempPath(), $"NasSystemTestDb_{Guid.NewGuid():N}.db");
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
-        
+
         builder.ConfigureServices(services =>
         {
-            // 移除所有 EF Core 相关服务
-            var descriptorsToRemove = services.Where(d =>
-                d.ServiceType.FullName?.Contains("EntityFrameworkCore") == true ||
-                d.ServiceType == typeof(DbContextOptions<NasDbContext>) ||
-                d.ServiceType == typeof(DbContextOptions) ||
-                d.ServiceType == typeof(NasDbContext))
+            // 摘掉按生产连接串注册的会话持有者，换成指向本工厂临时库的实例
+            var descriptorsToRemove = services
+                .Where(d => d.ServiceType == typeof(PalormSessionHolder))
                 .ToList();
 
             foreach (var descriptor in descriptorsToRemove)
-            {
                 services.Remove(descriptor);
-            }
 
-            // 添加内存数据库用于测试 - 使用唯一名称确保隔离
-            services.AddDbContext<NasDbContext>((sp, options) =>
+            services.AddScoped(_ => new PalormSessionHolder(new PalORM.DbOptions
             {
-                options.UseInMemoryDatabase(_dbName);
-            }, ServiceLifetime.Scoped);
+                ConnectionString = $"Data Source={_dbPath}",
+            }));
+        });
+
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = $"Data Source={_dbPath}",
+            });
         });
     }
 
     public void EnsureDatabaseCreated()
     {
         if (_databaseCreated) return;
-        
-        using var scope = Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<NasDbContext>();
-        db.Database.EnsureCreated();
+
+        // 走与生产相同的初始化路径：建表 + 补两个部分索引 + 种子
+        InitializeDatabaseAsync().GetAwaiter().GetResult();
         _databaseCreated = true;
+    }
+
+    private async Task InitializeDatabaseAsync()
+    {
+        using var scope = Services.CreateScope();
+        await scope.ServiceProvider.InitializeDatabaseAsync();
     }
 
     /// <summary>
@@ -69,16 +82,36 @@ public class NasSystemWebApplicationFactory : WebApplicationFactory<Program>
     public async Task ResetDatabaseAsync()
     {
         using var scope = Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<NasDbContext>();
-        
-        // 清空所有表数据
-        db.FileShares.RemoveRange(db.FileShares);
-        db.FileVersions.RemoveRange(db.FileVersions);
-        db.FileItems.RemoveRange(db.FileItems);
-        db.StoragePools.RemoveRange(db.StoragePools);
-        db.Users.RemoveRange(db.Users);
-        
-        await db.SaveChangesAsync();
+        var sessions = scope.ServiceProvider.GetRequiredService<PalormSessionHolder>();
+        var db = await sessions.GetAsync();
+
+        await db.ExecuteAsync(System.Runtime.CompilerServices.FormattableStringFactory.Create(
+            """
+            DELETE FROM "FileShares";
+            DELETE FROM "FileVersions";
+            DELETE FROM "FileItems";
+            DELETE FROM "StoragePools";
+            DELETE FROM "Users";
+            """));
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (!disposing)
+            return;
+
+        foreach (var suffix in new[] { "", "-shm", "-wal" })
+        {
+            try
+            {
+                if (File.Exists(_dbPath + suffix))
+                    File.Delete(_dbPath + suffix);
+            }
+            catch
+            {
+                // 句柄未释放时留下，由系统临时目录清理
+            }
+        }
     }
 }
-

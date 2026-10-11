@@ -275,17 +275,11 @@ static string ArmLabel()
 
 static string OrmLabel()
 {
-    // 显式触达一次，确保程序集已加载（api/proc 命令本身不碰 EF）
-    try
-    {
-        _ = typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly;
-    }
-    catch
-    {
-        // EF 程序集不在引用链里时忽略
-    }
-
+    // 臂标签由 Infrastructure 实际注册的 ORM 决定。harness 只引用 Domain 仓储接口，
+    // 具体实现随 Infrastructure 的 DI 注册而变，这里按加载的程序集判定，
+    // 避免人为标错臂。
     var loaded = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetName().Name).ToHashSet(StringComparer.Ordinal);
+
     if (loaded.Any(n => n is not null && n.StartsWith("PalORM", StringComparison.Ordinal)))
     {
         var version = AppDomain.CurrentDomain.GetAssemblies()
@@ -294,8 +288,13 @@ static string OrmLabel()
         return $"PalORM {version}";
     }
 
-    var ef = AppDomain.CurrentDomain.GetAssemblies()
-        .FirstOrDefault(a => a.GetName().Name is "Microsoft.EntityFrameworkCore" or "Microsoft.EntityFrameworkCore.Sqlite")?
-        .GetName().Version?.ToString() ?? "?";
-    return $"EF Core {ef}";
+    if (loaded.Any(n => n is not null && n.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)))
+    {
+        var version = AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(a => a.GetName().Name == "Microsoft.EntityFrameworkCore")?
+            .GetName().Version?.ToString() ?? "?";
+        return $"EF Core {version}";
+    }
+
+    return "未知（仓储接口未被解析过）";
 }

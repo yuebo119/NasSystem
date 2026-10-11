@@ -25,7 +25,6 @@
     <!-- MTP 模式覆盖率扩展：VSTest 的 collect 参数在 MTP 模式不可用，改由该包提供 -->
     <PackageReference Include="coverlet.MTP" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
   </ItemGroup>
 
   <!-- 版本收敛至 Directory.Build.props 单一真源（原 csproj 覆盖条目会把版本钉低于中央） -->

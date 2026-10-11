@@ -11,13 +11,21 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Application.Users.Dtos;
+using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
-using NasSystem.Infrastructure.Data;
+using NasSystem.Domain.Repositories;
+using NasSystem.Domain.Services;
+using PalORM;
+using PalORM.Sqlite;
 using Xunit;
 
 /// <summary>
 /// API 测试基类
 /// </summary>
+/// <remarks>
+/// 种子辅助从直连 DbContext 改为走仓储接口 + 工作单元：
+/// 仓储实现已换成 PalORM，Domain 接口不变，故这里只换解析目标。
+/// </remarks>
 public abstract class ApiTestBase : IClassFixture<NasSystemWebApplicationFactory>, IDisposable
 {
     protected readonly HttpClient Client;
@@ -36,12 +44,19 @@ public abstract class ApiTestBase : IClassFixture<NasSystemWebApplicationFactory
     }
 
     /// <summary>
-    /// 获取数据库上下文
+    /// 建立数据库作用域，供种子辅助使用
     /// </summary>
-    protected NasDbContext GetDbContext()
+    protected (IServiceScope Scope, IUserRepository Users, IStoragePoolRepository Pools,
+        IFileItemRepository FileItems, IFileShareRepository Shares, IUnitOfWork UnitOfWork) CreateDataScope()
     {
         var scope = Factory.Services.CreateScope();
-        return scope.ServiceProvider.GetRequiredService<NasDbContext>();
+        return (
+            scope,
+            scope.ServiceProvider.GetRequiredService<IUserRepository>(),
+            scope.ServiceProvider.GetRequiredService<IStoragePoolRepository>(),
+            scope.ServiceProvider.GetRequiredService<IFileItemRepository>(),
+            scope.ServiceProvider.GetRequiredService<IFileShareRepository>(),
+            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
     }
 
     /// <summary>
@@ -49,7 +64,7 @@ public abstract class ApiTestBase : IClassFixture<NasSystemWebApplicationFactory
     /// </summary>
     protected void SetAuthToken(string token)
     {
-        Client.DefaultRequestHeaders.Authorization = 
+        Client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", token);
     }
 
@@ -66,13 +81,14 @@ public abstract class ApiTestBase : IClassFixture<NasSystemWebApplicationFactory
     protected async Task<string> GetAuthTokenAsync(string username)
     {
         using var scope = Factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<NasDbContext>();
-        var passwordHasher = scope.ServiceProvider.GetRequiredService<NasSystem.Domain.Services.IPasswordHasher>();
+        var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
 
         var (hash, salt) = passwordHasher.HashPassword("password123");
         var user = User.Create(username, hash, salt);
-        context.Users.Add(user);
-        await context.SaveChangesAsync();
+        await users.AddAsync(user);
+        await unitOfWork.SaveChangesAsync();
 
         var loginRequest = new LoginDto { Username = username, Password = "password123" };
         var response = await Client.PostAsJsonAsync("/api/v1/users/login", loginRequest);
@@ -83,44 +99,55 @@ public abstract class ApiTestBase : IClassFixture<NasSystemWebApplicationFactory
 
     protected async Task SeedDefaultStoragePoolAsync()
     {
-        using var scope = Factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<NasDbContext>();
-
-        if (!context.StoragePools.Any(p => p.IsDefault))
+        var (scope, _, pools, _, _, unitOfWork) = CreateDataScope();
+        using (scope)
         {
+            var existing = await pools.GetDefaultAsync();
+            if (existing is not null)
+                return;
+
             var pool = StoragePool.Create("DefaultPool", "/mnt/storage");
             pool.SetAsDefault(true);
             pool.UpdateCapacity(1024L * 1024 * 1024 * 100, 0); // 100GB total, 0 used
-            context.StoragePools.Add(pool);
-            await context.SaveChangesAsync();
+            await pools.AddAsync(pool);
+            await unitOfWork.SaveChangesAsync();
         }
     }
 
     protected async Task SeedTestFolderAsync(string path, string ownerUsername)
     {
-        using var scope = Factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<NasDbContext>();
-
-        var user = context.Users.FirstOrDefault(u => u.Username == ownerUsername);
-        if (user is null) return;
-
-        var pool = context.StoragePools.FirstOrDefault(p => p.IsDefault);
-        if (pool is null)
+        var (scope, users, pools, fileItems, _, unitOfWork) = CreateDataScope();
+        using (scope)
         {
-            await SeedDefaultStoragePoolAsync();
-            pool = context.StoragePools.First(p => p.IsDefault);
+            var allUsers = await users.GetAllAsync();
+            var user = allUsers.FirstOrDefault(u => u.Username == ownerUsername);
+            if (user is null) return;
+
+            var pool = await pools.GetDefaultAsync();
+            if (pool is null)
+            {
+                await SeedDefaultStoragePoolAsync();
+                pool = await pools.GetDefaultAsync();
+                if (pool is null) return;
+            }
+
+            // 幂等：真实库上有 Path 的唯一部分索引（CONVENTIONS §3.2 的 TOCTOU 兜底），
+            // 同名目录重复插入会被拒。EF InMemory 不校验唯一索引，这个坑一直被藏着——
+            // 别的用例种 /documents/test.txt 时会顺带建父目录 /documents，故必须先查重
+            if (await fileItems.GetByPathAsync(path) is not null)
+                return;
+
+            var folderName = path.TrimStart('/').Split('/').Last();
+            var folder = FileItem.CreateFolder(
+                name: folderName,
+                path: path,
+                physicalPath: $"/mnt/storage{path}",
+                storagePoolId: pool.Id,
+                ownerId: user.Id);
+
+            await fileItems.AddAsync(folder);
+            await unitOfWork.SaveChangesAsync();
         }
-
-        var folderName = path.TrimStart('/').Split('/').Last();
-        var folder = FileItem.CreateFolder(
-            name: folderName,
-            path: path,
-            physicalPath: $"/mnt/storage{path}",
-            storagePoolId: pool.Id,
-            ownerId: user.Id);
-
-        context.FileItems.Add(folder);
-        await context.SaveChangesAsync();
     }
 
     public virtual void Dispose()

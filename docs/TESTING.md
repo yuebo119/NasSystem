@@ -358,7 +358,7 @@ public abstract class ApiTestBase : IClassFixture<WebApplicationFactory<Program>
         {
             builder.ConfigureServices(services =>
             {
-                // 使用内存数据库
+                // 使用独立临时 SQLite 文件库
                 var descriptor = services.SingleOrDefault(
                     d => d.ServiceType == typeof(DbContextOptions<NasDbContext>));
                 if (descriptor != null)
@@ -366,7 +366,7 @@ public abstract class ApiTestBase : IClassFixture<WebApplicationFactory<Program>
 
                 services.AddDbContext<NasDbContext>(options =>
                 {
-                    options.UseInMemoryDatabase("TestDb");
+                    options.UseSqlite($"Data Source={tempFileDbPath}");
                 });
             });
         });
@@ -622,7 +622,7 @@ public void TestMethod()
 ### 6.3 测试隔离
 
 - 每个测试应该独立运行
-- 使用内存数据库避免测试间干扰
+- 使用每测试类独立的临时 SQLite 文件库避免测试间干扰（PalORM 无内存 provider，真库还顺带覆盖唯一索引与外键）
 - 清理测试产生的临时文件
 
 ---

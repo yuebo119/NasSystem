@@ -13,7 +13,6 @@ using NasSystem.Application.Files.Dtos;
 using NasSystem.Application.Users.Dtos;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
-using NasSystem.Infrastructure.Data;
 using Xunit;
 
 /// <summary>
@@ -372,48 +371,51 @@ public class FileEndpointsIntegrationTests : ApiTestBase
 
     private async Task SeedTestFileAsync(string path, string fileName, string ownerUsername)
     {
-        using var scope = Factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<NasDbContext>();
-
-        var user = context.Users.FirstOrDefault(u => u.Username == ownerUsername);
-        if (user is null) return;
-
-        var pool = context.StoragePools.FirstOrDefault(p => p.IsDefault);
-        if (pool is null)
+        var (scope, users, pools, fileItems, _, unitOfWork) = CreateDataScope();
+        using (scope)
         {
-            await SeedDefaultStoragePoolAsync();
-            pool = context.StoragePools.First(p => p.IsDefault);
-        }
+            var allUsers = await users.GetAllAsync();
+            var user = allUsers.FirstOrDefault(u => u.Username == ownerUsername);
+            if (user is null) return;
 
-        // Create parent folder if needed
-        var parentPath = "/" + string.Join("/", path.TrimStart('/').Split('/').SkipLast(1));
-        if (parentPath != "/" && !context.FileItems.Any(f => f.Path == parentPath))
-        {
-            var parentName = parentPath.TrimStart('/').Split('/').Last();
-            var parentFolder = FileItem.CreateFolder(
-                name: parentName,
-                path: parentPath,
-                physicalPath: $"/mnt/storage{parentPath}",
+            var pool = await pools.GetDefaultAsync();
+            if (pool is null)
+            {
+                await SeedDefaultStoragePoolAsync();
+                pool = await pools.GetDefaultAsync();
+                if (pool is null) return;
+            }
+
+            // Create parent folder if needed
+            var parentPath = "/" + string.Join("/", path.TrimStart('/').Split('/').SkipLast(1));
+            if (parentPath != "/" && await fileItems.GetByPathAsync(parentPath) is null)
+            {
+                var parentName = parentPath.TrimStart('/').Split('/').Last();
+                var parentFolder = FileItem.CreateFolder(
+                    name: parentName,
+                    path: parentPath,
+                    physicalPath: $"/mnt/storage{parentPath}",
+                    storagePoolId: pool.Id,
+                    ownerId: user.Id);
+                await fileItems.AddAsync(parentFolder);
+                await unitOfWork.SaveChangesAsync();
+            }
+
+            var parent = await fileItems.GetByPathAsync(parentPath);
+
+            var file = FileItem.CreateFile(
+                name: fileName,
+                path: path,
+                physicalPath: $"/mnt/storage{path}",
+                sizeBytes: 1024,
+                mimeType: "text/plain",
                 storagePoolId: pool.Id,
-                ownerId: user.Id);
-            context.FileItems.Add(parentFolder);
-            await context.SaveChangesAsync();
+                ownerId: user.Id,
+                parentId: parent?.Id);
+
+            await fileItems.AddAsync(file);
+            await unitOfWork.SaveChangesAsync();
         }
-
-        var parent = context.FileItems.FirstOrDefault(f => f.Path == parentPath);
-        
-        var file = FileItem.CreateFile(
-            name: fileName,
-            path: path,
-            physicalPath: $"/mnt/storage{path}",
-            sizeBytes: 1024,
-            mimeType: "text/plain",
-            storagePoolId: pool.Id,
-            ownerId: user.Id,
-            parentId: parent?.Id);
-
-        context.FileItems.Add(file);
-        await context.SaveChangesAsync();
     }
 
     #endregion
