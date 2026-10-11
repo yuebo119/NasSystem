@@ -182,4 +182,42 @@ public sealed class User : Entity
     /// 获取剩余配额
     /// </summary>
     public long? RemainingQuota => QuotaBytes.HasValue ? QuotaBytes.Value - UsedBytes : null;
+
+    /// <summary>
+    /// 从持久化状态恢复实体（供基础设施层影子模型映射使用）。动因见 <see cref="FileItem.Restore"/>。
+    /// </summary>
+    internal static User Restore(
+        Guid id,
+        string username,
+        string passwordHash,
+        string passwordSalt,
+        string? displayName,
+        string? email,
+        UserRole role,
+        bool isEnabled,
+        DateTime? lastLoginAt,
+        long? quotaBytes,
+        long usedBytes,
+        string homeDirectory,
+        DateTime createdAt,
+        DateTime? updatedAt)
+    {
+        return new User
+        {
+            Id = id,
+            Username = username,
+            PasswordHash = passwordHash,
+            PasswordSalt = passwordSalt,
+            DisplayName = displayName,
+            Email = email,
+            Role = role,
+            IsEnabled = isEnabled,
+            LastLoginAt = lastLoginAt,
+            QuotaBytes = quotaBytes,
+            UsedBytes = usedBytes,
+            HomeDirectory = homeDirectory,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt,
+        };
+    }
 }

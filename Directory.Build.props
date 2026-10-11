@@ -22,15 +22,16 @@
     <TieredCompilation>true</TieredCompilation>
     
     <!-- ITM-N8（2026-08-25 裁决执行）：IsAotCompatible 假声明已移除——
-         EF Core 动态查询与原 Mapster 反射编译不兼容 Native AOT，
-         声明 true 却无法通过 publish 验证即自欺；未来若需 AOT 再按全链路验证引入 -->
+         当时的技术栈（EF Core 动态查询 + Mapster 反射编译）不兼容 Native AOT，
+         声明 true 却无法通过 publish 验证即自欺。
+         2026-10-12：数据层已换 PalORM（编译期生成，无反射），最大阻断已拆掉；
+         但 DomainEventDispatcher 仍用 MakeGenericType 反射派发，
+         未做全链路验证前仍不声明，未来若需 AOT 按全链路验证引入。 -->
   </PropertyGroup>
   
   <!-- 全局包版本管理（2026-09-29 统一升级至各包最新稳定版） -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
@@ -39,11 +40,7 @@
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
-    <PackageVersion Include="Hangfire.Core" Version="1.8.17" />
-    <PackageVersion Include="Hangfire.MemoryStorage" Version="1.8.1.1" />
-    <PackageVersion Include="Dapper" Version="2.1.89" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.17.10" />
-    <PackageVersion Include="Mapster" Version="7.4.0" />
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="Moq" Version="4.21.0" />
     <PackageVersion Include="FluentAssertions" Version="8.11.0" />
@@ -52,7 +49,11 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
+
+    <!-- 数据访问：PalORM。Core/SourceGen 由 Sqlite 方言包传递，此处显式钉版本 -->
+    <PackageVersion Include="PalORM.Core" Version="6.1.0" />
+    <PackageVersion Include="PalORM.Sqlite" Version="6.1.0" />
+    <PackageVersion Include="PalORM.SourceGen" Version="6.1.0" />
   </ItemGroup>
 </Project>

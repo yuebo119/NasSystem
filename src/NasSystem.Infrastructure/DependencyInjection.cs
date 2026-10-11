@@ -5,17 +5,17 @@
 
 namespace NasSystem.Infrastructure;
 
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Application.Common;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Repositories;
 using NasSystem.Domain.Services;
-using Microsoft.Extensions.Logging;
-using NasSystem.Infrastructure.Data;
 using NasSystem.Infrastructure.Data.Repositories;
+using NasSystem.Infrastructure.Persistence;
 using NasSystem.Infrastructure.Services;
+using PalORM;
+using PalORM.Sqlite;
 
 /// <summary>
 /// 基础设施层依赖注入扩展
@@ -29,22 +29,21 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // 注册 DbContext
-        var connectionString = configuration.GetConnectionString("DefaultConnection") 
+        var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? "Data Source=data/nas.db";
-        
-        services.AddDbContext<NasDbContext>(options =>
-        {
-            options.UseSqlite(connectionString, sqliteOptions =>
-            {
-                sqliteOptions.MigrationsAssembly(typeof(NasDbContext).Assembly.FullName);
-            });
-            // busy_timeout/synchronous 为连接级 PRAGMA，池内每个物理连接打开后重设
-            options.AddInterceptors(new SqlitePragmaInterceptor());
-        });
 
-        // 注册 UnitOfWork
-        services.AddScoped<IUnitOfWork, UnitOfWork>();
+        // PalORM 会话按作用域持有，惰性创建（CreateAsync 是异步的，DI 只能同步构造）
+        services.AddScoped(_ => new PalormSessionHolder(new DbOptions
+        {
+            ConnectionString = connectionString,
+            // SQLite 的 busy_timeout/synchronous/journal_mode 等 8 项 PRAGMA 由
+            // PalORM.Sqlite 在连接打开时自动调优，取代原 SqlitePragmaInterceptor
+        }));
+
+        // 注册 UnitOfWork。同时注册具体类型：仓储的写入意图队列要用它，
+        // 只注册接口会让仓储构造失败
+        services.AddScoped<PalormUnitOfWork>();
+        services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<PalormUnitOfWork>());
 
         // 注册仓储
         services.AddScoped<IUserRepository, UserRepository>();
@@ -79,28 +78,29 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// 初始化数据库
+    /// 初始化数据库：建表、补两个部分索引、种子数据。
     /// </summary>
+    /// <remarks>
+    /// 迁移机制的变化：EF 时代靠迁移链 + __EFMigrationsHistory 判定已应用的迁移，
+    /// 还额外做了"EnsureCreated 时代旧库打基线"的兼容逻辑。PalORM 侧由
+    /// <c>MigrateAsync</c> 依据 <c>[Table]</c>/<c>[Index]</c> 注解生成 DDL，
+    /// 幂等建表；两个带 WHERE 过滤条件的部分索引生成器不产出，沿用裸 SQL 补
+    /// （与 AddBusinessUniqueIndexes/AddPathPrefixIndex 两个迁移当初的做法一致）。
+    /// 存量库无需 __EFMigrationsHistory：MigrateAsync 的建表是幂等的，
+    /// 老库已有的表不会被重建。
+    /// </remarks>
     public static async Task InitializeDatabaseAsync(this IServiceProvider serviceProvider)
     {
         using var scope = serviceProvider.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<NasDbContext>();
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-        var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<NasDbContext>>();
+        var sessions = scope.ServiceProvider.GetRequiredService<PalormSessionHolder>();
+        var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PalormSessionHolder>>();
 
-        // 集成测试 InMemory provider：仅建模型，不走关系型初始化
-        if (!context.Database.IsRelational())
-        {
-            await context.Database.EnsureCreatedAsync();
-            return;
-        }
-
-        // 确保数据库目录存在
         var connectionString = configuration.GetConnectionString("DefaultConnection") ?? "Data Source=data/nas.db";
         var match = System.Text.RegularExpressions.Regex.Match(
-            connectionString, @"Data Source=(.+\.db)", 
+            connectionString, @"Data Source=(.+\.db)",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        
+
         if (match.Success)
         {
             var dbPath = match.Groups[1].Value;
@@ -109,88 +109,33 @@ public static class DependencyInjection
                 Directory.CreateDirectory(directory);
         }
 
-        // ITM-N7：SQLite 并发三件套——WAL 读写分离、busy_timeout 防 SQLITE_BUSY、NORMAL 同步级别
-        await EnsureSqlitePragmasAsync(context);
+        var db = await sessions.GetAsync();
 
-        // 迁移调度（ITM-N26 批次）：EF Migrations 取代手写 PRAGMA 列/索引迁移
-        await BaselineAndMigrateAsync(context, logger);
+        // 建表（幂等）。ITM-N7 的 SQLite 并发三件套由 provider 在连接级自动设置
+        await db.MigrateAsync();
+
+        // 两个部分索引生成器不产出 WHERE 过滤条件，手工补：
+        // Path 唯一部分索引兜底 TOCTOU（软删记录不占用路径），Path 前缀 NOCASE 索引
+        // 服务后代遍历的 LIKE 'prefix%'。IF NOT EXISTS 保证幂等。
+        await db.ExecuteAsync(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_FileItems_Path ON FileItems(Path) WHERE [IsDeleted] = 0;
+            CREATE INDEX IF NOT EXISTS IX_FileItems_Path_Prefix ON FileItems(Path COLLATE NOCASE) WHERE "IsDeleted" = 0;
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_FileShares_ShareCode ON FileShares(ShareCode);
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Username ON Users(Username);
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_FileVersions_FileItemId_VersionNumber ON FileVersions(FileItemId, VersionNumber);
+            """));
 
         // 初始化种子数据
-        await SeedDataAsync(context);
+        await SeedDataAsync(db);
     }
 
-    /// <summary>
-    /// 存量库兼容的迁移入口：EnsureCreated 时代的旧库没有 __EFMigrationsHistory 表，
-    /// 直接 Migrate 会尝试重建全部表。检测到旧库时先打基线标记（声明现状=InitialBaseline）
-    /// 再执行后续迁移（AddBusinessUniqueIndexes 幂等补齐新增索引）。
-    /// </summary>
-    private static async Task BaselineAndMigrateAsync(NasDbContext context, Microsoft.Extensions.Logging.ILogger logger)
-    {
-        var connection = context.Database.GetDbConnection();
-        if (connection.State != System.Data.ConnectionState.Open)
-            await connection.OpenAsync();
-
-        var historyTableExists = false;
-        using (var check = connection.CreateCommand())
-        {
-            check.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='__EFMigrationsHistory';";
-            historyTableExists = Convert.ToInt64(await check.ExecuteScalarAsync()) > 0;
-        }
-
-        if (!historyTableExists)
-        {
-            var usersTableExists = false;
-            using (var check2 = connection.CreateCommand())
-            {
-                check2.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='Users';";
-                usersTableExists = Convert.ToInt64(await check2.ExecuteScalarAsync()) > 0;
-            }
-
-            if (usersTableExists)
-            {
-                logger.LogInformation("检测到 EnsureCreated 时代的存量库——打基线标记后增量迁移");
-                using var createHist = connection.CreateCommand();
-                createHist.CommandText = @"CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
-                    ""MigrationId"" TEXT NOT NULL CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY,
-                    ""ProductVersion"" TEXT NOT NULL);";
-                await createHist.ExecuteNonQueryAsync();
-
-                using var mark = connection.CreateCommand();
-                mark.CommandText = "INSERT OR IGNORE INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES ('20260825080018_InitialBaseline', '10.0.2');";
-                await mark.ExecuteNonQueryAsync();
-            }
-            // 全新空库：无历史表也无业务表，Migrate 会自动建历史表并应用全部迁移
-        }
-
-        await context.Database.MigrateAsync();
-    }
-
-    /// <summary>
-    /// 启用 SQLite 库级配置。busy_timeout/synchronous 已移交 SqlitePragmaInterceptor
-    /// 在每个物理连接打开时重设（连接级参数）；此处仅设持久化在库文件的 journal_mode=WAL。
-    /// </summary>
-    private static async Task EnsureSqlitePragmasAsync(NasDbContext context)
-    {
-        // 集成测试使用 InMemory provider，PRAGMA 仅对 SQLite 生效
-        if (!context.Database.IsSqlite())
-            return;
-
-        var connection = context.Database.GetDbConnection();
-        if (connection.State != System.Data.ConnectionState.Open)
-            await connection.OpenAsync();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = "PRAGMA journal_mode=WAL;";
-        await command.ExecuteNonQueryAsync();
-    }
-
-    /// <summary>
-    /// 种子数据初始化
-    /// </summary>
-    private static async Task SeedDataAsync(NasDbContext context)
+    private static async Task SeedDataAsync(DataSession<SqliteProvider> db)
     {
         // 检查是否已有管理员用户
-        if (await context.Users.AnyAsync())
+        var existing = await db.CountAsync<UserRow>($"Username = {"admin"}");
+        if (existing > 0)
             return;
 
         // 创建默认管理员
@@ -205,17 +150,13 @@ public static class DependencyInjection
             displayName: "系统管理员",
             email: "admin@localhost");
 
-        context.Users.Add(adminUser);
-
-        // 创建默认存储池
         var defaultPool = Domain.Entities.StoragePool.Create(
             name: "默认存储池",
             mountPath: Path.Combine(AppContext.BaseDirectory, "storage"),
             description: "系统默认存储池");
         defaultPool.SetAsDefault(true);
 
-        context.StoragePools.Add(defaultPool);
-
-        await context.SaveChangesAsync();
+        await db.InsertAsync(adminUser.ToRow());
+        await db.InsertAsync(defaultPool.ToRow());
     }
 }

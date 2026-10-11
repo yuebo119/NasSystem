@@ -5,7 +5,9 @@
     <AssemblyName>NasSystem.Api</AssemblyName>
     <Description>NAS System API 层 - Web API 入口、中间件、端点</Description>
     
-    <!-- 禁用 Native AOT (EF Core 不支持) -->
+    <!-- 禁用 Native AOT：数据层已换 PalORM（宣称支持全链路 AOT），
+         但链路里还有 DomainEventDispatcher 的反射派发与 Serilog 配置面待处理，
+         未做全链路验证前不自声称兼容（ITM-N8 的教训） -->
     <PublishAot>false</PublishAot>
     <InvariantGlobalization>false</InvariantGlobalization>
     
@@ -24,9 +26,6 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Scalar.AspNetCore" />
 
-    <!-- EF 设计期工具（dotnet ef 命令要求启动项目引用，PrivateAssets 不传递） -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
-    
     <!-- 日志集成 -->
     <PackageReference Include="Serilog.AspNetCore" />
     

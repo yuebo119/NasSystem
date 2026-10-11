@@ -190,4 +190,44 @@ public sealed class FileShare : Entity
     /// 是否需要密码
     /// </summary>
     public bool RequiresPassword => AccessType == ShareAccessType.Password && !string.IsNullOrEmpty(PasswordHash);
+
+    /// <summary>
+    /// 从持久化状态恢复实体（供基础设施层影子模型映射使用）。动因见 <see cref="FileItem.Restore"/>。
+    /// </summary>
+    internal static FileShare Restore(
+        Guid id,
+        string shareCode,
+        Guid fileItemId,
+        ShareAccessType accessType,
+        string? passwordHash,
+        PermissionLevel permission,
+        DateTime? expiresAt,
+        int? maxDownloads,
+        int downloadCount,
+        Guid createdByUserId,
+        bool isEnabled,
+        DateTime createdAt,
+        DateTime? updatedAt,
+        FileItem? fileItem = null,
+        User? createdByUser = null)
+    {
+        return new FileShare
+        {
+            Id = id,
+            ShareCode = shareCode,
+            FileItemId = fileItemId,
+            AccessType = accessType,
+            PasswordHash = passwordHash,
+            Permission = permission,
+            ExpiresAt = expiresAt,
+            MaxDownloads = maxDownloads,
+            DownloadCount = downloadCount,
+            CreatedByUserId = createdByUserId,
+            IsEnabled = isEnabled,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt,
+            FileItem = fileItem,
+            CreatedByUser = createdByUser,
+        };
+    }
 }
