@@ -1,7 +1,9 @@
 <Project>
   <PropertyGroup>
     <!-- 目标框架和语言版本 -->
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- 2026-10-12 升级至 .NET 11（RC1 SDK 11.0.100-rc.1）。EF Core 10.0.12 经 TFM 兼容在
+         net11.0 上运行，未做 net11 专项优化；运行时影响由基准 B 臂单独量化。 -->
+    <TargetFramework>net11.0</TargetFramework>
     <LangVersion>14.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
