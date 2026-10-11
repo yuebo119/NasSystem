@@ -14,7 +14,7 @@
 ```
 NasSystem.Domain          ← 领域层：实体/值对象/领域服务接口/仓储接口。零外部依赖
 NasSystem.Application     ← 应用层：用例编排/DTO/验证器。仅依赖 Domain + Shared
-NasSystem.Infrastructure  ← 基础设施层：EF Core(SQLite)/文件系统/JWT/缩略图实现
+NasSystem.Infrastructure  ← 基础设施层：PalORM(SQLite)/文件系统/JWT/缩略图实现
 NasSystem.Api             ← 表现层：Minimal API 端点/SignalR Hub/中间件
 NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（零依赖）
 ```
@@ -49,7 +49,7 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 
 | # | 规则 |
 |---|------|
-| 3.1 | 启动时启用 WAL + busy_timeout：`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`（多用户并发写 SQLITE_BUSY 防线） |
+| 3.1 | 启动时启用 WAL + busy_timeout：`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`（多用户并发写 SQLITE_BUSY 防线）。换 PalORM 后由 provider 在连接级自动调优 8 项 PRAGMA（含 busy_timeout=5000、synchronous=NORMAL、journal_mode=WAL），无需手写拦截器 |
 | 3.2 | 业务唯一性由数据库唯一索引兜底：`FileItems.Path`、`FileShares.ShareCode`、`Users.Username`、`(FileVersions.FileItemId, VersionNumber)`——应用层查重不能替代唯一索引（TOCTOU） |
 | 3.3 | 统计聚合在 SQL 端完成（`GROUP BY` / `SUM`），禁止全表加载内存统计 |
 | 3.4 | 列表查询数据库端分页，禁止 Take(N) 后内存二次过滤再分页 |

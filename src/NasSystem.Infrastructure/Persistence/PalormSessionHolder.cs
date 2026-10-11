@@ -42,11 +42,16 @@ public sealed class PalormSessionHolder : IDisposable, IAsyncDisposable
 
     public void Dispose()
     {
-        // DataSession 只有 DisposeAsync，这里同步等待它完成。
-        // 作用域释放发生在请求结束/测试收尾，不存在会死锁的同步上下文等待。
+        // DataSession 只有 DisposeAsync，而默认 DI 容器同步释放作用域服务。
+        // 只实现 IAsyncDisposable 会让容器直接抛 InvalidOperationException，
+        // 故这里必须给出同步路径。会话创建后没有未完成的写操作，任务通常已完成，
+        // 先用 IsCompletedSuccessfully 走快路径；仅在不常见的未完成时才取值等待
+        //（CONVENTIONS §2.2 认可的快路径豁免形态）。
         if (_session is not null)
         {
-            _session.DisposeAsync().GetAwaiter().GetResult();
+            var pending = _session.DisposeAsync();
+            if (!pending.IsCompletedSuccessfully)
+                _ = pending.AsTask().Result;
             _session = null;
         }
     }

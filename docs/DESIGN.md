@@ -43,7 +43,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │               基础设施层 (NasSystem.Infrastructure)               │
 ├─────────────────────────────────────────────────────────────────┤
-│  EF Core + SQLite  │  File System  │  JWT Service  │  Hasher     │
+│  PalORM + SQLite  │  File System  │  JWT Service  │  Hasher     │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
               ┌────────────────┼────────────────┐
@@ -76,13 +76,13 @@
 
 | 技术 | 版本 | 用途 |
 |------|------|------|
-| .NET | 10.0 | 运行时框架 |
-| ASP.NET Core | 10.0 | Web API 框架 |
-| Entity Framework Core | 10.0 | ORM 框架 |
+| .NET | 11.0 | 运行时框架 |
+| ASP.NET Core | 11.0 | Web API 框架 |
+| PalORM | 6.1.0 | ORM 框架（编译期生成，SQLite 方言） |
 | SQLite | 3.x | 嵌入式数据库 |
 | Serilog | Latest | 结构化日志 |
 | FluentValidation | 12.x | 输入验证 |
-| SignalR | 10.0 | 实时通信 |
+| SignalR | 11.0 | 实时通信 |
 
 ### 2.2 前端技术栈
 

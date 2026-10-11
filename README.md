@@ -43,8 +43,8 @@
 ## 🛠 技术栈
 
 ### 后端
-- .NET 10 (ASP.NET Core Minimal API)
-- Entity Framework Core + SQLite
+- .NET 11 (ASP.NET Core Minimal API)
+- PalORM 6.1.0 + SQLite（编译期生成的微 ORM）
 - Clean Architecture
 - SignalR (实时通信)
 - JWT 认证
