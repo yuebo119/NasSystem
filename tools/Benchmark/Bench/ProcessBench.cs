@@ -104,42 +104,51 @@ public static class ProcessBench
     private static async Task<(long WorkingSetMb, long HeapMb)> MeasureSteadyStateAsync(int port, string dbPath, string storagePath)
     {
         using var process = StartApi(port, dbPath, storagePath);
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-
-        while (DateTime.UtcNow < deadline)
+        try
         {
-            try
-            {
-                using var response = await client.GetAsync($"http://127.0.0.1:{port}{HealthPath}");
-                if (response.IsSuccessStatusCode)
-                    break;
-            }
-            catch
-            {
-                // 尚未就绪
-            }
-            await Task.Delay(200);
-        }
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
 
-        // 打一轮真实读负载，让内存进入稳态而不是仅启动态
-        for (var i = 0; i < 50; i++)
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    using var response = await client.GetAsync($"http://127.0.0.1:{port}{HealthPath}");
+                    if (response.IsSuccessStatusCode)
+                        break;
+                }
+                catch
+                {
+                    // 尚未就绪
+                }
+                await Task.Delay(200);
+            }
+
+            // 打一轮真实读负载，让内存进入稳态而不是仅启动态
+            for (var i = 0; i < 50; i++)
+            {
+                try
+                {
+                    using var _ = await client.GetAsync($"http://127.0.0.1:{port}/api/v1/files/statistics");
+                }
+                catch
+                {
+                    // 单次失败不影响采样
+                }
+            }
+
+            await Task.Delay(500);
+            process.Refresh();
+            var workingSet = process.WorkingSet64 / 1024 / 1024;
+            var heap = GC.GetGCMemoryInfo().HeapSizeBytes / 1024 / 1024;
+            return (workingSet, heap);
+        }
+        finally
         {
-            try
-            {
-                using var _ = await client.GetAsync($"http://127.0.0.1:{port}/api/v1/files/statistics");
-            }
-            catch
-            {
-                // 单次失败不影响采样
-            }
+            // Dispose Process 对象不会终止进程；不显式 Kill 会残留监听端口的宿主，
+            // 既占用端口又锁住 bin 目录让后续 build/publish 失败
+            TryKill(process);
         }
-
-        await Task.Delay(500);
-        process.Refresh();
-        var workingSet = process.WorkingSet64 / 1024 / 1024;
-        var heap = GC.GetGCMemoryInfo().HeapSizeBytes / 1024 / 1024;
-        return (workingSet, heap);
     }
 
     private static (long SizeMb, int FileCount) MeasurePublishSize()
@@ -180,6 +189,23 @@ public static class ProcessBench
         }
 
         return (bytes / 1024 / 1024, files.Length);
+    }
+
+    /// <summary>
+    /// 终止 API 子进程。<see cref="Process.Dispose"/> 只释放进程对象，
+    /// 不会结束进程本身，故采样结束必须显式 Kill。
+    /// </summary>
+    private static void TryKill(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+            // 进程已退出
+        }
     }
 
     private static Process StartApi(int port, string dbPath, string storagePath)
