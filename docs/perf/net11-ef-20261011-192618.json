@@ -1,0 +1,32 @@
+{
+  "Arm": "net11-ef",
+  "TargetFramework": ".NET 11.0.0-rc.1.26425.128",
+  "OrmDescription": "EF Core 10.0.12.0",
+  "SeedRows": 10000,
+  "Warmup": 0,
+  "Iterations": 0,
+  "Rounds": 0,
+  "ApiConcurrency": 0,
+  "ApiDurationSec": 0,
+  "Machine": {
+    "MachineName": "DESKTOP-IDCGOGO",
+    "OsDescription": "Microsoft Windows NT 10.0.19045.0",
+    "ProcessorCount": 32,
+    "DotNetVersion": "11.0.0",
+    "WorkingSetMb": 50,
+    "CapturedAtUtc": "2026-10-11T19:26:18.7088329Z"
+  },
+  "GitSha": "d655af0",
+  "CapturedAtUtc": "2026-10-11T19:26:18.7089269Z",
+  "DataCases": [],
+  "Api": null,
+  "Process": {
+    "ColdStartMsMedian": 1076.16355,
+    "ColdStartMsMin": 1066.1095,
+    "ColdStartRuns": 10,
+    "SteadyStateWorkingSetMb": 107,
+    "ManagedHeapMb": 3,
+    "PublishSizeMb": 380,
+    "PublishFileCount": 187
+  }
+}
