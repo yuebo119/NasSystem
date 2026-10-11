@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>NasSystem.Benchmark</RootNamespace>
+    <AssemblyName>NasSystem.Benchmark</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <Description>NAS 性能基准 harness — 数据集种子化、仓储级微基准、API 端到端、进程级指标</Description>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 仓储级基准走 Domain 仓储接口，实际实现由 Infrastructure 的 DI 注册决定（EF 或 PalORM） -->
+    <ProjectReference Include="..\..\src\NasSystem.Infrastructure\NasSystem.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 种子化与 ADO.NET 地板臂用裸驱动，与两个 ORM 都无关 -->
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>

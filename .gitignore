@@ -50,3 +50,9 @@ wwwroot/
 .ai/
 .cortex/
 .serena/
+
+# 基准数据集与临时库由 seed 命令按固定种子重建，不入库
+tools/Benchmark/data/
+
+# ZCode 工具运行时状态
+.zcode/
