@@ -183,7 +183,12 @@ public sealed class FileItemRepository(
 
         // 扩展名分组一次拿全（distinct 集合小，内存分类无放大风险）
         var extensionCounts = await db.QueryAsync<ExtensionCountRow>(
-            Literal($"SELECT CASE WHEN Extension IS NULL THEN NULL ELSE lower(Extension) END AS Extension, COUNT(*) AS Count FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 {filter} GROUP BY 1"),
+            Literal($"""
+                SELECT CASE WHEN Extension IS NULL THEN NULL ELSE lower(Extension) END AS Extension,
+                       COUNT(*) AS Count
+                FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 {filter}
+                GROUP BY 1
+                """),
             false,
             cancellationToken);
 

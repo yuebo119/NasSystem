@@ -72,7 +72,9 @@ public sealed class UserRepository(
             cancellationToken);
 
         var rows = await db.QueryAsync<UserRow>(
-            System.Runtime.CompilerServices.FormattableStringFactory.Create($"SELECT * FROM Users {where} ORDER BY Username LIMIT {pageSize} OFFSET {(page - 1) * pageSize}", args.ToArray()),
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                $"SELECT * FROM Users {where} ORDER BY Username LIMIT {pageSize} OFFSET {(page - 1) * pageSize}",
+                args.ToArray()),
             false,
             cancellationToken);
 

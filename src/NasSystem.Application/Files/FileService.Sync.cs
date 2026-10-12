@@ -97,7 +97,9 @@ public sealed partial class FileService
                 TotalSizeBytes = counters.TotalSize,
                 TotalSizeDisplay = FormatSize(counters.TotalSize),
                 Duration = duration,
-                Message = $"扫描完成：新增 {counters.AddedFiles} 个文件、{counters.AddedFolders} 个文件夹，删除 {counters.RemovedFiles} 个文件、{counters.RemovedFolders} 个文件夹，更新 {counters.UpdatedFiles} 个文件"
+                Message = $"扫描完成：新增 {counters.AddedFiles} 个文件、{counters.AddedFolders} 个文件夹，"
+                    + $"删除 {counters.RemovedFiles} 个文件、{counters.RemovedFolders} 个文件夹，"
+                    + $"更新 {counters.UpdatedFiles} 个文件"
             });
         }
         catch (Exception ex)
