@@ -53,7 +53,7 @@ public sealed class FileItemRepository(
             .ThenBy(f => f.Name)
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<IReadOnlyList<FileItem>> GetByStoragePoolAsync(
@@ -67,7 +67,7 @@ public sealed class FileItemRepository(
             .OrderBy(f => f.Path)
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<IReadOnlyList<FileItem>> GetDeletedItemsAsync(
@@ -87,7 +87,7 @@ public sealed class FileItemRepository(
             .OrderByDescending(f => f.DeletedAt)
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<IReadOnlyList<FileItem>> SearchAsync(
@@ -144,7 +144,7 @@ public sealed class FileItemRepository(
             .Take(500)
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<FileStatistics> GetStatisticsAsync(
@@ -228,7 +228,7 @@ public sealed class FileItemRepository(
             .OrderBy(f => f.Path)
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<long> CalculateUserUsedSpaceAsync(
@@ -285,7 +285,7 @@ public sealed class FileItemRepository(
     {
         var db = await sessions.GetAsync(cancellationToken);
         var rows = await db.From<FileItemRow>().ToListAsync(cancellationToken);
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public Task<FileItem> AddAsync(FileItem entity, CancellationToken cancellationToken = default)

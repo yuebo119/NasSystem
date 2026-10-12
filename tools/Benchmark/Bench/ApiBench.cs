@@ -56,6 +56,11 @@ public static class ApiBench
                 throw new InvalidOperationException($"API 未在 60 秒内就绪: {baseUrl}{HealthPath}");
 
             var token = await LoginAsync(baseUrl);
+
+            // 分享码从种子库取：公开分享访问是真实 NAS 里最热的只读路径之一，
+            // 且它正是仓储里唯一还有 3 次按 Id 直查的路径（B3 的优化对象），必须进基准
+            var shareCode = await FirstShareCodeAsync(workDb) ?? "share000000";
+
             var endpoints = new[]
             {
                 $"{baseUrl}/api/v1/system/health",
@@ -65,6 +70,7 @@ public static class ApiBench
                 $"{baseUrl}/api/v1/storage/overview",
                 $"{baseUrl}/api/v1/file-shares",
                 $"{baseUrl}/api/v1/users?page=1&pageSize=20",
+                $"{baseUrl}/api/v1/public-shares/{shareCode}",
             };
 
             progress?.Report($"  并发={concurrency} 时长={durationSec}s 端点={endpoints.Length}");
@@ -127,6 +133,24 @@ public static class ApiBench
             Stats.From(samples.ToList()), dict);
     }
 
+    /// <summary>从种子库取一个分享码，供公开分享端点基准使用。</summary>
+    private static async Task<string?> FirstShareCodeAsync(string dbPath)
+    {
+        try
+        {
+            await using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Mode=ReadOnly");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT ShareCode FROM FileShares ORDER BY ShareCode LIMIT 1";
+            var result = await command.ExecuteScalarAsync();
+            return result as string;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static string EndpointKey(string url)
     {
         var path = url[(url.IndexOf("/api/", StringComparison.Ordinal))..];
@@ -138,6 +162,13 @@ public static class ApiBench
             return "/api/v1/files/browse/*";
         if (path.StartsWith("/api/v1/users/", StringComparison.Ordinal))
             return "/api/v1/users/*";
+        if (path.StartsWith("/api/v1/public-shares/", StringComparison.Ordinal))
+        {
+            // 分享码是动态段：/public-shares/{code} 与 /public-shares/{code}/files 分开统计
+            var rest = path["/api/v1/public-shares/".Length..];
+            var slash = rest.IndexOf('/');
+            return slash < 0 ? "/api/v1/public-shares/*" : $"/api/v1/public-shares/*{rest[slash..]}";
+        }
         return path;
     }
 
