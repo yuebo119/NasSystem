@@ -18,6 +18,7 @@ using Scalar.AspNetCore;
 /// </summary>
 public static class ServiceCollectionExtensions
 {
+
     /// <summary>
     /// 注册 API 层服务
     /// </summary>
@@ -64,7 +65,9 @@ public static class ServiceCollectionExtensions
             });
         });
 
-        // CORS 配置 (开发环境允许前端开发服务器访问)
+        // CORS：只注册开发用默认策略（localhost 前端开发服务器）。
+        // 生产白名单在 UseApiMiddleware 里按 Cors:AllowedOrigins 就地构造，
+        // 因为注册阶段拿不到 IConfiguration
         services.AddCors(options =>
         {
             options.AddDefaultPolicy(policy =>
@@ -73,16 +76,6 @@ public static class ServiceCollectionExtensions
                       .AllowAnyMethod()
                       .AllowAnyHeader()
                       .AllowCredentials(); // SignalR 需要
-            });
-            
-            // 生产环境策略（ITM-N2）：来源白名单来自配置 Cors:AllowedOrigins，禁止 AllowAnyOrigin
-            options.AddPolicy("Production", policy =>
-            {
-                // 占位：实际来源在 UseApiMiddleware 阶段由 ConfigureCorsOrigins 动态装配
-                policy.SetIsOriginAllowed(_ => false)
-                      .AllowAnyMethod()
-                      .AllowAnyHeader()
-                      .AllowCredentials();
             });
         });
 
@@ -112,11 +105,14 @@ public static class ServiceCollectionExtensions
             });
         });
 
-        // 上传大小限制（ITM-N2）：Kestrel 全局 500MB，防未限制上传耗尽磁盘
+        // 上传大小限制（ITM-N2）：Kestrel 全局 500MB，防未限制上传耗尽磁盘。
+        // 提为常量并注入 DI：系统设置端点要把它报给前端，
+        // 两边各写一个数字必然漂移（原先这里是 500MB、端点返回 1024MB）
         services.Configure<KestrelServerOptions>(options =>
         {
-            options.Limits.MaxRequestBodySize = 500 * 1024 * 1024;
+            options.Limits.MaxRequestBodySize = UploadLimit.MaxRequestBodySize;
         });
+        services.AddSingleton(UploadLimit.Instance);
 
         // 注册 Hub 通知服务
         services.AddScoped<IHubNotificationService, HubNotificationService>();
@@ -150,8 +146,29 @@ public static class ServiceCollectionExtensions
         // 响应压缩
         app.UseResponseCompression();
 
-        // CORS
-        app.UseCors();
+        // CORS：生产环境按配置白名单构造策略，开发环境用 localhost 默认策略。
+        // 原先无参调用恒走 default，生产实际放行 localhost 白名单，
+        // 而注册的 "Production" 策略从未被引用（其注释里的 ConfigureCorsOrigins 也不存在）。
+        // 这里在中间件阶段读配置并就地构造，避开注册阶段拿不到 IConfiguration 的问题
+        if (app.Environment.IsProduction())
+        {
+            var allowedOrigins = app.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+            app.UseCors(policy =>
+            {
+                if (allowedOrigins.Length == 0)
+                    policy.SetIsOriginAllowed(_ => false);
+                else
+                    policy.WithOrigins(allowedOrigins);
+
+                policy.AllowAnyMethod()
+                      .AllowAnyHeader()
+                      .AllowCredentials();
+            });
+        }
+        else
+        {
+            app.UseCors("Default");
+        }
 
         // 限流（必须在路由解析后、端点执行前）
         app.UseRateLimiter();

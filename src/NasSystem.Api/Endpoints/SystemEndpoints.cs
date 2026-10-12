@@ -120,13 +120,15 @@ public static class SystemEndpoints
         }));
     }
 
-    private static IResult GetSystemSettings()
+    private static IResult GetSystemSettings(UploadLimit uploadLimit)
     {
-        // 返回系统配置（实际应从配置服务获取）
+        // 返回系统配置（实际应从配置服务获取）。
+        // MaxUploadSizeMB 取 Kestrel 实际生效的上限：两边必须同源，
+        // 否则前端按这里的数字做校验会被服务端真实限制打回
         return Results.Ok(ApiResponse<object>.Ok(new
         {
             DefaultStoragePool = (Guid?)null,
-            MaxUploadSizeMB = 1024,
+            MaxUploadSizeMB = uploadLimit.MaxUploadSizeMB,
             EnableCompression = false,
             EnableDeduplication = false,
             SessionTimeoutMinutes = 30,

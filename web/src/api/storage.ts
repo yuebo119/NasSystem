@@ -107,9 +107,6 @@ export const storageApi = {
   // 设置为默认存储池
   setDefault: (id: string) => http.post(`/storage/pools/${id}/default`),
 
-  // 获取磁盘列表
-  getDisks: () => http.get('/storage/disks'),
-
   // 浏览目录
   browseDirectories: (path?: string) => 
     http.get<BrowseDirectoriesResult>('/system/browse-directories', { params: { path } }),

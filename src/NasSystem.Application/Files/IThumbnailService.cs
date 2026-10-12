@@ -60,6 +60,9 @@ public sealed class ThumbnailOptions
     public int MaxWidth { get; set; } = 1920;
     public int MaxHeight { get; set; } = 1080;
     public int CacheExpirationHours { get; set; } = 168;
+    /// <summary>JPEG 编码质量（1-100）。原先硬编码在 ThumbnailService 里，
+    /// appsettings 中的同名字键无人读取，两边必然漂移</summary>
+    public int JpegQuality { get; set; } = 82;
     public string[] SupportedImageExtensions { get; set; } = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"];
     public string[] SupportedVideoExtensions { get; set; } = [".mp4", ".avi", ".mkv", ".mov"];
 }

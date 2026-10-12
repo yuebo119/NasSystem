@@ -130,11 +130,14 @@ public class PalormSemanticsTests : IDisposable
             await pools.AddAsync(pool);
             await uow.SaveChangesAsync();
 
-            // 造一条 CreatedAt 恰好在"7 天前当天中午"的记录，明显在 7 天窗口内
-            var boundaryNoon = DateTime.UtcNow.Date.AddDays(-7).AddHours(12);
+            // 造一条 CreatedAt 在 7 天前那天、且晚于精确边界时刻的记录。
+            // 注意不能直接用 UtcNow.Date.AddDays(-7).AddHours(12)：那是边界日的 12:00，
+            // 而 UtcNow.AddDays(-7) 是边界日的当前时刻（含时分秒），12:00 早于它，
+            // 记录本就在窗口外，断言会假红。取边界日的 23:00 才稳定落在窗口内
+            var boundarySameDay = DateTime.UtcNow.Date.AddDays(-7).AddHours(23);
             var f = FileItem.CreateFile(
                 "boundary.txt", "/boundary.txt", "/mnt/p/boundary.txt", 1, "text/plain", pool.Id, user.Id);
-            typeof(FileItem).GetProperty("CreatedAt")!.SetValue(f, boundaryNoon);
+            typeof(FileItem).GetProperty("CreatedAt")!.SetValue(f, boundarySameDay);
             await fileItems.AddAsync(f);
             await uow.SaveChangesAsync();
 

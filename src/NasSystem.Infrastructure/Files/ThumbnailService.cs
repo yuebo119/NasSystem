@@ -254,7 +254,7 @@ public class ThumbnailService : IThumbnailService
         }
 
         // 对于图片文件，使用简单的缩放
-        return await GenerateImageThumbnailAsync(filePath, targetWidth, targetHeight, cancellationToken);
+        return await GenerateImageThumbnailAsync(filePath, targetWidth, targetHeight, _options.JpegQuality, cancellationToken);
     }
 
     /// <summary>
@@ -265,6 +265,7 @@ public class ThumbnailService : IThumbnailService
         string filePath,
         int targetWidth,
         int targetHeight,
+        int jpegQuality,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -287,7 +288,7 @@ public class ThumbnailService : IThumbnailService
             new SkiaSharp.SKSamplingOptions(SkiaSharp.SKFilterMode.Linear))
             ?? throw new InvalidOperationException("图像缩放失败");
         using var image = SkiaSharp.SKImage.FromBitmap(resized);
-        using var encoded = image.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, 82);
+        using var encoded = image.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, jpegQuality);
 
         return Task.FromResult(encoded.ToArray());
     }

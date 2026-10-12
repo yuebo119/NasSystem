@@ -72,7 +72,7 @@ echo     - API 接口: /api/v1/*
 echo     - API 文档: /scalar/v1
 echo.
 echo   默认账号: admin
-echo   默认密码: Admin@123
+echo   默认密码: admin123
 echo.
 echo   按任意键打开浏览器 (开发模式)...
 pause >nul
