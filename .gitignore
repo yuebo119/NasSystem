@@ -65,3 +65,7 @@ tools/Benchmark/data/
 
 # ZCode 工具运行时状态
 .zcode/
+
+# nginx 自签证书与 ACME 挑战文件由部署时生成，不入库
+/certs/
+/certbot-webroot/

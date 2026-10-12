@@ -1,0 +1,9 @@
+# 强制 Shell 脚本使用 LF 换行。
+# 背景：.ai/lessons.md:599 记载 .sh 文件曾因 eol=crlf 在 Git Bash 容忍、
+# 在 CI 的 sh 下报 "invalid option name" / "command not found $"。
+# 该缺陷本地难复现（Git Bash 兼容 CRLF），必须靠文件级约束机械兜住。
+*.sh text eol=lf
+
+# Windows 批处理保持 CRLF，避免 start.bat/stop.bat 在 cmd.exe 下解析异常
+*.bat text eol=crlf
+*.cmd text eol=crlf
