@@ -1,0 +1,114 @@
+{
+  "Arm": "net11-palorm",
+  "TargetFramework": ".NET 11.0.0-rc.1.26425.128",
+  "OrmDescription": "PalORM 6.4.1.0",
+  "SeedRows": 10000,
+  "Warmup": 0,
+  "Iterations": 0,
+  "Rounds": 0,
+  "ApiConcurrency": 8,
+  "ApiDurationSec": 15,
+  "Machine": {
+    "MachineName": "DESKTOP-IDCGOGO",
+    "OsDescription": "Microsoft Windows NT 10.0.19045.0",
+    "ProcessorCount": 32,
+    "DotNetVersion": "11.0.0",
+    "WorkingSetMb": 75,
+    "CapturedAtUtc": "2026-10-12T03:43:43.5226344Z"
+  },
+  "GitSha": "0821111",
+  "CapturedAtUtc": "2026-10-12T03:43:43.5227403Z",
+  "DataCases": [],
+  "Api": {
+    "BaseUrl": "http://127.0.0.1:6100",
+    "Concurrency": 8,
+    "DurationSec": 15,
+    "TotalRequests": 195736,
+    "Errors": 5,
+    "Rps": 13046.11607008215,
+    "LatencyMs": {
+      "Min": 0.1393,
+      "P50": 0.5739,
+      "P95": 0.9539,
+      "P99": 1.2893,
+      "Mean": 0.6114402465565987,
+      "Max": 63.0276,
+      "Count": 195736
+    },
+    "ByEndpoint": {
+      "/api/v1/public-shares/*": {
+        "Min": 0.2739,
+        "P50": 0.5926,
+        "P95": 0.9024,
+        "P99": 1.2485,
+        "Mean": 0.6142730382540427,
+        "Max": 61.6652,
+        "Count": 24468
+      },
+      "/api/v1/users": {
+        "Min": 0.2625,
+        "P50": 0.6394,
+        "P95": 1.0346,
+        "P99": 1.4161,
+        "Mean": 0.6642782196427836,
+        "Max": 47.2235,
+        "Count": 24467
+      },
+      "/api/v1/files/browse/*": {
+        "Min": 0.2571,
+        "P50": 0.5712,
+        "P95": 0.8551,
+        "P99": 1.2068,
+        "Mean": 0.5934689949728169,
+        "Max": 59.8012,
+        "Count": 24467
+      },
+      "/api/v1/system/health": {
+        "Min": 0.1393,
+        "P50": 0.3661,
+        "P95": 0.5741,
+        "P99": 0.9074,
+        "Mean": 0.3812817026320116,
+        "Max": 28.2974,
+        "Count": 24468
+      },
+      "/api/v1/files/search": {
+        "Min": 0.3546,
+        "P50": 0.7071,
+        "P95": 1.0471,
+        "P99": 1.4196,
+        "Mean": 0.7334712277260058,
+        "Max": 61.5446,
+        "Count": 24468
+      },
+      "/api/v1/storage/overview": {
+        "Min": 0.3065,
+        "P50": 0.6061,
+        "P95": 0.8959,
+        "P99": 1.2445,
+        "Mean": 0.6276838796697468,
+        "Max": 44.7004,
+        "Count": 24466
+      },
+      "/api/v1/files/statistics": {
+        "Min": 0.2519,
+        "P50": 0.5592,
+        "P95": 0.8578,
+        "P99": 1.2183,
+        "Mean": 0.5819731464072607,
+        "Max": 44.171,
+        "Count": 24466
+      },
+      "/api/v1/file-shares": {
+        "Min": 0.3066,
+        "P50": 0.6683,
+        "P95": 1.0203,
+        "P99": 1.401,
+        "Mean": 0.695098945475355,
+        "Max": 63.0276,
+        "Count": 24466
+      }
+    }
+  },
+  "Process": null
+}
