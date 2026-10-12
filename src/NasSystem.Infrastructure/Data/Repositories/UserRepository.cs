@@ -51,13 +51,18 @@ public sealed class UserRepository(
         var conditions = new List<string>();
         var args = new List<object>();
 
-        // 搜索过滤：EF 的 string.Contains 翻译为 LIKE '%' || @p || '%'
-        if (!string.IsNullOrWhiteSpace(searchTerm))
-        {
-            var term = searchTerm.ToLowerInvariant();
-            conditions.Add("(lower(Username) LIKE {0} OR (DisplayName IS NOT NULL AND lower(DisplayName) LIKE {0}) OR (Email IS NOT NULL AND lower(Email) LIKE {0}))");
-            args.Add("%" + EscapeLike(term) + "%");
-        }
+            // 搜索过滤：EF 的 string.Contains 翻译为 LIKE '%' || @p || '%'
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var term = searchTerm.ToLowerInvariant();
+                // 三处 LIKE 都要配转义子句。ESCAPE '#' 是字面量文本直接写进格式串：
+                // 这里要交给 FormattableStringFactory 当格式串，插值会被算进参数位
+            conditions.Add(
+                "(lower(Username) LIKE {0} ESCAPE '#'" +
+                " OR (DisplayName IS NOT NULL AND lower(DisplayName) LIKE {0} ESCAPE '#')" +
+                " OR (Email IS NOT NULL AND lower(Email) LIKE {0} ESCAPE '#'))");
+                args.Add("%" + EscapeLike(term) + "%");
+            }
 
         var where = conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : "";
 
@@ -110,5 +115,5 @@ public sealed class UserRepository(
     }
 
     private static string EscapeLike(string value) =>
-        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+        value.Replace("#", "##").Replace("%", "#%").Replace("_", "#_");
 }

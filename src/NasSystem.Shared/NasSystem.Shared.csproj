@@ -6,9 +6,7 @@
     <Description>NAS System 共享库 - 跨层通用类型、扩展方法和常量</Description>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- 依赖注入抽象 -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-  </ItemGroup>
+  <!-- DependencyInjection.Abstractions 自 net11 SDK 起自动提供，
+       显式引用会报 NU1510，故移除 -->
 
 </Project>

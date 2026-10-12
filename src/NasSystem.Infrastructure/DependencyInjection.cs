@@ -7,6 +7,7 @@ namespace NasSystem.Infrastructure;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NasSystem.Application.Common;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Repositories;
@@ -127,8 +128,42 @@ public static class DependencyInjection
             CREATE UNIQUE INDEX IF NOT EXISTS IX_FileVersions_FileItemId_VersionNumber ON FileVersions(FileItemId, VersionNumber);
             """));
 
+        // 建表后校验 schema 与编译期生成的模型是否一致。
+        // MigrateAsync 是幂等的，表已存在时不会重建，因而"库里少了列/索引"这类漂移
+        // 它不会报，只在查询时才以"no such column"暴露。启动时主动校验能把问题
+        // 提前到启动日志，而不是等用户点某个端点才 500。
+        await LogSchemaDriftAsync(db, logger);
+
         // 初始化种子数据
         await SeedDataAsync(db);
+    }
+
+    /// <summary>
+    /// 对 5 个行模型逐个跑 schema 校验，把漂移项写进启动日志。
+    /// </summary>
+    /// <remarks>
+    /// 漂移不阻断启动：存量库可能故意多一张表（如已删除的 FilePermissions 遗留），
+    /// 那是数据清理问题不是阻塞问题，所以只 WARN。
+    /// </remarks>
+    private static async Task LogSchemaDriftAsync(
+        DataSession<SqliteProvider> db,
+        Microsoft.Extensions.Logging.ILogger logger)
+    {
+        var drift = new List<string>();
+        drift.AddRange(await db.ValidateSchemaAsync<FileItemRow>());
+        drift.AddRange(await db.ValidateSchemaAsync<UserRow>());
+        drift.AddRange(await db.ValidateSchemaAsync<StoragePoolRow>());
+        drift.AddRange(await db.ValidateSchemaAsync<FileShareRow>());
+        drift.AddRange(await db.ValidateSchemaAsync<FileVersionRow>());
+
+        if (drift.Count == 0)
+        {
+            logger.LogInformation("PalORM schema 校验通过：5 个实体与数据库一致");
+            return;
+        }
+
+        foreach (var item in drift)
+            logger.LogWarning("PalORM schema 漂移: {Drift}", item);
     }
 
     private static async Task SeedDataAsync(DataSession<SqliteProvider> db)

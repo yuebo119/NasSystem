@@ -1,0 +1,32 @@
+{
+  "Arm": "net11-palorm",
+  "TargetFramework": ".NET 11.0.0-rc.1.26425.128",
+  "OrmDescription": "PalORM 6.4.1.0",
+  "SeedRows": 10000,
+  "Warmup": 0,
+  "Iterations": 0,
+  "Rounds": 0,
+  "ApiConcurrency": 0,
+  "ApiDurationSec": 0,
+  "Machine": {
+    "MachineName": "DESKTOP-IDCGOGO",
+    "OsDescription": "Microsoft Windows NT 10.0.19045.0",
+    "ProcessorCount": 32,
+    "DotNetVersion": "11.0.0",
+    "WorkingSetMb": 51,
+    "CapturedAtUtc": "2026-10-12T02:45:00.8744206Z"
+  },
+  "GitSha": "8806f76",
+  "CapturedAtUtc": "2026-10-12T02:45:00.874491Z",
+  "DataCases": [],
+  "Api": null,
+  "Process": {
+    "ColdStartMsMedian": 561.81705,
+    "ColdStartMsMin": 554.5491,
+    "ColdStartRuns": 10,
+    "SteadyStateWorkingSetMb": 89,
+    "ManagedHeapMb": 3,
+    "PublishSizeMb": 411,
+    "PublishFileCount": 193
+  }
+}

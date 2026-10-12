@@ -53,7 +53,7 @@ public sealed class FileItemRepository(
             .ThenBy(f => f.Name)
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<IReadOnlyList<FileItem>> GetByStoragePoolAsync(
@@ -67,7 +67,7 @@ public sealed class FileItemRepository(
             .OrderBy(f => f.Path)
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<IReadOnlyList<FileItem>> GetDeletedItemsAsync(
@@ -87,7 +87,7 @@ public sealed class FileItemRepository(
             .OrderByDescending(f => f.DeletedAt)
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<IReadOnlyList<FileItem>> SearchAsync(
@@ -101,7 +101,7 @@ public sealed class FileItemRepository(
     {
         var db = await sessions.GetAsync(cancellationToken);
         var query = db.From<FileItemRow>()
-            .Where($"IsDeleted = 0 AND Name LIKE {'%' + EscapeLike(searchTerm) + '%'}");
+            .Where($"IsDeleted = 0 AND Name LIKE {'%' + EscapeLike(searchTerm) + '%'} ESCAPE '#'");
 
         if (ownerId.HasValue)
             query = query.Where($"OwnerId = {ownerId.Value}");
@@ -111,7 +111,7 @@ public sealed class FileItemRepository(
         if (!string.IsNullOrEmpty(basePath))
         {
             var normalizedBasePath = NormalizePath(basePath);
-            query = query.Where($"Path LIKE {EscapeLike(normalizedBasePath) + '%'}");
+            query = query.Where($"Path LIKE {EscapeLike(normalizedBasePath) + '%'} ESCAPE '#'");
         }
 
         if (isFolder.HasValue)
@@ -144,7 +144,7 @@ public sealed class FileItemRepository(
             .Take(500)
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<FileStatistics> GetStatisticsAsync(
@@ -224,11 +224,11 @@ public sealed class FileItemRepository(
             return [];
 
         var rows = await db.From<FileItemRow>()
-            .Where($"Path LIKE {EscapeLike(parentPath + "/") + '%'} AND IsDeleted = 0")
+            .Where($"Path LIKE {EscapeLike(parentPath + "/") + '%'} ESCAPE '#' AND IsDeleted = 0")
             .OrderBy(f => f.Path)
             .ToListAsync(cancellationToken);
 
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<long> CalculateUserUsedSpaceAsync(
@@ -285,7 +285,7 @@ public sealed class FileItemRepository(
     {
         var db = await sessions.GetAsync(cancellationToken);
         var rows = await db.From<FileItemRow>().ToListAsync(cancellationToken);
-        return rows.Select(r => r.ToDomain()).ToList();
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public Task<FileItem> AddAsync(FileItem entity, CancellationToken cancellationToken = default)
@@ -313,8 +313,17 @@ public sealed class FileItemRepository(
     /// 转义 LIKE 通配符。EF 翻译 <c>string.Contains</c> 时会转义 % 与 _，
     /// 手写 SQL 必须自己转义，否则用户输入的下划线被当成任意单字符匹配。
     /// </summary>
+    /// <remarks>
+    /// 两个容易踩的点：
+    /// 一、SQLite 的 LIKE <b>没有默认转义字符</b>，只转义模式不配 ESCAPE 子句的话，
+    /// 通配符照样生效，转义形同虚设。
+    /// 二、转义字符选 <c>#</c> 而不是反斜杠。反斜杠在 C# 字符串里本身要转义，
+    /// 多层嵌套后极易写成"运行期是空字符"的 ESCAPE ''，那种错法 SQLite 直接报语法错误；
+    /// # 在 C# 字符串里无需转义，写出来就是运行期的样子。
+    /// 每个用到这里产物的 LIKE 都必须配 <c>ESCAPE '#'</c> 子句（已由行为测试锁住）。
+    /// </remarks>
     private static string EscapeLike(string value) =>
-        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+        value.Replace("#", "##").Replace("%", "#%").Replace("_", "#_");
 
     /// <summary>
     /// 把已拼好的 SQL 包成无插值的 <see cref="FormattableString"/>。
