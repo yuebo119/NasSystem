@@ -31,26 +31,24 @@
   
   <!-- 全局包版本管理（2026-09-29 统一升级至各包最新稳定版） -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="11.0.0-rc.1.26425.128" />
     <!-- Serilog 由 Api 层配置（Program.cs 的 UseSerilog），Infrastructure 不直接用 -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.17.10" />
-    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="11.0.0-rc.1.26425.128" />
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="Moq" Version="4.21.0" />
     <PackageVersion Include="FluentAssertions" Version="8.11.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="coverlet.collector" Version="10.1.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0-rc.1.26425.128" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
 
     <!-- 数据访问：PalORM。Core/SourceGen 由 Sqlite 方言包传递，此处显式钉版本 -->

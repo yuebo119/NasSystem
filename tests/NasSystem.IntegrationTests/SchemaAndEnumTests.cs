@@ -301,6 +301,84 @@ public class SchemaAndEnumTests : IDisposable
         }
     }
 
+    [Fact]
+    public void PalormCreatedDatabase_HasNoEfMigrationsHistoryTable()
+    {
+        // PalORM 的 MigrateAsync 按 [Table] 建表，不碰 EF 的账本表。
+        // 新建库若冒出 __EFMigrationsHistory，说明种子化混进了 EF 时代的产物。
+        CountTable(_dbPath, "__EFMigrationsHistory").Should().Be(0);
+    }
+
+    [Fact]
+    public async Task LegacyEfDatabase_InitializesNormally_AndMigrationsHistoryIsLeftAlone()
+    {
+        // 存量库（EF 时代建的）带 __EFMigrationsHistory。PalORM 初始化必须照常完成，
+        // 且不擅自删表：删表是用户的数据清理决策，不是框架的启动副作用。
+        // 这条锁的是"升级路径无损"，与上一行锁的"新建库干净"互为两面。
+        var legacyPath = Path.Combine(Path.GetTempPath(), $"LegacyEf_{Guid.NewGuid():N}.db");
+        try
+        {
+            await using (var connection = new SqliteConnection($"Data Source={legacyPath}"))
+            {
+                await connection.OpenAsync();
+                using var create = connection.CreateCommand();
+                create.CommandText =
+                    "CREATE TABLE __EFMigrationsHistory (MigrationId TEXT PRIMARY KEY, ProductVersion TEXT NOT NULL)";
+                await create.ExecuteNonQueryAsync();
+            }
+
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:DefaultConnection"] = $"Data Source={legacyPath}",
+                })
+                .Build();
+            var services = new ServiceCollection();
+            services.AddSingleton<Microsoft.Extensions.Configuration.IConfiguration>(config);
+            services.AddLogging();
+            services.AddInfrastructureServices(config);
+            using var provider = services.BuildServiceProvider();
+            await provider.InitializeDatabaseAsync();
+
+            // 初始化完成后：EF 账本表还在，PalORM 自己的 5 张表也建出来了
+            CountTable(legacyPath, "__EFMigrationsHistory").Should().Be(1);
+            CountTable(legacyPath, "FileItems").Should().Be(1);
+
+            // 且数据通路真的能用（不只是建表成功）：管理员种子已落库
+            using var scope = provider.CreateScope();
+            var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+            var admin = await users.GetByUsernameAsync("admin");
+            admin.Should().NotBeNull();
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            foreach (var suffix in new[] { "", "-shm", "-wal" })
+            {
+                try
+                {
+                    if (File.Exists(legacyPath + suffix))
+                        File.Delete(legacyPath + suffix);
+                }
+                catch
+                {
+                    // 句柄未释放时留下，由系统临时目录清理
+                }
+            }
+        }
+    }
+
+    private static long CountTable(string dbPath, string tableName)
+    {
+        using var connection = new SqliteConnection($"Data Source={dbPath}");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name";
+        command.Parameters.AddWithValue("$name", tableName);
+        return Convert.ToInt64(command.ExecuteScalar());
+    }
+
     public void Dispose()
     {
         _provider.Dispose();

@@ -78,27 +78,37 @@ public static class ProcessBench
 
     private static async Task<double> MeasureColdStartAsync(int port, string dbPath, string storagePath)
     {
+        // 必须显式 Kill：using 只释放句柄不终止进程。历史上靠 using 收尾时
+        // 每次冷启动泄漏一个 API 进程，10 轮攒 10 个，既占端口又锁住 bin 目录
+        // 让后续 build 报 MSB3027（2026-10-12 实测）。
         using var process = StartApi(port, dbPath, storagePath);
-        var start = Stopwatch.GetTimestamp();
-        var deadline = start + Stopwatch.Frequency * 60;
-
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-        while (Stopwatch.GetTimestamp() < deadline)
+        try
         {
-            try
-            {
-                using var response = await client.GetAsync($"http://127.0.0.1:{port}{HealthPath}");
-                if (response.IsSuccessStatusCode)
-                    return Stopwatch.GetElapsedTime(start).TotalMilliseconds;
-            }
-            catch
-            {
-                // 进程尚未监听
-            }
-            await Task.Delay(50);
-        }
+            var start = Stopwatch.GetTimestamp();
+            var deadline = start + Stopwatch.Frequency * 60;
 
-        throw new InvalidOperationException("冷启动测量超时（60 秒）");
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            while (Stopwatch.GetTimestamp() < deadline)
+            {
+                try
+                {
+                    using var response = await client.GetAsync($"http://127.0.0.1:{port}{HealthPath}");
+                    if (response.IsSuccessStatusCode)
+                        return Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                }
+                catch
+                {
+                    // 进程尚未监听
+                }
+                await Task.Delay(50);
+            }
+
+            throw new InvalidOperationException("冷启动测量超时（60 秒）");
+        }
+        finally
+        {
+            TryKill(process);
+        }
     }
 
     private static async Task<(long WorkingSetMb, long HeapMb)> MeasureSteadyStateAsync(int port, string dbPath, string storagePath)

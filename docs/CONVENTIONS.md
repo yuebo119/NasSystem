@@ -58,7 +58,7 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 ### 现状基线（2026-08-25 更新）
 
 - ✅ WAL/busy_timeout/synchronous 启动配置已落地；FileItems.Path 唯一部分索引 + ShareCode/Username/版本号唯一索引已兜底（旧库经幂等 DDL 迁移）
-- ⏳ 应用层 SqliteException(19) 冲突转译为业务错误待做（当前依赖前置查重 + 唯一索引硬约束）
+- ✅ 应用层数据完整性冲突转译为业务错误已落地（PalormUnitOfWork 按主码 19 + 扩展码 787/1299/275 转译为 UniqueConstraintException，覆盖唯一/外键/NOT NULL/CHECK 四类）
 
 ## §4 安全
 
@@ -94,7 +94,7 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 | 6.1 | 框架 xUnit + Moq + FluentAssertions；属性 `[Fact]` / `[Theory]` + `[InlineData]` |
 | 6.2 | 测试方法命名 `Method_Scenario_ExpectedResult` 三段式（集成测试可 `Provider_Operation_Behavior`）；存量 6 个老式命名（BasicIntegrationTests.cs）只减不增 |
 | 6.3 | 新增/修改的生产代码必须有对应测试（正向 + 边界/异常各 ≥1） |
-| 6.4 | 文件系统测试用临时目录 + try/finally 清理；SQLite 内存库 `using var` 自动释放 |
+| 6.4 | 文件系统测试用临时目录 + try/finally 清理；SQLite 用每测试类独立的临时文件库（PalORM 无内存 provider），`using var`/Dispose 自动释放 |
 | 6.5 | 断言验证行为不验证实现；优先属性断言而非裸 NotNull |
 | 6.6 | 测试间无状态依赖，不依赖执行顺序 |
 

@@ -33,8 +33,11 @@ COPY src/NasSystem.Domain/NasSystem.Domain.csproj src/NasSystem.Domain/
 COPY src/NasSystem.Infrastructure/NasSystem.Infrastructure.csproj src/NasSystem.Infrastructure/
 COPY src/NasSystem.Shared/NasSystem.Shared.csproj src/NasSystem.Shared/
 
-# 还原依赖
-RUN dotnet restore
+# 还原依赖。必须显式指定工程而非裸 `dotnet restore`：
+# .dockerignore 排除了 tests 与 tools，而 NasSystem.sln 引用了这两个目录下的工程，
+# 裸 restore 会以 MSB3202 "未找到项目文件" 失败（2026-10-12 实测复现）。
+# 指定 API 工程会连带还原它的全部项目依赖链，行为与还原整个 src 子集等价
+RUN dotnet restore src/NasSystem.Api/NasSystem.Api.csproj
 
 # 复制所有源码
 COPY src/ src/

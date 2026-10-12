@@ -135,8 +135,34 @@ public static class DependencyInjection
         // 提前到启动日志，而不是等用户点某个端点才 500。
         await LogSchemaDriftAsync(db, logger);
 
+        await LogEfResidueAsync(db, logger);
+
         // 初始化种子数据
         await SeedDataAsync(db);
+    }
+
+    /// <summary>
+    /// 检测 EF 时代的残留表 __EFMigrationsHistory，只告知不自动删。
+    /// </summary>
+    /// <remarks>
+    /// PalORM 不读这张表，MigrateAsync 也不会碰它，存量库里它会一直留着。
+    /// 不自动 DROP 的理由：那是用户库里的表，删表是数据清理决策不是启动副作用
+    /// （AGENTS.md P0 #5 破坏性操作确认）。新建库本就不该有它，真有说明种子化
+    /// 脚本混用了 EF 时代的产物，值得在启动日志里显形。
+    /// </remarks>
+    private static async Task LogEfResidueAsync(
+        DataSession<SqliteProvider> db,
+        Microsoft.Extensions.Logging.ILogger logger)
+    {
+        var efHistory = await db.ScalarAsync<long>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '__EFMigrationsHistory'"),
+            false);
+
+        if (efHistory > 0)
+            logger.LogInformation(
+                "检测到 __EFMigrationsHistory 表：EF Core 时代的迁移账本，PalORM 不读取也不维护它，" +
+                "留着不影响运行；确认无需回退到 EF 后可手工 DROP TABLE __EFMigrationsHistory 清理");
     }
 
     /// <summary>
