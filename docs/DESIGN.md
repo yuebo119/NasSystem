@@ -78,7 +78,7 @@
 |------|------|------|
 | .NET | 11.0 | 运行时框架 |
 | ASP.NET Core | 11.0 | Web API 框架 |
-| PalORM | 6.1.0 | ORM 框架（编译期生成，SQLite 方言） |
+| PalORM | 6.4.1 | ORM 框架（编译期生成，SQLite 方言） |
 | SQLite | 3.x | 嵌入式数据库 |
 | Serilog | Latest | 结构化日志 |
 | FluentValidation | 12.x | 输入验证 |

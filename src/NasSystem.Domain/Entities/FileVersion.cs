@@ -75,9 +75,6 @@ public class FileVersion
     /// </summary>
     public User? CreatedByUser { get; private set; }
 
-    // EF Core 需要的无参构造函数
-    private FileVersion() { }
-
     /// <summary>
     /// 创建新的文件版本
     /// </summary>

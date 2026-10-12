@@ -288,13 +288,5 @@ static string OrmLabel()
         return $"PalORM {version}";
     }
 
-    if (loaded.Any(n => n is not null && n.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal)))
-    {
-        var version = AppDomain.CurrentDomain.GetAssemblies()
-            .FirstOrDefault(a => a.GetName().Name == "Microsoft.EntityFrameworkCore")?
-            .GetName().Version?.ToString() ?? "?";
-        return $"EF Core {version}";
-    }
-
     return "未知（仓储接口未被解析过）";
 }

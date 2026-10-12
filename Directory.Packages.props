@@ -3,12 +3,10 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <!-- 修复 Hangfire.MemoryStorage 传递依赖的安全漏洞 -->
     <!-- PalORM.Sqlite 依赖 Microsoft.Data.Sqlite.Core 11.0.0-rc.1，
          此处统一到同一版本，避免 CPM 把版本钉在 10.0.12 造成还原冲突。
-         tools/DbMigration 只做基础 SQLite 操作，RC 版本可用。 -->
+         tools/Benchmark 的种子化与 ADO.NET 地板臂也用这个版本。 -->
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0-rc.1.26425.128" />
-    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="SkiaSharp" Version="4.153.0" />
     <PackageVersion Include="coverlet.MTP" Version="10.1.0" />
   </ItemGroup>

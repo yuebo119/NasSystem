@@ -54,9 +54,6 @@ public sealed class StoragePool : Entity
     /// </summary>
     public long? MaxCapacityBytes { get; private set; }
 
-    // EF Core 需要的无参构造函数
-    private StoragePool() { }
-
     /// <summary>
     /// 创建存储池
     /// </summary>

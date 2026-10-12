@@ -10,6 +10,9 @@ namespace NasSystem.Infrastructure.Persistence;
 
 /// <summary>FileShares 表的行模型。设计动因见 <see cref="FileItemRow"/> 的remarks。</summary>
 [Table("FileShares")]
+[Index("IX_FileShares_FileItemId", nameof(FileItemId))]
+[Index("IX_FileShares_CreatedByUserId", nameof(CreatedByUserId))]
+[Index("IX_FileShares_ShareCode", nameof(ShareCode), Unique = true)]
 public partial class FileShareRow
 {
     [Key(AutoIncrement = false)]

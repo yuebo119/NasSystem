@@ -41,6 +41,12 @@
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.17.10" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
+    <!-- Serilog 由 Api 层配置（Program.cs 的 UseSerilog），Infrastructure 不直接用 -->
+    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="Moq" Version="4.21.0" />
     <PackageVersion Include="FluentAssertions" Version="8.11.0" />

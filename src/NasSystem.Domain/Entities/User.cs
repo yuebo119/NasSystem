@@ -69,9 +69,6 @@ public sealed class User : Entity
     /// </summary>
     public string HomeDirectory { get; private set; } = string.Empty;
 
-    // EF Core 需要的无参构造函数
-    private User() { }
-
     /// <summary>
     /// 创建新用户
     /// </summary>

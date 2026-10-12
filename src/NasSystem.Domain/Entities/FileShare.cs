@@ -68,9 +68,6 @@ public sealed class FileShare : Entity
     public FileItem? FileItem { get; private set; }
     public User? CreatedByUser { get; private set; }
 
-    // EF Core 需要的无参构造函数
-    private FileShare() { }
-
     /// <summary>
     /// 创建文件分享
     /// </summary>

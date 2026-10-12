@@ -9,6 +9,10 @@ using PalORM;
 
 /// <summary>FileVersions 表的行模型。设计动因见 <see cref="FileItemRow"/> 的remarks。</summary>
 [Table("FileVersions")]
+[Index("IX_FileVersions_FileItemId", nameof(FileItemId))]
+[Index("IX_FileVersions_FileItemId_IsCurrent", nameof(FileItemId), nameof(IsCurrent))]
+[Index("IX_FileVersions_CreatedByUserId", nameof(CreatedByUserId))]
+[Index("IX_FileVersions_FileItemId_VersionNumber", nameof(FileItemId), nameof(VersionNumber), Unique = true)]
 public partial class FileVersionRow
 {
     [Key(AutoIncrement = false)]

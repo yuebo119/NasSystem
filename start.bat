@@ -10,7 +10,7 @@ echo.
 :: 检查 .NET SDK
 where dotnet >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [错误] 未找到 .NET SDK，请先安装 .NET 10 SDK
+    echo [错误] 未找到 .NET SDK，请先安装 .NET 11 SDK
     pause
     exit /b 1
 )

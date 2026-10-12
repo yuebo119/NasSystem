@@ -352,26 +352,12 @@ public abstract class ApiTestBase : IClassFixture<WebApplicationFactory<Program>
     protected readonly HttpClient Client;
     protected readonly WebApplicationFactory<Program> Factory;
 
-    protected ApiTestBase(WebApplicationFactory<Program> factory)
+    protected ApiTestBase(NasSystemWebApplicationFactory factory)
     {
-        Factory = factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
-            {
-                // 使用独立临时 SQLite 文件库
-                var descriptor = services.SingleOrDefault(
-                    d => d.ServiceType == typeof(DbContextOptions<NasDbContext>));
-                if (descriptor != null)
-                    services.Remove(descriptor);
-
-                services.AddDbContext<NasDbContext>(options =>
-                {
-                    options.UseSqlite($"Data Source={tempFileDbPath}");
-                });
-            });
-        });
-
-        Client = Factory.CreateClient();
+        // 工厂在 ConfigureWebHost 里摘掉按生产连接串注册的 PalormSessionHolder，
+        // 换成指向本工厂临时库文件的实例；库名每工厂唯一，测试间天然隔离
+        Factory = factory;
+        Client = factory.CreateClient();
     }
 
     protected async Task<string> GetAuthTokenAsync()

@@ -115,17 +115,18 @@ public static class DependencyInjection
         // 建表（幂等）。ITM-N7 的 SQLite 并发三件套由 provider 在连接级自动设置
         await db.MigrateAsync();
 
-        // 两个部分索引生成器不产出 WHERE 过滤条件，手工补：
-        // Path 唯一部分索引兜底 TOCTOU（软删记录不占用路径），Path 前缀 NOCASE 索引
-        // 服务后代遍历的 LIKE 'prefix%'。IF NOT EXISTS 保证幂等。
+        // 带 WHERE 过滤条件的部分索引，生成器不产出，手工补。
+        // 普通索引已随行模型的 [Index] 声明交给 MigrateAsync，不在这里重复。
+        // 三条分别是：Path 唯一部分索引（TOCTOU 兜底，软删记录不占路径）、
+        // Path 前缀 NOCASE 部分索引（服务后代遍历的 LIKE 'prefix%'）、
+        // Email 唯一部分索引（NULL 邮箱不参与唯一性，否则第二个空邮箱用户插不进去）。
+        // IF NOT EXISTS 保证幂等，存量库重复执行无副作用。
         await db.ExecuteAsync(
             System.Runtime.CompilerServices.FormattableStringFactory.Create(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS IX_FileItems_Path ON FileItems(Path) WHERE [IsDeleted] = 0;
             CREATE INDEX IF NOT EXISTS IX_FileItems_Path_Prefix ON FileItems(Path COLLATE NOCASE) WHERE "IsDeleted" = 0;
-            CREATE UNIQUE INDEX IF NOT EXISTS IX_FileShares_ShareCode ON FileShares(ShareCode);
-            CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Username ON Users(Username);
-            CREATE UNIQUE INDEX IF NOT EXISTS IX_FileVersions_FileItemId_VersionNumber ON FileVersions(FileItemId, VersionNumber);
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Email ON Users(Email) WHERE [Email] IS NOT NULL;
             """));
 
         // 建表后校验 schema 与编译期生成的模型是否一致。

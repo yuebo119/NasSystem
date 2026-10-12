@@ -18,8 +18,18 @@ namespace NasSystem.Infrastructure.Persistence;
 /// CONVENTIONS §1.1 与 gate NAS-G1 的分层红线不受影响。
 /// 列名一律显式声明：存量库是 PascalCase，而 PalORM 6.0 起删除了 NamingConvention，
 /// 默认按属性名映射，显式写出可读且不依赖默认行为。
+/// 索引随模型声明（而非手写 DDL）：迁移时漏声明会让新建库缺索引，
+/// 按 OwnerId/Hash/ParentId 的查询退化成全表 SCAN，而功能完全正常、基准也测不出来。
 /// </remarks>
 [Table("FileItems")]
+// Path 唯一部分索引与 Path 前缀 NOCASE 部分索引带 WHERE 过滤条件，生成器不产出，
+// 由 InitializeDatabaseAsync 手工补；这里若再声明同名索引会重名冲突
+[Index("IX_FileItems_Hash", nameof(Hash))]
+[Index("IX_FileItems_IsDeleted", nameof(IsDeleted))]
+[Index("IX_FileItems_OwnerId", nameof(OwnerId))]
+[Index("IX_FileItems_ParentId", nameof(ParentId))]
+[Index("IX_FileItems_ParentId_Name", nameof(ParentId), nameof(Name))]
+[Index("IX_FileItems_StoragePoolId", nameof(StoragePoolId))]
 public partial class FileItemRow
 {
     /// <summary>Guid 主键必须显式 AutoIncrement=false，否则 PALORM022 报错且实体被静默跳过。</summary>

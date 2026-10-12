@@ -100,9 +100,6 @@ public sealed class FileItem : Entity
     public FileItem? Parent { get; private set; }
     public ICollection<FileItem> Children { get; private set; } = [];
 
-    // EF Core 需要的无参构造函数
-    private FileItem() { }
-
     /// <summary>
     /// 创建文件夹
     /// </summary>

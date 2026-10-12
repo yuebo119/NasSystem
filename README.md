@@ -1,6 +1,6 @@
 # NAS System
 
-一个现代化的网络附加存储 (NAS) 系统，基于 .NET 10 和 Vue 3 构建。
+一个现代化的网络附加存储 (NAS) 系统，基于 .NET 11 和 Vue 3 构建。
 
 ## 📋 功能特性
 
@@ -44,7 +44,7 @@
 
 ### 后端
 - .NET 11 (ASP.NET Core Minimal API)
-- PalORM 6.1.0 + SQLite（编译期生成的微 ORM）
+- PalORM 6.4.1 + SQLite（编译期生成的微 ORM）
 - Clean Architecture
 - SignalR (实时通信)
 - JWT 认证

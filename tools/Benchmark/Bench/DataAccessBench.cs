@@ -19,8 +19,8 @@ public sealed record CaseResult(
 }
 
 /// <summary>
-/// 仓储级基准。ORM 臂经 Domain 仓储接口调用（实际实现由 Infrastructure 的 DI 注册决定，
-/// 当前为 EF Core，迁移后自动变为 PalORM，harness 代码零改动），地板臂为裸 ADO.NET。
+/// 仓储级基准。ORM 臂经 Domain 仓储接口调用（实现是 PalORM，harness 只依赖 Domain 接口，
+/// 换实现时零改动），地板臂为裸 ADO.NET。
 /// </summary>
 /// <remarks>
 /// 交错执行的原因：分段计时只能定位热点，量化收益必须墙钟交替。
@@ -494,7 +494,7 @@ public static class DataAccessBench
 
         public void Dispose()
         {
-            // 先释放 scope（含 DbContext 与连接），再释放根容器，最后才允许删库文件
+            // 先释放 scope（含 PalORM 会话与连接），再释放根容器，最后才允许删库文件
             _scope.Dispose();
             _provider.Dispose();
         }

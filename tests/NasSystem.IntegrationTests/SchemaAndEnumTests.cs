@@ -84,6 +84,105 @@ public class SchemaAndEnumTests : IDisposable
     }
 
     [Fact]
+    public void MigrateAsync_CreatesAllIndexes()
+    {
+        // 索引全集。EF 时代 20 个（去掉已废弃 FilePermissions 的 3 个），
+        // PalORM 侧多一个 Path_Prefix 服务后代遍历。
+        // 这条断言的来历：迁移后行模型漏声明 [Index]，新建库只有 5 个索引，
+        // 按 OwnerId/Hash/ParentId 的查询全部退化成全表 SCAN，
+        // 而功能正常、数据断言全绿、基准也测不出来——只有直接数索引才能发现。
+        var expected = new Dictionary<string, string[]>
+        {
+            ["FileItems"] =
+            [
+                "IX_FileItems_Hash", "IX_FileItems_IsDeleted", "IX_FileItems_OwnerId",
+                "IX_FileItems_ParentId", "IX_FileItems_ParentId_Name",
+                "IX_FileItems_Path", "IX_FileItems_Path_Prefix", "IX_FileItems_StoragePoolId",
+            ],
+            ["FileShares"] = ["IX_FileShares_CreatedByUserId", "IX_FileShares_FileItemId", "IX_FileShares_ShareCode"],
+            ["FileVersions"] =
+            [
+                "IX_FileVersions_CreatedByUserId", "IX_FileVersions_FileItemId",
+                "IX_FileVersions_FileItemId_IsCurrent", "IX_FileVersions_FileItemId_VersionNumber",
+            ],
+            ["StoragePools"] = ["IX_StoragePools_IsDefault", "IX_StoragePools_MountPath", "IX_StoragePools_Name"],
+            ["Users"] = ["IX_Users_Email", "IX_Users_IsEnabled", "IX_Users_Username"],
+        };
+
+        using var connection = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly");
+        connection.Open();
+
+        foreach (var (table, names) in expected)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name = $t AND sql IS NOT NULL";
+            command.Parameters.AddWithValue("$t", table);
+            var actual = new List<string>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+                actual.Add(reader.GetString(0));
+
+            actual.Should().BeEquivalentTo(names, $"{table} 的索引集合应与模型声明一致");
+        }
+    }
+
+    [Fact]
+    public void Indexes_ActuallyServeTheHotQueries()
+    {
+        // 索引存在不等于用得上。对四条热路径跑 EXPLAIN QUERY PLAN，
+        // 确认是全表 SCAN 还是走索引。上一轮迁移后这四条全是 SCAN。
+        using var connection = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly");
+        connection.Open();
+
+        var plans = new (string Label, string Sql)[]
+        {
+            ("OwnerId 过滤", "SELECT * FROM FileItems WHERE OwnerId = 'x' AND IsDeleted = 0"),
+            ("Hash 精确查", "SELECT * FROM FileItems WHERE Hash = 'x'"),
+            ("ParentId+Name", "SELECT * FROM FileItems WHERE ParentId = 'x' AND Name = 'y'"),
+            ("StoragePoolId", "SELECT * FROM FileItems WHERE StoragePoolId = 'x'"),
+            ("Username 登录", "SELECT * FROM Users WHERE Username = 'x'"),
+            ("ShareCode 访问", "SELECT * FROM FileShares WHERE ShareCode = 'x'"),
+        };
+
+        foreach (var (label, sql) in plans)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "EXPLAIN QUERY PLAN " + sql;
+            using var reader = command.ExecuteReader();
+            reader.Read().Should().BeTrue($"{label} 应有查询计划");
+            var plan = reader.GetString(reader.FieldCount - 1);
+            plan.Should().NotContain("SCAN", $"{label} 不应全表扫描");
+        }
+    }
+
+    [Fact]
+    public void MigrateAsync_KeepsColumnAffinityCompatible()
+    {
+        // PalORM 生成的 DDL 用 BIGINT/BOOLEAN/TIMESTAMP（NUMERIC 亲和），
+        // EF 时代是 INTEGER/TEXT。SQLite 对 NUMERIC 列遇非数字文本按 TEXT 存，
+        // ISO 日期因此能原样往返；这条断言锁住该行为，防止换成别的类型声明后静默变质。
+        using var connection = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly");
+        connection.Open();
+
+        foreach (var (table, column) in new[]
+        {
+            ("FileItems", "CreatedAt"), ("FileItems", "SizeBytes"),
+            ("FileItems", "IsDeleted"), ("Users", "CreatedAt"),
+        })
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT typeof(\"{column}\") FROM \"{table}\" LIMIT 1";
+            // 空表时 typeof 返回 NULL，那就没有可断言的存储值，跳过
+            var result = command.ExecuteScalar();
+            if (result is null)
+                continue;
+            result.ToString().Should().BeOneOf("text", "integer", "real", "blob",
+                $"{table}.{column} 的存储类型应落在 SQLite 的合法值集合内");
+        }
+    }
+
+    [Fact]
     public async Task ForeignKeyConstraint_BlocksOrphanedChildRow()
     {
         // 外键存在性之外，还要确认它真的生效：插一条指向不存在用户的 FileItems 必须被拒

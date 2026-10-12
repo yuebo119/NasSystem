@@ -9,6 +9,9 @@ using PalORM;
 
 /// <summary>StoragePools 表的行模型。设计动因见 <see cref="FileItemRow"/> 的remarks。</summary>
 [Table("StoragePools")]
+[Index("IX_StoragePools_IsDefault", nameof(IsDefault))]
+[Index("IX_StoragePools_Name", nameof(Name), Unique = true)]
+[Index("IX_StoragePools_MountPath", nameof(MountPath), Unique = true)]
 public partial class StoragePoolRow
 {
     [Key(AutoIncrement = false)]

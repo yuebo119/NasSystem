@@ -14,8 +14,6 @@ namespace NasSystem.Benchmark.Seeding;
 /// 为什么种子库不用 ORM 自带的 EnsureCreated/MigrateAsync 建：
 /// 种子库必须对两个 ORM 完全对称，任何一方自建 schema 都会引入模型差异。
 /// 这里用裸 DDL，两个臂看到的库逐字节同构。
-/// 同时建 <c>__EFMigrationsHistory</c> 并预置 4 条迁移 ID，
-/// 使被测 API 启动时的 MigrateAsync 成为 no-op（否则会尝试重放 DropFilePermissions 而失败）。
 /// </remarks>
 public static class Schema
 {
@@ -116,12 +114,6 @@ public static class Schema
             "UpdatedAt" TEXT NULL
         )
         """,
-        """
-        CREATE TABLE "__EFMigrationsHistory" (
-            "MigrationId" TEXT NOT NULL CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY,
-            "ProductVersion" TEXT NOT NULL
-        )
-        """,
     ];
 
     public static readonly string[] Indexes =
@@ -149,12 +141,4 @@ public static class Schema
         "CREATE UNIQUE INDEX \"IX_Users_Username\" ON \"Users\" (\"Username\")",
     ];
 
-    /// <summary>预置的迁移 ID，使被测 API 启动迁移成为 no-op。</summary>
-    public static readonly (string Id, string ProductVersion)[] MigrationHistory =
-    [
-        ("20260825080018_InitialBaseline", "10.0.12"),
-        ("20260825083000_AddBusinessUniqueIndexes", "10.0.12"),
-        ("20260929012902_DropFilePermissions", "10.0.12"),
-        ("20260929020525_AddPathPrefixIndex", "10.0.12"),
-    ];
 }

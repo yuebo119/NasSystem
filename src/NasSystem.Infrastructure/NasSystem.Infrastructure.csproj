@@ -19,16 +19,16 @@
     <PackageReference Include="PalORM.Sqlite" />
     <PackageReference Include="PalORM.SourceGen" />
 
+    <!-- Options：ThumbnailService 注入 IOptions&lt;ThumbnailOptions&gt;，
+         且 DI 里用 Configure&lt;T&gt;(IConfigurationSection) 绑定配置节。
+         这两个包原先都靠 Serilog.AspNetCore 传递依赖间接获得，
+         删掉 Serilog 后必须显式声明，否则编译报 CS1503 -->
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+
     <!-- JWT 认证 -->
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
 
-    <!-- 日志 -->
-    <PackageReference Include="Serilog.AspNetCore" />
-    <PackageReference Include="Serilog.Sinks.File" />
-    <PackageReference Include="Serilog.Sinks.Console" />
-
-    <!-- 覆盖传递依赖的安全漏洞版本 -->
-    <PackageReference Include="Newtonsoft.Json" />
   </ItemGroup>
 
   <ItemGroup>

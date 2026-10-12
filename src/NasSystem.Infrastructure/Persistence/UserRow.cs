@@ -10,6 +10,8 @@ namespace NasSystem.Infrastructure.Persistence;
 
 /// <summary>Users 表的行模型。设计动因见 <see cref="FileItemRow"/> 的remarks。</summary>
 [Table("Users")]
+[Index("IX_Users_IsEnabled", nameof(IsEnabled))]
+[Index("IX_Users_Username", nameof(Username), Unique = true)]
 public partial class UserRow
 {
     [Key(AutoIncrement = false)]

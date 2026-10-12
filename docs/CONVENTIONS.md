@@ -118,7 +118,7 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 
 | # | 规则 |
 |---|------|
-| 8.1 | 目标框架 net10.0 / C# LangVersion 14（`Directory.Build.props` 单一来源） |
+| 8.1 | 目标框架 net11.0 / C# LangVersion 14（`Directory.Build.props` 单一来源） |
 | 8.2 | `TreatWarningsAsErrors` 目标 true；当前 false 为存量债务，新警告不得引入 |
 | 8.3 | 提交信息格式 `类型：描述`；公共 API/行为/计数变更同次提交同步文档（三方一致） |
 | 8.4 | 工作树脏检查：任务切换前 `git status --short` 清洁或显式声明 |

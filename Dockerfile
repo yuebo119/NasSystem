@@ -20,7 +20,7 @@ COPY web/ ./
 RUN npm run build
 
 # ============== 阶段 2: 构建后端 ==============
-FROM mcr.microsoft.com/dotnet/sdk:10.0-preview AS backend-build
+FROM mcr.microsoft.com/dotnet/sdk:11.0-preview AS backend-build
 WORKDIR /src
 
 # 复制解决方案和项目文件
@@ -46,7 +46,7 @@ RUN dotnet publish src/NasSystem.Api/NasSystem.Api.csproj \
     --no-restore
 
 # ============== 阶段 3: 运行时镜像 ==============
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-preview AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0-preview AS runtime
 WORKDIR /app
 
 # 安装必要工具

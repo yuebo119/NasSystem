@@ -54,12 +54,6 @@ public static class Seeder
         foreach (var ddl in Schema.Indexes)
             await ExecuteAsync(connection, ddl);
 
-        // 预置迁移历史，使被测 API 启动时的 MigrateAsync 成为 no-op
-        foreach (var (id, version) in Schema.MigrationHistory)
-            await ExecuteAsync(connection,
-                "INSERT OR IGNORE INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ($id, $v)",
-                ("$id", id), ("$v", version));
-
         // 存储池：5 个，第一个为默认
         var poolIds = new List<Guid>();
         for (var i = 0; i < 5; i++)
