@@ -3,9 +3,10 @@
 // FileItem 的持久化行模型（影子模型）
 // =============================================================================
 
-namespace NasSystem.Infrastructure.Persistence;
-
+using NasSystem.Domain.Enums;
 using PalORM;
+
+namespace NasSystem.Infrastructure.Persistence;
 
 /// <summary>
 /// FileItems 表的行模型。
@@ -29,14 +30,25 @@ public partial class FileItemRow
     [Column("Name")] public string Name { get; set; } = string.Empty;
     [Column("Path")] public string Path { get; set; } = string.Empty;
     [Column("PhysicalPath")] public string PhysicalPath { get; set; } = string.Empty;
-    [Column("ItemType")] public int ItemType { get; set; }
+    // 原生枚举属性（PalORM 6.1+）：库里存 INTEGER，与存量数据零迁移；
+    // 省掉 RowMapper 里手写 int 强转，也消掉一类映射出错面
+    [Column("ItemType", StoreAs = StoreAs.AsInt32)]
+    public FileItemType ItemType { get; set; }
     [Column("SizeBytes")] public long SizeBytes { get; set; }
     [Column("MimeType")] public string? MimeType { get; set; }
     [Column("Extension")] public string? Extension { get; set; }
     [Column("Hash")] public string? Hash { get; set; }
-    [Column("StoragePoolId")] public Guid StoragePoolId { get; set; }
-    [Column("OwnerId")] public Guid OwnerId { get; set; }
-    [Column("ParentId")] public Guid? ParentId { get; set; }
+    [Column("StoragePoolId")]
+    [ForeignKey("StoragePools", "Id", OnDelete = DeleteAction.Restrict)]
+    public Guid StoragePoolId { get; set; }
+
+    [Column("OwnerId")]
+    [ForeignKey("Users", "Id", OnDelete = DeleteAction.Restrict)]
+    public Guid OwnerId { get; set; }
+
+    [Column("ParentId")]
+    [ForeignKey("FileItems", "Id", OnDelete = DeleteAction.Restrict)]
+    public Guid? ParentId { get; set; }
     [Column("IsDeleted")] public bool IsDeleted { get; set; }
     [Column("DeletedAt")] public DateTime? DeletedAt { get; set; }
     [Column("IsHidden")] public bool IsHidden { get; set; }

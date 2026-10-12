@@ -15,14 +15,18 @@ public partial class FileVersionRow
     [Column("Id")]
     public Guid Id { get; set; }
 
-    [Column("FileItemId")] public Guid FileItemId { get; set; }
+    [Column("FileItemId")]
+    [ForeignKey("FileItems", "Id", OnDelete = DeleteAction.Cascade)]
+    public Guid FileItemId { get; set; }
     [Column("VersionNumber")] public int VersionNumber { get; set; }
     [Column("StoragePath")] public string StoragePath { get; set; } = string.Empty;
     [Column("FileSize")] public long FileSize { get; set; }
     [Column("FileHash")] public string FileHash { get; set; } = string.Empty;
     [Column("Comment")] public string? Comment { get; set; }
     [Column("IsCurrent")] public bool IsCurrent { get; set; }
-    [Column("CreatedByUserId")] public Guid CreatedByUserId { get; set; }
+    [Column("CreatedByUserId")]
+    [ForeignKey("Users", "Id", OnDelete = DeleteAction.Restrict)]
+    public Guid CreatedByUserId { get; set; }
     [Column("CreatedAt")] public DateTime CreatedAt { get; set; }
     [Column("UpdatedAt")] public DateTime? UpdatedAt { get; set; }
 }

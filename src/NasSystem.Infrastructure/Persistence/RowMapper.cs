@@ -6,7 +6,6 @@
 namespace NasSystem.Infrastructure.Persistence;
 
 using NasSystem.Domain.Entities;
-using NasSystem.Domain.Enums;
 
 /// <summary>
 /// 影子行模型与领域实体的双向转换。
@@ -20,7 +19,7 @@ public static class RowMapper
 {
     public static FileItem ToDomain(this FileItemRow row) =>
         FileItem.Restore(
-            row.Id, row.Name, row.Path, row.PhysicalPath, (FileItemType)row.ItemType,
+            row.Id, row.Name, row.Path, row.PhysicalPath, row.ItemType,
             row.SizeBytes, row.MimeType, row.Extension, row.Hash,
             row.StoragePoolId, row.OwnerId, row.ParentId,
             row.IsDeleted, row.DeletedAt, row.IsHidden, row.IsSystem, row.IsReadOnly,
@@ -33,7 +32,7 @@ public static class RowMapper
             Name = entity.Name,
             Path = entity.Path,
             PhysicalPath = entity.PhysicalPath,
-            ItemType = (int)entity.ItemType,
+            ItemType = entity.ItemType,
             SizeBytes = entity.SizeBytes,
             MimeType = entity.MimeType,
             Extension = entity.Extension,
@@ -53,7 +52,7 @@ public static class RowMapper
     public static User ToDomain(this UserRow row) =>
         User.Restore(
             row.Id, row.Username, row.PasswordHash, row.PasswordSalt,
-            row.DisplayName, row.Email, (UserRole)row.Role,
+            row.DisplayName, row.Email, row.Role,
             row.IsEnabled, row.LastLoginAt, row.QuotaBytes, row.UsedBytes,
             row.HomeDirectory, row.CreatedAt, row.UpdatedAt);
 
@@ -66,7 +65,7 @@ public static class RowMapper
             PasswordSalt = entity.PasswordSalt,
             DisplayName = entity.DisplayName,
             Email = entity.Email,
-            Role = (int)entity.Role,
+            Role = entity.Role,
             IsEnabled = entity.IsEnabled,
             LastLoginAt = entity.LastLoginAt,
             QuotaBytes = entity.QuotaBytes,
@@ -100,8 +99,8 @@ public static class RowMapper
 
     public static FileShare ToDomain(this FileShareRow row, FileItem? fileItem = null, User? createdByUser = null) =>
         FileShare.Restore(
-            row.Id, row.ShareCode, row.FileItemId, (ShareAccessType)row.AccessType,
-            row.PasswordHash, (PermissionLevel)row.Permission,
+            row.Id, row.ShareCode, row.FileItemId, row.AccessType,
+            row.PasswordHash, row.Permission,
             row.ExpiresAt, row.MaxDownloads, row.DownloadCount,
             row.CreatedByUserId, row.IsEnabled, row.CreatedAt, row.UpdatedAt,
             fileItem, createdByUser);
@@ -112,9 +111,9 @@ public static class RowMapper
             Id = entity.Id,
             ShareCode = entity.ShareCode,
             FileItemId = entity.FileItemId,
-            AccessType = (int)entity.AccessType,
+            AccessType = entity.AccessType,
             PasswordHash = entity.PasswordHash,
-            Permission = (int)entity.Permission,
+            Permission = entity.Permission,
             ExpiresAt = entity.ExpiresAt,
             MaxDownloads = entity.MaxDownloads,
             DownloadCount = entity.DownloadCount,

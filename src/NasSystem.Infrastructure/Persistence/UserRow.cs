@@ -3,9 +3,10 @@
 // Users 表的行模型（影子模型）
 // =============================================================================
 
-namespace NasSystem.Infrastructure.Persistence;
-
+using NasSystem.Domain.Enums;
 using PalORM;
+
+namespace NasSystem.Infrastructure.Persistence;
 
 /// <summary>Users 表的行模型。设计动因见 <see cref="FileItemRow"/> 的remarks。</summary>
 [Table("Users")]
@@ -20,7 +21,8 @@ public partial class UserRow
     [Column("PasswordSalt")] public string PasswordSalt { get; set; } = string.Empty;
     [Column("DisplayName")] public string? DisplayName { get; set; }
     [Column("Email")] public string? Email { get; set; }
-    [Column("Role")] public int Role { get; set; }
+    [Column("Role", StoreAs = StoreAs.AsInt32)]
+    public UserRole Role { get; set; }
     [Column("IsEnabled")] public bool IsEnabled { get; set; }
     [Column("LastLoginAt")] public DateTime? LastLoginAt { get; set; }
     [Column("QuotaBytes")] public long? QuotaBytes { get; set; }

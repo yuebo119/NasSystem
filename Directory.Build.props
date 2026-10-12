@@ -52,8 +52,8 @@
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
 
     <!-- 数据访问：PalORM。Core/SourceGen 由 Sqlite 方言包传递，此处显式钉版本 -->
-    <PackageVersion Include="PalORM.Core" Version="6.1.0" />
-    <PackageVersion Include="PalORM.Sqlite" Version="6.1.0" />
-    <PackageVersion Include="PalORM.SourceGen" Version="6.1.0" />
+    <PackageVersion Include="PalORM.Core" Version="6.4.1" />
+    <PackageVersion Include="PalORM.Sqlite" Version="6.4.1" />
+    <PackageVersion Include="PalORM.SourceGen" Version="6.4.1" />
   </ItemGroup>
 </Project>
