@@ -173,6 +173,35 @@ public class SchemaAndEnumTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Search_EscapesLikeWildcardsInUserInput()
+    {
+        // 手写 SQL 的 LIKE 必须自己转义 % 和 _，否则用户输入的下划线被当成任意单字符：
+        // 搜 "rep_ort" 会把 "repXort" 也匹配上。EF 翻译 string.Contains 时会转义，
+        // 换 PalORM 后这条防线搬到仓储的 EscapeLike，用行为测试锁住它。
+        var (scope, users, pools, fileItems, unitOfWork) = Scope();
+        using (scope)
+        {
+            var user = User.Create("escapeowner", "hash", "salt");
+            var pool = StoragePool.Create("EscapePool", "/mnt/escapepool");
+            await users.AddAsync(user);
+            await pools.AddAsync(pool);
+            await unitOfWork.SaveChangesAsync();
+
+            await fileItems.AddAsync(FileItem.CreateFile(
+                name: "rep_ort.txt", path: "/rep_ort.txt", physicalPath: "/mnt/escapepool/rep_ort.txt",
+                sizeBytes: 1, mimeType: "text/plain", storagePoolId: pool.Id, ownerId: user.Id));
+            await fileItems.AddAsync(FileItem.CreateFile(
+                name: "repXort.txt", path: "/repXort.txt", physicalPath: "/mnt/escapepool/repXort.txt",
+                sizeBytes: 1, mimeType: "text/plain", storagePoolId: pool.Id, ownerId: user.Id));
+            await unitOfWork.SaveChangesAsync();
+
+            var hits = await fileItems.SearchAsync("rep_ort");
+            hits.Should().HaveCount(1);
+            hits[0].Name.Should().Be("rep_ort.txt");
+        }
+    }
+
     public void Dispose()
     {
         _provider.Dispose();
