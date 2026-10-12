@@ -23,10 +23,13 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/nas.db
       - NasSystem__StoragePath=/app/storage
-      - Jwt__Secret=${JWT_SECRET:-your-super-secret-key-at-least-32-characters-long}
+      # 键名必须与 JwtSettings 的属性一一对应：Jwt__Secret 会映射到 Jwt:Secret，
+      # 而代码读的是 Jwt:SecretKey，键名写错的后果是 Production 下启动即抛
+      # InvalidOperationException（AuthenticationExtensions 的 fail-fast），容器反复重启
+      - Jwt__SecretKey=${JWT_SECRET:-your-super-secret-key-at-least-32-characters-long}
       - Jwt__Issuer=NasSystem
       - Jwt__Audience=NasSystemUsers
-      - Jwt__ExpirationMinutes=60
+      - Jwt__AccessTokenExpirationMinutes=60
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6050/health"]

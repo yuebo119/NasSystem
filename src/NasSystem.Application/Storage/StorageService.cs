@@ -31,7 +31,8 @@ public sealed class StorageService(
         // 刷新所有存储池的容量信息
         foreach (var pool in pools)
         {
-            await RefreshPoolCapacityAsync(pool, cancellationToken);
+            if (await RefreshPoolCapacityAsync(pool, cancellationToken))
+                await poolRepository.UpdateAsync(pool, cancellationToken);
         }
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -62,7 +63,8 @@ public sealed class StorageService(
         // 刷新容量信息
         foreach (var pool in pools)
         {
-            await RefreshPoolCapacityAsync(pool, cancellationToken);
+            if (await RefreshPoolCapacityAsync(pool, cancellationToken))
+                await poolRepository.UpdateAsync(pool, cancellationToken);
         }
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -78,7 +80,8 @@ public sealed class StorageService(
         if (pool is null)
             return Result<StoragePoolDto>.Failure(StorageErrors.PoolNotFound(poolId));
 
-        await RefreshPoolCapacityAsync(pool, cancellationToken);
+        if (await RefreshPoolCapacityAsync(pool, cancellationToken))
+            await poolRepository.UpdateAsync(pool, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result<StoragePoolDto>.Success(MapToDto(pool));
@@ -228,8 +231,13 @@ public sealed class StorageService(
             });
         }
 
-        // 刷新容量信息
-        await RefreshPoolCapacityAsync(pool, cancellationToken);
+        // 刷新容量信息。这里也要落库：UpdatedAt 是节流窗口的唯一依据，
+        // 不落库则窗口永不推进，每次上传预检都重算一次全池 SUM
+        if (await RefreshPoolCapacityAsync(pool, cancellationToken))
+        {
+            await poolRepository.UpdateAsync(pool, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
 
         var hasEnoughSpace = pool.HasEnoughSpace(request.FileSize);
         
@@ -256,13 +264,13 @@ public sealed class StorageService(
     /// <summary>
     /// 刷新单个池的容量信息（读路径受节流窗口保护）
     /// </summary>
-    private async Task RefreshPoolCapacityAsync(
+    private async Task<bool> RefreshPoolCapacityAsync(
         StoragePool pool,
         CancellationToken cancellationToken,
         bool force = false)
     {
         if (!force && DateTime.UtcNow - (pool.UpdatedAt ?? pool.CreatedAt) < CapacityRefreshInterval)
-            return;
+            return false;
 
         try
         {
@@ -278,6 +286,7 @@ public sealed class StorageService(
                         // 计算存储池内所有文件的总大小作为已用空间
                         var usedBytes = await fileItemRepository.CalculateStoragePoolUsedSpaceAsync(pool.Id, cancellationToken);
                         pool.UpdateCapacity(driveInfo.TotalSize, usedBytes);
+                        return true;
                     }
                 }
             }
@@ -286,6 +295,7 @@ public sealed class StorageService(
         {
             // 忽略无法访问的存储池
         }
+        return false;
     }
 
     private static StoragePoolDto MapToDto(StoragePool pool)

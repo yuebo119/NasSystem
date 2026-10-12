@@ -43,7 +43,13 @@ public sealed class FileItemRepository(
         CancellationToken cancellationToken = default)
     {
         var db = await sessions.GetAsync(cancellationToken);
-        var query = db.From<FileItemRow>().Where($"ParentId = {parentId}");
+        // 根目录的 parentId 是 null，必须生成 `ParentId IS NULL`。
+        // PalORM 的 FormattableString 格式化与值无关，null 实参只会变成 `@pN` 占位，
+        // 而 SQLite 里 `x = NULL` 结果是 NULL（不匹配任何行），根目录会静默返回空。
+        // EF 时代 LINQ 的 `f.ParentId == parentId` 由提供方翻译成 IS NULL，无此问题。
+        var query = parentId.HasValue
+            ? db.From<FileItemRow>().Where($"ParentId = {parentId.Value}")
+            : db.From<FileItemRow>().Where(System.Runtime.CompilerServices.FormattableStringFactory.Create("ParentId IS NULL"));
 
         if (!includeDeleted)
             query = query.Where($"IsDeleted = 0");
@@ -164,7 +170,11 @@ public sealed class FileItemRepository(
         var audioExtensions = new[] { ".mp3", ".wav", ".flac", ".ogg", ".aac", ".wma" };
         var documentExtensions = new[] { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".json", ".xml" };
 
-        var recentLiteral = DateTime.UtcNow.AddDays(-7).ToString("yyyy-MM-ddTHH:mm:ss.fffffff");
+        // 时间边界字面量必须用空格分隔：Microsoft.Data.Sqlite 绑定 DateTime 时用的格式是
+        // "yyyy-MM-dd HH:mm:ss.FFFFFFF"，库里存的也是空格分隔。TEXT 是二进制比较，
+        // 若这里写成 'T' 分隔，边界日当天所有记录在位置 10 上 ' '(0x20) < 'T'(0x54)，
+        // 会被整日排除（实测：边界日中午建的记录，T 分隔符计数 0，空格分隔符计数 1）。
+        var recentLiteral = DateTime.UtcNow.AddDays(-7).ToString("yyyy-MM-dd HH:mm:ss.fffffff");
 
         // 全部聚合下推 SQL：原实现 ToListAsync 全表载入后内存 Count/Sum，
         // 文件数上万时单接口即全表传输；此处每项均为服务端单行聚合

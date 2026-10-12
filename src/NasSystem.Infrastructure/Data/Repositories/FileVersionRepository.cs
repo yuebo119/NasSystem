@@ -86,9 +86,14 @@ public sealed class FileVersionRepository(
         CancellationToken cancellationToken = default)
     {
         var db = await sessions.GetAsync(cancellationToken);
-        // TValue 用 int?：空集合时 MAX 返回 NULL，与 EF 时代 (int?) + ?? 0 的语义一致
-        var maxVersion = await db.MaxAsync<FileVersionRow, int?>(
-            $"FileItemId = {fileItemId}", cancellationToken);
+        // 不用 MaxAsync<T,TValue>：它的 FormattableString 参数是聚合表达式本身，
+        // 生成 `SELECT MAX(表达式) FROM 表`，没有 WHERE 通道——把 `FileItemId = {id}`
+        // 传进去会算出 `MAX(FileItemId = @p0)`，返回值 1 或 0 而不是最大版本号
+        // （实测：建 3 个版本，旧写法返回 1）。这里手写完整 SQL，语义与 EF 时代一致。
+        // int? 承接空集合的 NULL，再 `?? 0` 与 EF 时代 (int?) + ?? 0 等价
+        var maxVersion = await db.ScalarAsync<int?>(
+            $"SELECT MAX(VersionNumber) FROM FileVersions WHERE FileItemId = {fileItemId}",
+            false, cancellationToken);
         return maxVersion ?? 0;
     }
 
