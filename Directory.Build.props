@@ -29,31 +29,35 @@
          未做全链路验证前仍不声明，未来若需 AOT 按全链路验证引入。 -->
   </PropertyGroup>
   
-  <!-- 全局包版本管理（2026-09-29 统一升级至各包最新稳定版） -->
+  <!-- 全局包版本管理（2026-10-14 统一升级：Microsoft 11 系 rc.1 → rc.2、
+       第三方包各自 latest；已核对 nuget.org 无更高版本：Serilog.AspNetCore 10.0.0、
+       Serilog.Sinks.File 7.0.0、Serilog.Sinks.Console 6.1.1、Moq 4.21.0、
+       FluentAssertions 8.11.0、coverlet.collector/coverlet.MTP 10.1.0、
+       System.IdentityModel.Tokens.Jwt 8.23.0） -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0-rc.1.26425.128" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="11.0.0-rc.1.26425.128" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="11.0.0-rc.1.26425.128" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0-rc.1.26425.128" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0-rc.2.26504.105" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="11.0.0-rc.2.26504.105" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="11.0.0-rc.2.26504.105" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0-rc.2.26504.105" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="11.0.0-rc.2.26504.105" />
     <!-- Serilog 由 Api 层配置（Program.cs 的 UseSerilog），Infrastructure 不直接用 -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.10" />
-    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="11.0.0-rc.1.26425.128" />
-    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.18.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="11.0.0-rc.2.26504.105" />
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
     <PackageVersion Include="Moq" Version="4.21.0" />
     <PackageVersion Include="FluentAssertions" Version="8.11.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageVersion Include="coverlet.collector" Version="10.1.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="11.0.0-rc.1.26425.128" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0-rc.1.26425.128" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="11.0.0-rc.2.26504.105" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0-rc.2.26504.105" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
 
     <!-- 数据访问：PalORM。Core/SourceGen 由 Sqlite 方言包传递，此处显式钉版本 -->
-    <PackageVersion Include="PalORM.Core" Version="6.4.1" />
-    <PackageVersion Include="PalORM.Sqlite" Version="6.4.1" />
-    <PackageVersion Include="PalORM.SourceGen" Version="6.4.1" />
+    <PackageVersion Include="PalORM.Core" Version="6.5.0" />
+    <PackageVersion Include="PalORM.Sqlite" Version="6.5.0" />
+    <PackageVersion Include="PalORM.SourceGen" Version="6.5.0" />
   </ItemGroup>
 </Project>

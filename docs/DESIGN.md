@@ -78,7 +78,7 @@
 |------|------|------|
 | .NET | 11.0 | 运行时框架 |
 | ASP.NET Core | 11.0 | Web API 框架 |
-| PalORM | 6.4.1 | ORM 框架（编译期生成，SQLite 方言） |
+| PalORM | 6.5.0 | ORM 框架（编译期生成，SQLite 方言） |
 | SQLite | 3.x | 嵌入式数据库 |
 | Serilog | Latest | 结构化日志 |
 | FluentValidation | 12.x | 输入验证 |
@@ -90,10 +90,10 @@
 |------|------|------|
 | Vue | 3.5 | 前端框架 |
 | TypeScript | 5.x | 类型安全 |
-| Vite | 6.x | 构建工具 |
-| Element Plus | 2.9 | UI 组件库 |
-| Pinia | 2.x | 状态管理 |
-| Vue Router | 4.x | 路由管理 |
+| Vite | 8.x | 构建工具 |
+| Element Plus | 2.14 | UI 组件库 |
+| Pinia | 4.x | 状态管理 |
+| Vue Router | 5.x | 路由管理 |
 | Axios | 1.x | HTTP 客户端 |
 
 ---

@@ -3,11 +3,16 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <!-- PalORM.Sqlite 依赖 Microsoft.Data.Sqlite.Core 11.0.0-rc.1，
-         此处统一到同一版本，避免 CPM 把版本钉在 10.0.12 造成还原冲突。
-         tools/Benchmark 的种子化与 ADO.NET 地板臂也用这个版本。 -->
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0-rc.1.26425.128" />
-    <PackageVersion Include="SkiaSharp" Version="4.153.0" />
+    <!-- PalORM.Sqlite 6.5.0 依赖 Microsoft.Data.Sqlite.Core 11.0.0-rc.1，
+         此处统一到同一 major 的 rc.2（高于 PalORM 声明，还原不会降级），
+         避免 CPM 把版本钉在 10.0.x 造成还原冲突。
+         应用侧在 Infrastructure.csproj 显式引用 Core（代码直接 catch
+         Microsoft.Data.Sqlite.SqliteException），使托管包装层与
+         tools/Benchmark 的 ADO.NET 地板臂（元包 rc.2 → Core rc.2）同版本，
+         基准两臂才口径对等。原生引擎仍是 PalORM 的 SQLite3MC 包。 -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0-rc.2.26504.105" />
+    <PackageVersion Include="Microsoft.Data.Sqlite.Core" Version="11.0.0-rc.2.26504.105" />
+    <PackageVersion Include="SkiaSharp" Version="4.153.1" />
     <PackageVersion Include="coverlet.MTP" Version="10.1.0" />
   </ItemGroup>
 </Project>

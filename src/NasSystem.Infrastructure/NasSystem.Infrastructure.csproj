@@ -25,6 +25,12 @@
          删掉 Serilog 后必须显式声明，否则编译报 CS1503 -->
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
 
+    <!-- Microsoft.Data.Sqlite.Core：代码直接 catch SqliteException 判定完整性
+         冲突（PalormUnitOfWork）。显式声明把托管包装层钉在 rc.2，高于 PalORM.Sqlite
+         传递的 rc.1，并与 Benchmark 的 ADO.NET 地板臂同版本；原生引擎仍走
+         PalORM 的 SQLite3MC 包，故只引 Core 不引元包（元包会多带一份 e_sqlite3）。 -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" />
+
     <!-- JWT 认证 -->
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
 
