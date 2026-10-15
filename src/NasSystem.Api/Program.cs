@@ -21,7 +21,11 @@ try
     
     var builder = WebApplication.CreateBuilder(args);
 
-    // 配置 Serilog
+    // 配置 Serilog。File sink 开缓冲 + 1 秒周期刷盘：该 sink 默认 buffered=false，
+    // 每写一条都同步落盘，请求日志每请求一条，这是可观的固定税。缓冲的代价是
+    // 进程崩溃时最多丢 1 秒内的日志，CloseAndFlush 覆盖正常关停路径。
+    // Console sink 保持同步：容器里它是 docker logs 的通道，写到管道远比
+    // Windows 控制台便宜，不值得为它引入 Serilog.Sinks.Async 第三方依赖。
     builder.Host.UseSerilog((context, services, configuration) => configuration
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services)
@@ -30,7 +34,9 @@ try
         .WriteTo.File(
             path: "logs/nas-system-.log",
             rollingInterval: RollingInterval.Day,
-            retainedFileCountLimit: 30));
+            retainedFileCountLimit: 30,
+            buffered: true,
+            flushToDiskInterval: TimeSpan.FromSeconds(1)));
 
     // 注册服务
     builder.Services

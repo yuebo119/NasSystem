@@ -32,6 +32,12 @@ public static class ServiceCollectionExtensions
             options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
             options.SerializerOptions.PropertyNameCaseInsensitive = true;
             options.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+
+            // 源生生成上下文排在前，反射解析器兜底（匿名对象与 object 声明成员走后者）。
+            // 上下文的 [JsonSourceGenerationOptions] 与上面三项逐项一致，见 NasJsonContext 注释。
+            options.SerializerOptions.TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(
+                Serialization.NasJsonContext.Default,
+                new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver());
         });
 
         // .NET 10 原生 OpenAPI 支持

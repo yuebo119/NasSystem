@@ -62,6 +62,14 @@ public static class AuthenticationExtensions
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey));
 
+            // 关掉 inbound claim 类型映射：默认映射会把 sub/role/name 等短名改写成
+            // WS-Fed 长 URI，每请求多一次逐条查表与 ClaimsIdentity 重建。
+            // JwtService 已显式写 ClaimTypes.NameIdentifier / Name / Role 长名，
+            // 端点一律 FindFirst(ClaimTypes.NameIdentifier)、策略一律 RequireRole，
+            // 关掉后取值与授权判定都不变（由 UserEndpointsIntegrationTests 的
+            // 无管理员角色返回 403 一条锁住）。
+            options.MapInboundClaims = false;
+
             options.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidateIssuerSigningKey = true,

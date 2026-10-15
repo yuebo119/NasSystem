@@ -19,13 +19,6 @@ public sealed class RequestLoggingMiddleware(
         var stopwatch = Stopwatch.StartNew();
         var requestId = context.TraceIdentifier;
 
-        // 记录请求开始
-        logger.LogInformation(
-            "[{RequestId}] {Method} {Path} 开始处理",
-            requestId,
-            context.Request.Method,
-            context.Request.Path);
-
         try
         {
             await next(context);
