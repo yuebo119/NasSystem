@@ -137,8 +137,18 @@ public static class DependencyInjection
 
         await LogEfResidueAsync(db, logger);
 
+        // 存储根目录：优先配置 NasSystem:StoragePath（Docker 部署经
+        // NasSystem__StoragePath 环境变量注入，与 /app/storage 卷映射对应），
+        // 未配置退回 AppContext.BaseDirectory/storage。
+        // 曾经硬编码 BaseDirectory：应用从 net10.0 迁到 net11.0 后池路径与
+        // 全部 PhysicalPath 落在旧构建目录，dotnet clean 即数据全失
+        // （2026-10-15 实测并迁移修复）
+        var storagePath = configuration["NasSystem:StoragePath"];
+        if (string.IsNullOrWhiteSpace(storagePath))
+            storagePath = Path.Combine(AppContext.BaseDirectory, "storage");
+
         // 初始化种子数据
-        await SeedDataAsync(db);
+        await SeedDataAsync(db, storagePath);
     }
 
     /// <summary>
@@ -193,7 +203,7 @@ public static class DependencyInjection
             logger.LogWarning("PalORM schema 漂移: {Drift}", item);
     }
 
-    private static async Task SeedDataAsync(DataSession<SqliteProvider> db)
+    private static async Task SeedDataAsync(DataSession<SqliteProvider> db, string storagePath)
     {
         // 检查是否已有管理员用户
         var existing = await db.CountAsync<UserRow>($"Username = {"admin"}");
@@ -212,11 +222,14 @@ public static class DependencyInjection
             displayName: "系统管理员",
             email: "admin@localhost");
 
+        // 挂载点先落成实体再建目录：容量刷新要求目录存在才取磁盘容量，
+        // 新装实例不预建的话首页总容量会显示 0
         var defaultPool = Domain.Entities.StoragePool.Create(
             name: "默认存储池",
-            mountPath: Path.Combine(AppContext.BaseDirectory, "storage"),
+            mountPath: storagePath,
             description: "系统默认存储池");
         defaultPool.SetAsDefault(true);
+        Directory.CreateDirectory(storagePath);
 
         await db.InsertAsync(adminUser.ToRow());
         await db.InsertAsync(defaultPool.ToRow());

@@ -33,6 +33,7 @@ export interface StorageOverview {
   totalBytes: number
   usedBytes: number
   availableBytes: number
+  otherBytes: number
   usagePercentage: number
   poolCount: number
   diskCount: number

@@ -139,6 +139,17 @@ public sealed class StoragePool : Entity
     public long AvailableBytes => Math.Max(0, EffectiveTotalBytes - UsedBytes);
 
     /// <summary>
+    /// 受物理剩余约束的可用容量。池只是磁盘上的一个目录，盘上其他内容
+    /// （系统盘上的操作系统与其他程序）的占用不可分配给本池，因此可用
+    /// 以磁盘物理剩余为硬上限；<paramref name="physicalFreeBytes"/> 为 null
+    /// （挂载点不可达或磁盘未就绪）时退回记账口径，由健康状态另行暴露
+    /// </summary>
+    public long AvailableBytesWithin(long? physicalFreeBytes) =>
+        physicalFreeBytes.HasValue
+            ? Math.Min(AvailableBytes, physicalFreeBytes.Value)
+            : AvailableBytes;
+
+    /// <summary>
     /// 使用率 (0-100)，基于有效总容量
     /// </summary>
     public double UsagePercentage => EffectiveTotalBytes > 0 ? (double)UsedBytes / EffectiveTotalBytes * 100 : 0;

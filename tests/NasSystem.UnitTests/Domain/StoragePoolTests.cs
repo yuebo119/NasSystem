@@ -249,5 +249,59 @@ public class StoragePoolTests
         pool.HasEnoughSpace(1024L * 1024 * 1024 * 10).Should().BeFalse(); // 10GB file won't fit
     }
 
+    [Fact]
+    public void AvailableBytesWithin_PhysicalFreeBelowAccounting_ReturnsPhysicalFree()
+    {
+        // 池只是盘上的目录：记账说还有 70GB，但盘上其他内容占着，
+        // 物理剩余只有 20GB 时，可用必须是 20GB。曾用记账值直接展示，
+        // 首页"可用"因此虚高（实测虚高约 6 倍）
+        var pool = StoragePool.Create("TestPool", "/mnt/test");
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100, // 100GB
+            usedBytes: 1024L * 1024 * 1024 * 30);  // 30GB
+
+        pool.AvailableBytesWithin(1024L * 1024 * 1024 * 20)
+            .Should().Be(1024L * 1024 * 1024 * 20);
+    }
+
+    [Fact]
+    public void AvailableBytesWithin_PhysicalFreeAboveAccounting_ReturnsAccounting()
+    {
+        // 有配额时记账是更紧的约束：配额 50GB 用掉 10GB，盘上还很空，
+        // 可用应是配额的 40GB 而不是盘的一大片剩余
+        var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 50);
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100,
+            usedBytes: 1024L * 1024 * 1024 * 10);
+
+        pool.AvailableBytesWithin(1024L * 1024 * 1024 * 500)
+            .Should().Be(1024L * 1024 * 1024 * 40);
+    }
+
+    [Fact]
+    public void AvailableBytesWithin_NullPhysicalFree_FallsBackToAccounting()
+    {
+        // 挂载点不可达时拿不到物理剩余，退回记账口径；
+        // 可达性由健康状态另行暴露，不在这里猜
+        var pool = StoragePool.Create("TestPool", "/mnt/test");
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100,
+            usedBytes: 1024L * 1024 * 1024 * 30);
+
+        pool.AvailableBytesWithin(null).Should().Be(1024L * 1024 * 1024 * 70);
+    }
+
+    [Fact]
+    public void AvailableBytesWithin_ZeroPhysicalFree_ReturnsZero()
+    {
+        // 盘满了时可用必须是 0，不能是记账的大数字
+        var pool = StoragePool.Create("TestPool", "/mnt/test");
+        pool.UpdateCapacity(
+            totalBytes: 1024L * 1024 * 1024 * 100,
+            usedBytes: 1024L * 1024 * 1024 * 30);
+
+        pool.AvailableBytesWithin(0).Should().Be(0);
+    }
+
     #endregion
 }

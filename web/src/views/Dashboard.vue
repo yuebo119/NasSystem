@@ -20,6 +20,7 @@ const storageOverview = ref({
   totalBytes: 0,
   usedBytes: 0,
   availableBytes: 0,
+  otherBytes: 0,
   usagePercentage: 0,
   poolCount: 0,
   diskCount: 0,
@@ -371,6 +372,13 @@ onUnmounted(() => {
                   {{ t('storage.availableSpace') }}
                 </div>
                 <div class="detail-value">{{ formatSize(storageOverview.availableBytes) }}</div>
+              </div>
+              <div class="detail-item">
+                <div class="detail-label">
+                  <span class="dot" style="background: #909399"></span>
+                  {{ t('storage.otherUsage') }}
+                </div>
+                <div class="detail-value">{{ formatSize(storageOverview.otherBytes) }}</div>
               </div>
               <el-divider />
               <div class="detail-item">

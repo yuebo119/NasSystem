@@ -136,6 +136,7 @@ export default {
     totalCapacity: 'Total Capacity',
     usedSpace: 'Used',
     availableSpace: 'Available',
+    otherUsage: 'Other Usage',
     usagePercent: 'Usage',
     maxCapacity: 'Max Capacity',
     default: 'Default',

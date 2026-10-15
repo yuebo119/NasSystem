@@ -116,6 +116,48 @@ public class PalormSemanticsTests : IDisposable
     }
 
     [Fact]
+    public async Task GetStatistics_WithOwnerId_CountsThatOwnersFiles()
+    {
+        // ownerId 过滤走 Guid 参数绑定：Microsoft.Data.Sqlite 绑 Guid 参数时输出
+        // 大写 D 格式，与写入侧一致。曾把小写 Guid（Guid.ToString() 默认形态）拼进
+        // SQL 字面量，SQLite TEXT 大小写敏感，带 owner 的统计恒返回 0
+        // （2026-10-15 实测：小写字面量 0 命中，参数化 34 命中）。
+        // 首页"文件统计"卡因此全零，与同页"存储概览"卡的已用数字互相矛盾。
+        // 上方边界测试只调了无参重载，走的全局分支，所以抓不到这条
+        var (scope, users, pools, fileItems, _, uow) = Scope();
+        using (scope)
+        {
+            var owner = User.Create("statowner", "h", "s");
+            var other = User.Create("statother", "h", "s");
+            var pool = StoragePool.Create("P", "/mnt/p");
+            await users.AddAsync(owner);
+            await users.AddAsync(other);
+            await pools.AddAsync(pool);
+            await uow.SaveChangesAsync();
+
+            await fileItems.AddAsync(FileItem.CreateFile(
+                "a.png", "/a.png", "/mnt/p/a.png", 100, "image/png", pool.Id, owner.Id));
+            await fileItems.AddAsync(FileItem.CreateFile(
+                "b.txt", "/b.txt", "/mnt/p/b.txt", 200, "text/plain", pool.Id, owner.Id));
+            await fileItems.AddAsync(FileItem.CreateFolder(
+                "d", "/d", "/mnt/p/d", pool.Id, owner.Id));
+            // 别人的文件：计数与容量都不该算进来
+            await fileItems.AddAsync(FileItem.CreateFile(
+                "c.png", "/c.png", "/mnt/p/c.png", 999, "image/png", pool.Id, other.Id));
+            await uow.SaveChangesAsync();
+
+            var stats = await fileItems.GetStatisticsAsync(owner.Id);
+
+            stats.TotalFiles.Should().Be(2, "owner 的文件计入，别人的不计");
+            stats.TotalFolders.Should().Be(1);
+            stats.TotalSizeBytes.Should().Be(300, "只累加 owner 的文件大小");
+            stats.ImageCount.Should().Be(1);
+            stats.DocumentCount.Should().Be(1);
+            stats.RecentFilesCount.Should().Be(2, "刚建的记录都落在最近 7 天窗口内");
+        }
+    }
+
+    [Fact]
     public async Task GetStatistics_CountsFilesOnBoundaryDay()
     {
         // 时间边界字面量必须用空格分隔：MDS 绑定 DateTime 用的是

@@ -159,10 +159,13 @@ public sealed class FileItemRepository(
     {
         var db = await sessions.GetAsync(cancellationToken);
 
-        // ownerId 是 Guid（非用户文本），直接拼成 SQL 字面量；
-        // 用 FormattableStringFactory 包成无插值的 FormattableString，
-        // 避免 $"...{filter}" 把整段 WHERE 当成参数值
-        var filter = ownerId.HasValue ? $"AND OwnerId = '{ownerId.Value}'" : string.Empty;
+        // ownerId 一律作为插值参数绑定，不拼 SQL 字面量：
+        // Microsoft.Data.Sqlite 绑 Guid 参数时输出大写 D 格式，与写入侧一致。
+        // 曾把小写 Guid（Guid.ToString() 的默认形态）拼进字面量，SQLite TEXT
+        // 大小写敏感，带 owner 过滤的统计恒返回 0（2026-10-15 实测：小写字面量
+        // 0 命中，参数化 34 命中）。这与本仓"Guid 必须大写 D"是同一坑的第六个
+        // 实例，且最隐蔽：绕过参数绑定就绕过了大写归一。
+        // 每条查询最多带一个 ownerId 孔；无 owner 时走 Literal 零参数形态。
 
         // 分类表（与原内存版口径一致：空扩展名归 Other）
         var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".ico" };
@@ -179,26 +182,41 @@ public sealed class FileItemRepository(
         // 全部聚合下推 SQL：原实现 ToListAsync 全表载入后内存 Count/Sum，
         // 文件数上万时单接口即全表传输；此处每项均为服务端单行聚合
         var totalFiles = await db.ScalarAsync<long>(
-            Literal($"SELECT COUNT(*) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 {filter}"),
+            ownerId.HasValue
+                ? $"SELECT COUNT(*) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 AND OwnerId = {ownerId.Value}"
+                : Literal("SELECT COUNT(*) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0"),
             false, cancellationToken);
         var totalFolders = await db.ScalarAsync<long>(
-            Literal($"SELECT COUNT(*) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 1 {filter}"),
+            ownerId.HasValue
+                ? $"SELECT COUNT(*) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 1 AND OwnerId = {ownerId.Value}"
+                : Literal("SELECT COUNT(*) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 1"),
             false, cancellationToken);
         var totalSizeBytes = await db.ScalarAsync<long>(
-            Literal($"SELECT COALESCE(SUM(SizeBytes), 0) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 {filter}"),
+            ownerId.HasValue
+                ? $"SELECT COALESCE(SUM(SizeBytes), 0) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 AND OwnerId = {ownerId.Value}"
+                : Literal("SELECT COALESCE(SUM(SizeBytes), 0) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0"),
             false, cancellationToken);
         var recentFilesCount = await db.ScalarAsync<long>(
-            Literal($"SELECT COUNT(*) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 AND CreatedAt >= '{recentLiteral}' {filter}"),
+            ownerId.HasValue
+                ? $"SELECT COUNT(*) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 AND CreatedAt >= {recentLiteral} AND OwnerId = {ownerId.Value}"
+                : Literal($"SELECT COUNT(*) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 AND CreatedAt >= '{recentLiteral}'"),
             false, cancellationToken);
 
         // 扩展名分组一次拿全（distinct 集合小，内存分类无放大风险）
         var extensionCounts = await db.QueryAsync<ExtensionCountRow>(
-            Literal($"""
-                SELECT CASE WHEN Extension IS NULL THEN NULL ELSE lower(Extension) END AS Extension,
-                       COUNT(*) AS Count
-                FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 {filter}
-                GROUP BY 1
-                """),
+            ownerId.HasValue
+                ? $"""
+                    SELECT CASE WHEN Extension IS NULL THEN NULL ELSE lower(Extension) END AS Extension,
+                           COUNT(*) AS Count
+                    FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 AND OwnerId = {ownerId.Value}
+                    GROUP BY 1
+                    """
+                : Literal($"""
+                    SELECT CASE WHEN Extension IS NULL THEN NULL ELSE lower(Extension) END AS Extension,
+                           COUNT(*) AS Count
+                    FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0
+                    GROUP BY 1
+                    """),
             false,
             cancellationToken);
 

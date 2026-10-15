@@ -25,6 +25,11 @@ public sealed record StoragePoolDto
     public string? AvailableDisplay { get; init; }
     public required bool IsDefault { get; init; }
     public required bool IsEnabled { get; init; }
+    /// <summary>
+    /// 池状态码，与前端既有映射对齐：1=良好（挂载点可达且磁盘就绪），
+    /// 5=离线（挂载点不可达，此时容量数字不可信）
+    /// </summary>
+    public required int Status { get; init; }
     public required bool IsNearlyFull { get; init; }
     public required DateTime CreatedAt { get; init; }
 }
@@ -38,10 +43,26 @@ public sealed record StorageOverviewDto
     public required long UsedBytes { get; init; }
     public required long AvailableBytes { get; init; }
     public required double UsagePercentage { get; init; }
+    /// <summary>
+    /// 其他占用：总容量减去 NAS 记账再减去可用（物理剩余），
+    /// 即池所在磁盘上其他内容的占用。补上它让首页三个数恒等：
+    /// 已用 + 其他 + 可用 = 总容量
+    /// </summary>
+    public required long OtherBytes { get; init; }
     public string? TotalDisplay { get; init; }
     public string? UsedDisplay { get; init; }
     public string? AvailableDisplay { get; init; }
+    public string? OtherDisplay { get; init; }
     public required int PoolCount { get; init; }
+    /// <summary>
+    /// 就绪的物理磁盘数（DriveInfo.IsReady）
+    /// </summary>
+    public required int DiskCount { get; init; }
+    /// <summary>
+    /// 存储健康状态：Healthy 或 Warning。Warning 的判据是任一启用池
+    /// 挂载点不可达、磁盘未就绪，或使用率超过 90%
+    /// </summary>
+    public required string HealthStatus { get; init; }
 }
 
 /// <summary>

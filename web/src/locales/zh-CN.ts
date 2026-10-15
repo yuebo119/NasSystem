@@ -136,6 +136,7 @@ export default {
     totalCapacity: '总容量',
     usedSpace: '已使用',
     availableSpace: '可用空间',
+    otherUsage: '其他占用',
     usagePercent: '使用率',
     maxCapacity: '最大容量限制',
     default: '默认',
