@@ -15,12 +15,13 @@ export interface StoragePool {
   raidLevelName: string
   status: number
   statusName: string
-  totalBytes: number
+  folderSizeBytes: number
   usedBytes: number
   availableBytes: number
   usagePercentage: number
   maxCapacityBytes?: number
   maxCapacityDisplay?: string
+  folderSizeDisplay?: string
   isDefault: boolean
   isEnabled: boolean
   enableDeduplication: boolean
@@ -30,11 +31,11 @@ export interface StoragePool {
 }
 
 export interface StorageOverview {
-  totalBytes: number
+  folderSizeBytes: number
   usedBytes: number
   availableBytes: number
-  otherBytes: number
   usagePercentage: number
+  hasCapacityLimit: boolean
   poolCount: number
   diskCount: number
   healthStatus: string

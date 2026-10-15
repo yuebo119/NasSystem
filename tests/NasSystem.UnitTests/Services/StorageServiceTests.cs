@@ -82,9 +82,10 @@ public class StorageServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.PoolCount.Should().Be(0);
-        result.Value.TotalBytes.Should().Be(0);
+        result.Value.FolderSizeBytes.Should().Be(0);
         result.Value.UsedBytes.Should().Be(0);
         result.Value.UsagePercentage.Should().Be(0);
+        result.Value.HasCapacityLimit.Should().BeFalse();
     }
 
     #endregion

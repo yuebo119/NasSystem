@@ -16,6 +16,7 @@ using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
 using NasSystem.Application.Notifications;
+using NasSystem.Application.Storage;
 using NasSystem.Domain.Services;
 using NasSystem.Shared;
 using static NasSystem.Shared.ByteSizeFormatter;
@@ -108,7 +109,10 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         if (declaredSize > 0)
         {
             var pool = await _storagePoolRepository.GetByIdAsync(poolId, cancellationToken);
-            if (pool is not null && !pool.HasEnoughSpace(declaredSize))
+            // 放得下的判定要连同磁盘物理剩余：池只是盘上的文件夹，
+            // 只按配额放行会把盘写爆（写失败发生在流式中途，比预检拒绝更难收拾）
+            if (pool is not null && !pool.HasEnoughSpace(
+                    declaredSize, DiskSpace.GetPhysicalFreeBytes(pool.MountPath)))
                 return Result.Failure(StorageErrors.InsufficientSpace);
         }
 

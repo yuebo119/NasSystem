@@ -23,7 +23,9 @@ public partial class StoragePoolRow
     [Column("Description")] public string? Description { get; set; }
     [Column("IsDefault")] public bool IsDefault { get; set; }
     [Column("IsEnabled")] public bool IsEnabled { get; set; }
-    [Column("TotalBytes")] public long TotalBytes { get; set; }
+    // 列名 TotalBytes 是历史遗留（曾存磁盘总容量）。实体侧已改名 FolderSizeBytes，
+    // 语义是池文件夹的实测大小；列未迁移，改列名要做 ALTER TABLE 而项目没有列迁移先例
+    [Column("TotalBytes")] public long FolderSizeBytes { get; set; }
     [Column("UsedBytes")] public long UsedBytes { get; set; }
     [Column("MaxCapacityBytes")] public long? MaxCapacityBytes { get; set; }
     [Column("CreatedAt")] public DateTime CreatedAt { get; set; }

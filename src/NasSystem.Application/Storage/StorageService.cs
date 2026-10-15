@@ -36,31 +36,31 @@ public sealed class StorageService(
         }
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // 逐池取磁盘物理剩余（DriveInfo，与刷新同源），可用容量以它为硬上限：
-        // 池只是盘上的目录，盘上其他内容的占用不可分配给本池
-        var freeBytesByPool = pools.ToDictionary(
-            p => p.Id, p => GetPhysicalFreeBytes(p.MountPath));
-
-        // 使用有效总容量（考虑 maxCapacityBytes）
-        long totalBytes = pools.Sum(p => p.EffectiveTotalBytes);
+        // 池大小 = 各池文件夹实测大小之和。虚拟池：一个池就是一个固定文件夹，
+        // 池的大小即文件夹的大小，不是所在磁盘的容量
+        long folderSizeBytes = pools.Sum(p => p.FolderSizeBytes);
         long usedBytes = pools.Sum(p => p.UsedBytes);
-        long availableBytes = pools.Sum(p => p.AvailableBytesWithin(freeBytesByPool[p.Id]));
-        // 其他占用 = 总 - NAS记账 - 可用（物理），即盘上其他内容的占用。
-        // 三者恒等：已用 + 其他 + 可用 = 总容量
-        long otherBytes = Math.Max(0, totalBytes - usedBytes - availableBytes);
-        double usagePercentage = totalBytes > 0 ? (double)usedBytes / totalBytes * 100 : 0;
+        // 可用 = 文件夹的增长空间。同一磁盘上的多个池共享该盘剩余，
+        // 按盘根去重后求和，避免把一块盘的剩余重复计几次
+        long availableBytes = SumFreeBytesByDistinctDrive(pools);
+        // 使用率只对设置了容量上限的池有意义。混合配置（部分池有上限）时
+        // 凑不出一个诚实的聚合值，索性不展示
+        var enabled = pools.Where(p => p.IsEnabled).ToList();
+        bool hasCapacityLimit = enabled.Count > 0 && enabled.All(p => p.MaxCapacityBytes > 0);
+        double usagePercentage = hasCapacityLimit
+            ? (double)enabled.Sum(p => p.UsedBytes) / enabled.Sum(p => p.MaxCapacityBytes!.Value) * 100
+            : 0;
 
         return Result<StorageOverviewDto>.Success(new StorageOverviewDto
         {
-            TotalBytes = totalBytes,
+            FolderSizeBytes = folderSizeBytes,
             UsedBytes = usedBytes,
             AvailableBytes = availableBytes,
             UsagePercentage = Math.Round(usagePercentage, 2),
-            OtherBytes = otherBytes,
-            TotalDisplay = FormatSize(totalBytes),
+            HasCapacityLimit = hasCapacityLimit,
+            FolderSizeDisplay = FormatSize(folderSizeBytes),
             UsedDisplay = FormatSize(usedBytes),
             AvailableDisplay = FormatSize(availableBytes),
-            OtherDisplay = FormatSize(otherBytes),
             PoolCount = pools.Count,
             DiskCount = CountReadyDrives(),
             HealthStatus = DeriveHealthStatus(pools)
@@ -124,8 +124,10 @@ public sealed class StorageService(
             description: request.Description,
             maxCapacityBytes: request.MaxCapacityBytes);
 
-        // 刷新容量信息
-        await RefreshPoolCapacityAsync(pool, cancellationToken);
+        // 初始实测必须 force：节流窗口按 UpdatedAt ?? CreatedAt 判定，
+        // 刚建出来的池两者都是当下，不 force 的话第一次刷新必然被窗口挡掉，
+        // 新建一个有内容的池会先显示 0 B 满 60 秒
+        await RefreshPoolCapacityAsync(pool, cancellationToken, force: true);
 
         await poolRepository.AddAsync(pool, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -251,20 +253,21 @@ public sealed class StorageService(
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
-        // 可用容量受磁盘物理剩余约束：池只是盘上的目录，盘上其他内容的
-        // 占用不可分配给本池，上传预检按这个数判定才不会被盘写爆
+        // 可用 = 这个文件夹还能往里长多少：配额剩余与磁盘物理剩余取小。
+        // 上传预检按这个数判定才不会把盘写爆；两者都不可知时（无配额且挂载点
+        // 不可达）判为放不下，由健康状态的 Warning 暴露真正原因
         var availableBytes = pool.AvailableBytesWithin(
-            GetPhysicalFreeBytes(pool.MountPath));
+            DiskSpace.GetPhysicalFreeBytes(pool.MountPath));
         var hasEnoughSpace = availableBytes >= request.FileSize;
-        
+
         return Result<CheckStorageSpaceResponse>.Success(new CheckStorageSpaceResponse
         {
             HasEnoughSpace = hasEnoughSpace,
-            AvailableBytes = availableBytes,
+            AvailableBytes = availableBytes ?? 0,
             RequiredBytes = request.FileSize,
-            Message = hasEnoughSpace 
-                ? null 
-                : $"存储空间不足，需要 {FormatSize(request.FileSize)}，可用 {FormatSize(availableBytes)}"
+            Message = hasEnoughSpace
+                ? null
+                : $"存储空间不足，需要 {FormatSize(request.FileSize)}，可用 {FormatSize(availableBytes ?? 0)}"
         });
     }
 
@@ -276,47 +279,6 @@ public sealed class StorageService(
     /// 显式 RefreshCapacityAsync 与写路径传 force=true 绕过窗口
     /// </summary>
     private static readonly TimeSpan CapacityRefreshInterval = TimeSpan.FromSeconds(60);
-
-    /// <summary>
-    /// 池所在磁盘的物理剩余字节。挂载点不可达或磁盘未就绪时返回 null，
-    /// 调用方退回记账口径（<see cref="StoragePool.AvailableBytes"/>）
-    /// </summary>
-    private static long? GetPhysicalFreeBytes(string mountPath)
-    {
-        try
-        {
-            if (!Directory.Exists(mountPath))
-                return null;
-            var pathRoot = Path.GetPathRoot(mountPath);
-            if (string.IsNullOrEmpty(pathRoot))
-                return null;
-            var driveInfo = new DriveInfo(pathRoot);
-            return driveInfo.IsReady ? driveInfo.AvailableFreeSpace : null;
-        }
-        catch
-        {
-            // 与 RefreshPoolCapacityAsync 同策略：无法访问时不当异常抛给读端点
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// 池是否可达：挂载点目录存在且所在磁盘就绪。不可达时容量数字已经不可信
-    /// </summary>
-    private static bool IsPoolReachable(StoragePool pool)
-    {
-        try
-        {
-            if (!Directory.Exists(pool.MountPath))
-                return false;
-            var pathRoot = Path.GetPathRoot(pool.MountPath);
-            return !string.IsNullOrEmpty(pathRoot) && new DriveInfo(pathRoot).IsReady;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
     /// <summary>
     /// 就绪的物理磁盘数
@@ -334,6 +296,88 @@ public sealed class StorageService(
     }
 
     /// <summary>
+    /// 可用容量按盘根去重后求和。同一磁盘上的多个池共享该盘剩余，
+    /// 逐个池相加会把一块盘的剩余重复计几次
+    /// </summary>
+    private static long SumFreeBytesByDistinctDrive(IReadOnlyList<StoragePool> pools)
+    {
+        return pools
+            .Where(p => p.IsEnabled)
+            .GroupBy(p => Path.GetPathRoot(p.MountPath) ?? string.Empty)
+            .Sum(g => DiskSpace.GetPhysicalFreeBytes(g.First().MountPath) ?? 0);
+    }
+
+    /// <summary>
+    /// 递归实测文件夹大小（挂载点下所有文件的长度之和）。这是池大小的唯一来源：
+    /// 虚拟池即文件夹，池的大小就是文件夹的大小
+    /// </summary>
+    /// <remarks>
+    /// 根目录枚举失败（不存在、无权限、磁盘未就绪）返回 null，调用方不覆盖存量值，
+    /// 避免把"读不到"写成"池大小 0"。子目录逐个入栈，单目录读不了只跳过该分支，
+    /// 与 du 一类工具的行为一致
+    /// </remarks>
+    private static long? MeasureFolderBytes(string mountPath)
+    {
+        try
+        {
+            // 根目录可枚举性先行：读不了与真空文件夹是两件事，
+            // 前者不能把池大小覆盖成 0（调用方据此不覆盖存量值）
+            try
+            {
+                _ = Directory.EnumerateFiles(mountPath).FirstOrDefault();
+            }
+            catch
+            {
+                return null;
+            }
+
+            long total = 0;
+            var pending = new Stack<string>();
+            pending.Push(mountPath);
+
+            while (pending.Count > 0)
+            {
+                var dir = pending.Pop();
+                try
+                {
+                    foreach (var file in Directory.EnumerateFiles(dir))
+                    {
+                        try
+                        {
+                            total += new FileInfo(file).Length;
+                        }
+                        catch (FileNotFoundException)
+                        {
+                            // 扫描期间被移走，跳过
+                        }
+                        catch (IOException)
+                        {
+                            // 单文件被锁或不可读，跳过
+                        }
+                    }
+
+                    foreach (var sub in Directory.EnumerateDirectories(dir))
+                        pending.Push(sub);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // 单个子目录无权限，只跳过该分支
+                }
+                catch (IOException)
+                {
+                    // 单个子目录不可访问，只跳过该分支
+                }
+            }
+
+            return total;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// 存储健康状态，由池的真实可达性推导而非硬编码：任一启用池不可达
     /// 或使用率超过 90% 记 Warning
     /// </summary>
@@ -343,14 +387,15 @@ public sealed class StorageService(
         if (enabled.Count == 0)
             return "Healthy";
 
-        if (enabled.Any(p => !IsPoolReachable(p)))
+        if (enabled.Any(p => !DiskSpace.IsPoolReachable(p.MountPath)))
             return "Warning";
 
         return enabled.Any(p => p.IsNearlyFull) ? "Warning" : "Healthy";
     }
 
     /// <summary>
-    /// 刷新单个池的容量信息（读路径受节流窗口保护）
+    /// 刷新单个池的实测大小与已用容量（读路径受节流窗口保护）。
+    /// 两个数字来源不同：大小扫文件夹，已用查数据库里该池的文件记账
     /// </summary>
     private async Task<bool> RefreshPoolCapacityAsync(
         StoragePool pool,
@@ -362,22 +407,16 @@ public sealed class StorageService(
 
         try
         {
-            // 获取磁盘总容量
-            if (fileSystemService.DirectoryExists(pool.MountPath))
-            {
-                var pathRoot = Path.GetPathRoot(pool.MountPath);
-                if (!string.IsNullOrEmpty(pathRoot))
-                {
-                    var driveInfo = new DriveInfo(pathRoot);
-                    if (driveInfo.IsReady)
-                    {
-                        // 计算存储池内所有文件的总大小作为已用空间
-                        var usedBytes = await fileItemRepository.CalculateStoragePoolUsedSpaceAsync(pool.Id, cancellationToken);
-                        pool.UpdateCapacity(driveInfo.TotalSize, usedBytes);
-                        return true;
-                    }
-                }
-            }
+            // 实测挂载点文件夹大小。读不到（不存在/无权限/盘未就绪）时
+            // 不覆盖存量值，由健康状态的 Warning 暴露不可达
+            var folderSizeBytes = MeasureFolderBytes(pool.MountPath);
+            if (folderSizeBytes is null)
+                return false;
+
+            // 计算存储池内 NAS 管理的文件总大小作为已用空间
+            var usedBytes = await fileItemRepository.CalculateStoragePoolUsedSpaceAsync(pool.Id, cancellationToken);
+            pool.UpdateUsage(folderSizeBytes.Value, usedBytes);
+            return true;
         }
         catch
         {
@@ -388,26 +427,28 @@ public sealed class StorageService(
 
     private static StoragePoolDto MapToDto(StoragePool pool)
     {
-        // 可用容量受物理剩余约束，与概览、上传预检同一口径
-        var availableBytes = pool.AvailableBytesWithin(GetPhysicalFreeBytes(pool.MountPath));
+        // 可用 = 文件夹的增长空间（配额剩余与磁盘物理剩余取小），
+        // 与概览、上传预检同一口径；不可知时显示 0
+        var availableBytes = pool.AvailableBytesWithin(
+            DiskSpace.GetPhysicalFreeBytes(pool.MountPath));
         return new StoragePoolDto
         {
             Id = pool.Id,
             Name = pool.Name,
             Description = pool.Description,
             MountPath = pool.MountPath,
-            TotalBytes = pool.EffectiveTotalBytes,
+            FolderSizeBytes = pool.FolderSizeBytes,
             UsedBytes = pool.UsedBytes,
-            AvailableBytes = availableBytes,
+            AvailableBytes = availableBytes ?? 0,
             UsagePercentage = Math.Round(pool.UsagePercentage, 2),
             MaxCapacityBytes = pool.MaxCapacityBytes,
             MaxCapacityDisplay = pool.MaxCapacityBytes.HasValue ? FormatSize(pool.MaxCapacityBytes.Value) : null,
-            TotalDisplay = FormatSize(pool.EffectiveTotalBytes),
+            FolderSizeDisplay = FormatSize(pool.FolderSizeBytes),
             UsedDisplay = FormatSize(pool.UsedBytes),
-            AvailableDisplay = FormatSize(availableBytes),
+            AvailableDisplay = FormatSize(availableBytes ?? 0),
             IsDefault = pool.IsDefault,
             IsEnabled = pool.IsEnabled,
-            Status = IsPoolReachable(pool) ? 1 : 5,
+            Status = DiskSpace.IsPoolReachable(pool.MountPath) ? 1 : 5,
             IsNearlyFull = pool.IsNearlyFull,
             CreatedAt = pool.CreatedAt
         };

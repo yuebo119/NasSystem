@@ -78,7 +78,7 @@ public static class RowMapper
     public static StoragePool ToDomain(this StoragePoolRow row) =>
         StoragePool.Restore(
             row.Id, row.Name, row.MountPath, row.Description,
-            row.IsDefault, row.IsEnabled, row.TotalBytes, row.UsedBytes,
+            row.IsDefault, row.IsEnabled, row.FolderSizeBytes, row.UsedBytes,
             row.MaxCapacityBytes, row.CreatedAt, row.UpdatedAt);
 
     public static StoragePoolRow ToRow(this StoragePool entity) =>
@@ -90,7 +90,7 @@ public static class RowMapper
             Description = entity.Description,
             IsDefault = entity.IsDefault,
             IsEnabled = entity.IsEnabled,
-            TotalBytes = entity.TotalBytes,
+            FolderSizeBytes = entity.FolderSizeBytes,
             UsedBytes = entity.UsedBytes,
             MaxCapacityBytes = entity.MaxCapacityBytes,
             CreatedAt = entity.CreatedAt,

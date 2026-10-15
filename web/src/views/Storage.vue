@@ -194,11 +194,11 @@ onMounted(() => loadData())
             <h3>{{ t('storage.overview') }}</h3>
             <p>{{ t('storage.subtitle') }}</p>
           </div>
-          <div class="main-percentage" :style="{ color: getUsageColor(overview?.usagePercentage || 0) }">
+          <div v-if="overview?.hasCapacityLimit" class="main-percentage" :style="{ color: getUsageColor(overview?.usagePercentage || 0) }">
             {{ (overview?.usagePercentage || 0).toFixed(1) }}%
           </div>
         </div>
-        <div class="main-bar">
+        <div v-if="overview?.hasCapacityLimit" class="main-bar">
           <div class="bar-track">
             <div class="bar-fill" :style="{ width: `${overview?.usagePercentage || 0}%`, background: getUsageGradient(overview?.usagePercentage || 0) }"></div>
           </div>
@@ -206,7 +206,7 @@ onMounted(() => loadData())
         <div class="main-stats">
           <div class="stat"><span class="label">{{ t('storage.usedSpace') }}</span><span class="value">{{ formatSize(overview?.usedBytes || 0) }}</span></div>
           <div class="stat"><span class="label">{{ t('storage.availableSpace') }}</span><span class="value success">{{ formatSize(overview?.availableBytes || 0) }}</span></div>
-          <div class="stat"><span class="label">{{ t('storage.totalCapacity') }}</span><span class="value">{{ formatSize(overview?.totalBytes || 0) }}</span></div>
+          <div class="stat"><span class="label">{{ t('storage.totalCapacity') }}</span><span class="value">{{ formatSize(overview?.folderSizeBytes || 0) }}</span></div>
         </div>
       </div>
 
@@ -244,10 +244,11 @@ onMounted(() => loadData())
           <div class="pool-center">
             <div class="usage-info">
               <div class="usage-header">
-                <span class="usage-text">{{ formatSize(pool.usedBytes || 0) }} / {{ formatSize(pool.maxCapacityBytes || pool.totalBytes || 0) }}</span>
-                <span class="usage-percent" :style="{ color: getUsageColor(pool.usagePercentage || 0) }">{{ (pool.usagePercentage || 0).toFixed(1) }}%</span>
+                <span class="usage-text">{{ formatSize(pool.usedBytes || 0) }} / {{ formatSize(pool.folderSizeBytes || 0) }}</span>
+                <span class="usage-percent" v-if="pool.maxCapacityBytes" :style="{ color: getUsageColor(pool.usagePercentage || 0) }">{{ (pool.usagePercentage || 0).toFixed(1) }}%</span>
+                <span class="usage-percent" v-else>-</span>
               </div>
-              <div class="usage-bar">
+              <div v-if="pool.maxCapacityBytes" class="usage-bar">
                 <div class="bar-fill" :style="{ width: `${pool.usagePercentage || 0}%`, background: getUsageGradient(pool.usagePercentage || 0) }"></div>
               </div>
               <div class="capacity-limit" v-if="pool.maxCapacityBytes">

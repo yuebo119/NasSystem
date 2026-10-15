@@ -14,13 +14,16 @@ public sealed record StoragePoolDto
     public required string Name { get; init; }
     public string? Description { get; init; }
     public required string MountPath { get; init; }
-    public required long TotalBytes { get; init; }
+    /// <summary>
+    /// 池文件夹的实测大小。虚拟池即文件夹，池的大小就是文件夹的大小
+    /// </summary>
+    public required long FolderSizeBytes { get; init; }
     public required long UsedBytes { get; init; }
     public required long AvailableBytes { get; init; }
     public required double UsagePercentage { get; init; }
     public long? MaxCapacityBytes { get; init; }
     public string? MaxCapacityDisplay { get; init; }
-    public string? TotalDisplay { get; init; }
+    public string? FolderSizeDisplay { get; init; }
     public string? UsedDisplay { get; init; }
     public string? AvailableDisplay { get; init; }
     public required bool IsDefault { get; init; }
@@ -39,20 +42,27 @@ public sealed record StoragePoolDto
 /// </summary>
 public sealed record StorageOverviewDto
 {
-    public required long TotalBytes { get; init; }
+    /// <summary>
+    /// 各池文件夹实测大小之和
+    /// </summary>
+    public required long FolderSizeBytes { get; init; }
     public required long UsedBytes { get; init; }
+    /// <summary>
+    /// 可用容量：文件夹的增长空间，按盘根去重后求和（同一盘上的多个池共享该盘剩余）
+    /// </summary>
     public required long AvailableBytes { get; init; }
+    /// <summary>
+    /// 使用率，只对设置了容量上限的池有意义；未设上限时为 0，
+    /// 展示层配合 <see cref="HasCapacityLimit"/> 决定是否渲染
+    /// </summary>
     public required double UsagePercentage { get; init; }
     /// <summary>
-    /// 其他占用：总容量减去 NAS 记账再减去可用（物理剩余），
-    /// 即池所在磁盘上其他内容的占用。补上它让首页三个数恒等：
-    /// 已用 + 其他 + 可用 = 总容量
+    /// 是否全部启用池都设置了容量上限。只有为 true 时使用率才有意义
     /// </summary>
-    public required long OtherBytes { get; init; }
-    public string? TotalDisplay { get; init; }
+    public required bool HasCapacityLimit { get; init; }
+    public string? FolderSizeDisplay { get; init; }
     public string? UsedDisplay { get; init; }
     public string? AvailableDisplay { get; init; }
-    public string? OtherDisplay { get; init; }
     public required int PoolCount { get; init; }
     /// <summary>
     /// 就绪的物理磁盘数（DriveInfo.IsReady）

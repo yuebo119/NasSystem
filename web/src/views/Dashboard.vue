@@ -17,11 +17,11 @@ const userStore = useUserStore()
 
 // 存储概览
 const storageOverview = ref({
-  totalBytes: 0,
+  folderSizeBytes: 0,
   usedBytes: 0,
   availableBytes: 0,
-  otherBytes: 0,
   usagePercentage: 0,
+  hasCapacityLimit: false,
   poolCount: 0,
   diskCount: 0,
   healthStatus: ''
@@ -323,17 +323,17 @@ onUnmounted(() => {
           <template #header>
             <div class="card-header">
               <span><el-icon><Box /></el-icon> {{ t('storage.overview') }}</span>
-              <el-tag :type="storageOverview.usagePercentage > 90 ? 'danger' : storageOverview.usagePercentage > 70 ? 'warning' : 'success'">
+              <el-tag v-if="storageOverview.hasCapacityLimit" :type="storageOverview.usagePercentage > 90 ? 'danger' : storageOverview.usagePercentage > 70 ? 'warning' : 'success'">
                 {{ t('storage.usagePercent') }} {{ storageOverview.usagePercentage.toFixed(1) }}%
               </el-tag>
             </div>
           </template>
           
           <div class="storage-main">
-            <div class="storage-chart">
-              <el-progress 
-                type="dashboard" 
-                :percentage="storageOverview.usagePercentage" 
+            <div class="storage-chart" v-if="storageOverview.hasCapacityLimit">
+              <el-progress
+                type="dashboard"
+                :percentage="storageOverview.usagePercentage"
                 :width="160"
                 :stroke-width="12"
                 :color="[
@@ -350,14 +350,14 @@ onUnmounted(() => {
                 </template>
               </el-progress>
             </div>
-            
+
             <div class="storage-details">
               <div class="detail-item">
                 <div class="detail-label">
                   <span class="dot" style="background: #409EFF"></span>
                   {{ t('storage.totalCapacity') }}
                 </div>
-                <div class="detail-value">{{ formatSize(storageOverview.totalBytes) }}</div>
+                <div class="detail-value">{{ formatSize(storageOverview.folderSizeBytes) }}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">
@@ -372,13 +372,6 @@ onUnmounted(() => {
                   {{ t('storage.availableSpace') }}
                 </div>
                 <div class="detail-value">{{ formatSize(storageOverview.availableBytes) }}</div>
-              </div>
-              <div class="detail-item">
-                <div class="detail-label">
-                  <span class="dot" style="background: #909399"></span>
-                  {{ t('storage.otherUsage') }}
-                </div>
-                <div class="detail-value">{{ formatSize(storageOverview.otherBytes) }}</div>
               </div>
               <el-divider />
               <div class="detail-item">
@@ -525,10 +518,11 @@ onUnmounted(() => {
           <template #default="{ row }">
             <div class="capacity-cell">
               <div class="capacity-text">
-                {{ formatSize(row.usedBytes) }} / {{ formatSize(row.totalBytes) }}
+                {{ formatSize(row.usedBytes) }} / {{ formatSize(row.folderSizeBytes) }}
               </div>
-              <el-progress 
-                :percentage="row.usagePercentage" 
+              <el-progress
+                v-if="row.maxCapacityBytes"
+                :percentage="row.usagePercentage"
                 :stroke-width="6"
                 :show-text="false"
                 :color="row.usagePercentage > 90 ? '#F56C6C' : row.usagePercentage > 70 ? '#E6A23C' : '#67C23A'"
@@ -538,9 +532,10 @@ onUnmounted(() => {
         </el-table-column>
         <el-table-column prop="usagePercentage" :label="t('storage.usagePercent')" width="100">
           <template #default="{ row }">
-            <span :style="{ color: row.usagePercentage > 90 ? '#F56C6C' : row.usagePercentage > 70 ? '#E6A23C' : '#67C23A' }">
+            <span v-if="row.maxCapacityBytes" :style="{ color: row.usagePercentage > 90 ? '#F56C6C' : row.usagePercentage > 70 ? '#E6A23C' : '#67C23A' }">
               {{ row.usagePercentage.toFixed(1) }}%
             </span>
+            <span v-else>-</span>
           </template>
         </el-table-column>
         <el-table-column prop="mountPath" :label="t('storage.mountPath')" min-width="150" />

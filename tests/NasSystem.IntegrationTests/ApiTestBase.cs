@@ -106,9 +106,10 @@ public abstract class ApiTestBase : IClassFixture<NasSystemWebApplicationFactory
             if (existing is not null)
                 return;
 
-            var pool = StoragePool.Create("DefaultPool", "/mnt/storage");
+            // 挂载点 /mnt/storage 在 Windows 上取不到盘根，物理剩余探测返回 null。
+            // 无配额时可用容量无从判断，上传预检会一律拒绝，故给测试池配 100GB 上限
+            var pool = StoragePool.Create("DefaultPool", "/mnt/storage", maxCapacityBytes: 1024L * 1024 * 1024 * 100);
             pool.SetAsDefault(true);
-            pool.UpdateCapacity(1024L * 1024 * 1024 * 100, 0); // 100GB total, 0 used
             await pools.AddAsync(pool);
             await unitOfWork.SaveChangesAsync();
         }

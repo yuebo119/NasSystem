@@ -40,17 +40,20 @@ public sealed class StoragePool : Entity
     public bool IsEnabled { get; private set; } = true;
 
     /// <summary>
-    /// 总容量（从文件系统动态读取）
+    /// 池文件夹的实测大小（递归扫描挂载点下所有文件得出）。
+    /// 文件池是虚拟池：一个池就是一个固定文件夹，池的大小即文件夹的大小，
+    /// 不是所在磁盘的容量。存储列名 TotalBytes 是历史遗留，未做列迁移
     /// </summary>
-    public long TotalBytes { get; private set; }
+    public long FolderSizeBytes { get; private set; }
 
     /// <summary>
-    /// 已使用容量
+    /// 已使用容量：NAS 管理的文件占用（数据库记账）
     /// </summary>
     public long UsedBytes { get; private set; }
 
     /// <summary>
-    /// 最大容量限制（null 表示不限制，使用磁盘实际容量）
+    /// 最大容量限制（null 表示不限制）。池本身没有容量概念，
+    /// 上限是用户给文件夹划的账目上限
     /// </summary>
     public long? MaxCapacityBytes { get; private set; }
 
@@ -97,13 +100,14 @@ public sealed class StoragePool : Entity
     }
 
     /// <summary>
-    /// 更新容量信息（从文件系统读取）
+    /// 更新实测大小与已用容量。folderSizeBytes 是挂载点文件夹的实测大小，
+    /// usedBytes 是 NAS 管理的文件占用，两者来源不同（前者扫目录，后者查数据库）
     /// </summary>
-    public void UpdateCapacity(long totalBytes, long usedBytes)
+    public void UpdateUsage(long folderSizeBytes, long usedBytes)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(totalBytes);
+        ArgumentOutOfRangeException.ThrowIfNegative(folderSizeBytes);
         ArgumentOutOfRangeException.ThrowIfNegative(usedBytes);
-        TotalBytes = totalBytes;
+        FolderSizeBytes = folderSizeBytes;
         UsedBytes = usedBytes;
         MarkAsModified();
     }
@@ -127,42 +131,43 @@ public sealed class StoragePool : Entity
     }
 
     /// <summary>
-    /// 有效总容量（考虑最大容量限制）
+    /// 配额剩余：设置了容量上限时为 上限 − 已用（不为负），未设置时无上限返回 null
     /// </summary>
-    public long EffectiveTotalBytes => MaxCapacityBytes.HasValue && MaxCapacityBytes.Value < TotalBytes 
-        ? MaxCapacityBytes.Value 
-        : TotalBytes;
+    public long? QuotaRemainingBytes =>
+        MaxCapacityBytes.HasValue ? Math.Max(0, MaxCapacityBytes.Value - UsedBytes) : null;
 
     /// <summary>
-    /// 可用容量（考虑最大容量限制）
+    /// 可用容量：这个文件夹还能往里长多少。取配额剩余与磁盘物理剩余的较小值，
+    /// 未设备配额时只受物理剩余约束。<paramref name="physicalFreeBytes"/> 为 null
+    /// （挂载点不可达或路径取不到盘根）时退回配额剩余，两者都不可知返回 null
     /// </summary>
-    public long AvailableBytes => Math.Max(0, EffectiveTotalBytes - UsedBytes);
+    public long? AvailableBytesWithin(long? physicalFreeBytes)
+    {
+        var quotaCap = QuotaRemainingBytes ?? long.MaxValue;
+        if (physicalFreeBytes.HasValue)
+            return Math.Min(quotaCap, physicalFreeBytes.Value);
+        return QuotaRemainingBytes;
+    }
 
     /// <summary>
-    /// 受物理剩余约束的可用容量。池只是磁盘上的一个目录，盘上其他内容
-    /// （系统盘上的操作系统与其他程序）的占用不可分配给本池，因此可用
-    /// 以磁盘物理剩余为硬上限；<paramref name="physicalFreeBytes"/> 为 null
-    /// （挂载点不可达或磁盘未就绪）时退回记账口径，由健康状态另行暴露
+    /// 指定大小是否放得下。物理剩余不可知且无配额时（无从判断）返回 false，
+    /// 由健康状态的 Warning 暴露挂载点不可达
     /// </summary>
-    public long AvailableBytesWithin(long? physicalFreeBytes) =>
-        physicalFreeBytes.HasValue
-            ? Math.Min(AvailableBytes, physicalFreeBytes.Value)
-            : AvailableBytes;
+    public bool HasEnoughSpace(long fileSize, long? physicalFreeBytes) =>
+        AvailableBytesWithin(physicalFreeBytes) is { } available && fileSize <= available;
 
     /// <summary>
-    /// 使用率 (0-100)，基于有效总容量
+    /// 使用率 (0-100)，只对设置了容量上限的池有意义：已用占上限的比例。
+    /// 未设上限的池没有容量概念，返回 0，展示层据此不渲染百分比
     /// </summary>
-    public double UsagePercentage => EffectiveTotalBytes > 0 ? (double)UsedBytes / EffectiveTotalBytes * 100 : 0;
+    public double UsagePercentage => MaxCapacityBytes > 0
+        ? (double)UsedBytes / MaxCapacityBytes.Value * 100
+        : 0;
 
     /// <summary>
-    /// 是否即将满 (>90%)
+    /// 是否即将满 (&gt;90%)，只对设置了容量上限的池有意义
     /// </summary>
-    public bool IsNearlyFull => UsagePercentage > 90;
-
-    /// <summary>
-    /// 检查是否有足够空间上传指定大小的文件
-    /// </summary>
-    public bool HasEnoughSpace(long fileSize) => AvailableBytes >= fileSize;
+    public bool IsNearlyFull => MaxCapacityBytes > 0 && UsagePercentage > 90;
 
     /// <summary>
     /// 从持久化状态恢复实体（供基础设施层影子模型映射使用）。动因见 <see cref="FileItem.Restore"/>。
@@ -174,7 +179,7 @@ public sealed class StoragePool : Entity
         string? description,
         bool isDefault,
         bool isEnabled,
-        long totalBytes,
+        long folderSizeBytes,
         long usedBytes,
         long? maxCapacityBytes,
         DateTime createdAt,
@@ -188,7 +193,7 @@ public sealed class StoragePool : Entity
             Description = description,
             IsDefault = isDefault,
             IsEnabled = isEnabled,
-            TotalBytes = totalBytes,
+            FolderSizeBytes = folderSizeBytes,
             UsedBytes = usedBytes,
             MaxCapacityBytes = maxCapacityBytes,
             CreatedAt = createdAt,
