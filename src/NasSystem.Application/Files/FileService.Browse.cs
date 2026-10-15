@@ -31,16 +31,55 @@ public sealed partial class FileService
     {
         path = NormalizePath(path);
 
-        // 获取目录项和子项
-        var parent = await _fileRepository.GetByPathAsync(path, cancellationToken);
-        var children = await _fileRepository.GetChildrenAsync(parent?.Id, includeDeleted: false, cancellationToken);
-        
-        if (!includeHidden)
-            children = children.Where(c => !c.IsHidden).ToList();
+        // 父目录记录只在非根目录时才查：根目录的 parentId 必为 null，而库里不存在
+        // Path = "/" 的行，这次查询必然返回 null，纯粹是白跑一趟
+        FileItem? parent = null;
+        if (path != "/")
+            parent = await _fileRepository.GetByPathAsync(path, cancellationToken);
+
+        // 摘要查询：按需取列 + IsHidden 下推 + 不排序（前端 store 会按用户选择重排）
+        var children = await _fileRepository.GetChildrenSummariesAsync(
+            parent?.Id, includeHidden, cancellationToken);
 
         var breadcrumbs = BuildBreadcrumbs(path);
-        var folders = children.Where(c => c.ItemType == FileItemType.Folder).ToList();
-        var files = children.Where(c => c.ItemType == FileItemType.File).ToList();
+
+        // 单趟遍历同时产出 DTO 列表与计数/求和：原先对 children 做四次完整枚举
+        // （隐藏过滤一趟、folders/files 各一趟、MapToDto 一趟）加四个 List 分配
+        var items = new List<FileItemDto>(children.Count);
+        var folderCount = 0;
+        var fileCount = 0;
+        long totalSizeBytes = 0;
+        foreach (var c in children)
+        {
+            if (c.ItemType == FileItemType.Folder)
+            {
+                folderCount++;
+            }
+            else
+            {
+                fileCount++;
+                totalSizeBytes += c.SizeBytes;
+            }
+
+            items.Add(new FileItemDto
+            {
+                Id = c.Id,
+                Name = c.Name,
+                Path = c.Path,
+                ItemType = c.ItemType,
+                SizeBytes = c.SizeBytes,
+                SizeDisplay = FormatSize(c.SizeBytes),
+                MimeType = c.MimeType,
+                Extension = c.Extension,
+                Hash = c.Hash,
+                ParentId = c.ParentId,
+                OwnerId = c.OwnerId,
+                IsHidden = c.IsHidden,
+                IsReadOnly = c.IsReadOnly,
+                CreatedAt = c.CreatedAt,
+                UpdatedAt = c.UpdatedAt
+            });
+        }
 
         return Result<DirectoryContentDto>.Success(new DirectoryContentDto
         {
@@ -48,11 +87,11 @@ public sealed partial class FileService
             Name = GetFileName(path),
             ParentId = parent?.ParentId,
             ParentPath = GetParentPath(path),
-            Items = children.Select(MapToDto).ToList(),
-            FolderCount = folders.Count,
-            FileCount = files.Count,
-            TotalSizeBytes = files.Sum(f => f.SizeBytes),
-            TotalSizeDisplay = FormatSize(files.Sum(f => f.SizeBytes)),
+            Items = items,
+            FolderCount = folderCount,
+            FileCount = fileCount,
+            TotalSizeBytes = totalSizeBytes,
+            TotalSizeDisplay = FormatSize(totalSizeBytes),
             Breadcrumbs = breadcrumbs
         });
     }
@@ -85,24 +124,28 @@ public sealed partial class FileService
             _ => null
         };
 
-        var items = await _fileRepository.SearchAsync(
+        // pageSize 上限夹取在服务层：仓储也夹一次，但这里夹住后
+        // PagedResult 报出去的 PageSize 与真实取回数才一致
+        var page = request.Page > 0 ? request.Page : 1;
+        var pageSize = request.PageSize > 0 ? request.PageSize : 50;
+        if (pageSize > 200) pageSize = 200;
+
+        // 分页与计数都在 SQL 侧完成：原实现取满 500 条再内存 Skip/Take，
+        // 翻页要把整个 LIKE 扫描重跑，TotalCount 报的还是窗口计数
+        var result = await _fileRepository.SearchAsync(
             request.Query,
             ownerId: userId,
             storagePoolId: null,
             basePath: request.Path,
             extension: request.Extension,
             isFolder: isFolder,
+            page: page,
+            pageSize: pageSize,
             cancellationToken: cancellationToken);
 
-        // 客户端分页 (简化实现)
-        var paged = items
-            .Skip((request.Page - 1) * request.PageSize)
-            .Take(request.PageSize)
-            .ToList();
-
-        var dtos = paged.Select(MapToDto).ToList();
+        var dtos = result.Items.Select(MapToDto).ToList();
         return Result<PagedResult<FileItemDto>>.Success(
-            PagedResult<FileItemDto>.Create(dtos, request.Page, request.PageSize, items.Count));
+            PagedResult<FileItemDto>.Create(dtos, page, pageSize, result.TotalCount));
     }
 
     public async Task<Result<FileStatisticsDto>> GetStatisticsAsync(

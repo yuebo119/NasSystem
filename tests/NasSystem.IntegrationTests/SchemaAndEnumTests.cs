@@ -265,10 +265,10 @@ public class SchemaAndEnumTests : IDisposable
             await unitOfWork.SaveChangesAsync();
 
             var asFolder = await fileItems.SearchAsync("filtered", isFolder: true);
-            asFolder.Should().BeEmpty();
+            asFolder.Items.Should().BeEmpty();
 
             var asFile = await fileItems.SearchAsync("filtered", isFolder: false);
-            asFile.Should().HaveCount(1);
+            asFile.Items.Should().HaveCount(1);
         }
     }
 
@@ -296,8 +296,8 @@ public class SchemaAndEnumTests : IDisposable
             await unitOfWork.SaveChangesAsync();
 
             var hits = await fileItems.SearchAsync("rep_ort");
-            hits.Should().HaveCount(1);
-            hits[0].Name.Should().Be("rep_ort.txt");
+            hits.Items.Should().HaveCount(1);
+            hits.Items[0].Name.Should().Be("rep_ort.txt");
         }
     }
 

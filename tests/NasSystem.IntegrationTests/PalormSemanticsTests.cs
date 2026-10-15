@@ -88,6 +88,69 @@ public class PalormSemanticsTests : IDisposable
     }
 
     [Fact]
+    public async Task GetChildrenSummaries_WithNullParent_ReturnsRootLevelItems()
+    {
+        // 浏览投影查询的根目录分支：parentId 为 null 必须生成 ParentId IS NULL。
+        // 这是 B 层投影改造后新写的一条 SQL，与 GetChildrenAsync 走的是不同代码路径，
+        // 原先的根目录守护测试覆盖不到它，故单独锁一次
+        var (scope, users, pools, fileItems, _, uow) = Scope();
+        using (scope)
+        {
+            var user = User.Create("sumroot", "h", "s");
+            var pool = StoragePool.Create("P", "/mnt/p");
+            await users.AddAsync(user);
+            await pools.AddAsync(pool);
+            await uow.SaveChangesAsync();
+
+            await fileItems.AddAsync(FileItem.CreateFile(
+                "root.txt", "/root.txt", "/mnt/p/root.txt", 1, "text/plain", pool.Id, user.Id, parentId: null));
+            await fileItems.AddAsync(FileItem.CreateFolder(
+                "sub", "/sub", "/mnt/p/sub", pool.Id, user.Id, parentId: null));
+            await uow.SaveChangesAsync();
+
+            var rootChildren = await fileItems.GetChildrenSummariesAsync(null, includeHidden: false);
+            rootChildren.Should().HaveCount(2, "根目录应列出 ParentId 为 NULL 的项");
+        }
+    }
+
+    [Fact]
+    public async Task GetChildrenSummaries_ExcludesHiddenItemsUnlessRequested()
+    {
+        // 隐藏过滤已从服务层内存 Where 下推到仓储 SQL（GetChildrenSummariesAsync 的
+        // IsHidden = 0 条件）。服务层的单测只能验证参数传递，真正的过滤行为在这里
+        // 用真库锁住：includeHidden=false 时隐藏项不出现，true 时出现
+        var (scope, users, pools, fileItems, _, uow) = Scope();
+        using (scope)
+        {
+            var user = User.Create("hiddenowner", "h", "s");
+            var pool = StoragePool.Create("P", "/mnt/p");
+            await users.AddAsync(user);
+            await pools.AddAsync(pool);
+            await uow.SaveChangesAsync();
+
+            await fileItems.AddAsync(FileItem.CreateFile(
+                "visible.txt", "/visible.txt", "/mnt/p/visible.txt", 1, "text/plain", pool.Id, user.Id));
+            await fileItems.AddAsync(FileItem.CreateFile(
+                "hidden.txt", "/hidden.txt", "/mnt/p/hidden.txt", 1, "text/plain", pool.Id, user.Id));
+            await uow.SaveChangesAsync();
+
+            // 直接改库置隐藏位：FileItem 的创建工厂没有 IsHidden 入口（历史契约），
+            // 而这条测试要的正是"库里 IsHidden = 1 的行不被浏览返回"
+            var sessions = scope.ServiceProvider.GetRequiredService<NasSystem.Infrastructure.Persistence.PalormSessionHolder>();
+            var db = await sessions.GetAsync();
+            await db.ExecuteAsync(System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "UPDATE FileItems SET IsHidden = 1 WHERE Path = '/hidden.txt'"));
+
+            var visibleOnly = await fileItems.GetChildrenSummariesAsync(null, includeHidden: false);
+            visibleOnly.Should().HaveCount(1);
+            visibleOnly[0].Name.Should().Be("visible.txt");
+
+            var withHidden = await fileItems.GetChildrenSummariesAsync(null, includeHidden: true);
+            withHidden.Should().HaveCount(2, "includeHidden=true 时隐藏项应返回");
+        }
+    }
+
+    [Fact]
     public async Task GetLatestVersionNumber_ReturnsMaxNotBooleanComparison()
     {
         // MaxAsync 的 FormattableString 参数是聚合表达式本身，没有 WHERE 通道。

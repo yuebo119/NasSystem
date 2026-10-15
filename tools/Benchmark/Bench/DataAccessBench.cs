@@ -351,7 +351,7 @@ public static class DataAccessBench
             async f => (await f.GetChildrenAsync(p.TopFolderId)).Count),
         new("Search_名称模糊",
             o => o.FileItems.SearchAsync("report"), f => f.SearchAsync("report"),
-            async o => (await o.FileItems.SearchAsync("report")).Count,
+            async o => (await o.FileItems.SearchAsync("report")).TotalCount,
             async f => (await f.SearchAsync("report")).Count),
         new("GetStatistics",
             o => o.FileItems.GetStatisticsAsync(), f => f.GetStatisticsAsync(DateTime.UtcNow.AddDays(-7)),

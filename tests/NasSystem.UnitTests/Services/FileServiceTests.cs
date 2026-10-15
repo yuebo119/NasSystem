@@ -73,8 +73,12 @@ public class FileServiceTests
             .ReturnsAsync(parentItem);
 
         _fileRepositoryMock
-            .Setup(x => x.GetChildrenAsync(It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<FileItem> { childFile, childFolder });
+            .Setup(x => x.GetChildrenSummariesAsync(It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItemSummary>
+            {
+                CreateSummary("test.txt", "/documents/test.txt", FileItemType.File, parentId: parentItem.Id, sizeBytes: 1024),
+                CreateSummary("subfolder", "/documents/subfolder", FileItemType.Folder, parentId: parentItem.Id)
+            });
 
         // Act
         var result = await _sut.GetDirectoryContentsAsync(path, userId);
@@ -101,8 +105,11 @@ public class FileServiceTests
             .ReturnsAsync((FileItem?)null);
 
         _fileRepositoryMock
-            .Setup(x => x.GetChildrenAsync(null, false, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<FileItem> { childFolder });
+            .Setup(x => x.GetChildrenSummariesAsync(null, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItemSummary>
+            {
+                CreateSummary("documents", "/documents", FileItemType.Folder)
+            });
 
         // Act
         var result = await _sut.GetDirectoryContentsAsync(path, userId);
@@ -114,24 +121,28 @@ public class FileServiceTests
     }
 
     [Fact]
-    public async Task GetDirectoryContentsAsync_ExcludesHiddenItems_WhenIncludeHiddenIsFalse()
+    public async Task GetDirectoryContentsAsync_ForwardsIncludeHiddenFlagToRepository()
     {
+        // 隐藏过滤已从服务层内存 Where 下推到仓储 SQL（GetChildrenSummariesAsync 的
+        // IsHidden = 0 条件），服务层不再有可观测的过滤行为，只剩"把 includeHidden
+        // 原样交给仓储"这一件事。真正的过滤行为由 PalormSemanticsTests 的仓储级
+        // 集成测试覆盖。故这里只锁参数传递，避免留下一个自证空转的用例
         // Arrange
         var userId = Guid.NewGuid();
         var path = "/documents";
 
         var parentItem = CreateFileItem(Guid.NewGuid(), "documents", "/documents", FileItemType.Folder);
-        var visibleFile = CreateFileItem(Guid.NewGuid(), "visible.txt", "/documents/visible.txt", FileItemType.File, null);
-        // Note: IsHidden is not settable through CreateFile, so we just test with non-hidden files
-        // The actual hidden filtering logic is tested at integration level
 
         _fileRepositoryMock
             .Setup(x => x.GetByPathAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(parentItem);
 
         _fileRepositoryMock
-            .Setup(x => x.GetChildrenAsync(It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<FileItem> { visibleFile });
+            .Setup(x => x.GetChildrenSummariesAsync(parentItem.Id, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItemSummary>
+            {
+                CreateSummary("visible.txt", "/documents/visible.txt", FileItemType.File, parentId: parentItem.Id)
+            });
 
         // Act
         var result = await _sut.GetDirectoryContentsAsync(path, userId, includeHidden: false);
@@ -140,6 +151,10 @@ public class FileServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Items.Should().HaveCount(1);
         result.Value.Items[0].Name.Should().Be("visible.txt");
+
+        _fileRepositoryMock.Verify(
+            x => x.GetChildrenSummariesAsync(parentItem.Id, false, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     #endregion
@@ -857,8 +872,10 @@ public class FileServiceTests
                 It.IsAny<string?>(),
                 It.IsAny<string?>(),
                 It.IsAny<bool?>(),
+                1,
+                50,
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(matchingFiles);
+            .ReturnsAsync(new FileSearchResult { Items = matchingFiles, TotalCount = 2 });
 
         // Act
         var result = await _sut.SearchAsync(request, userId);
@@ -890,8 +907,10 @@ public class FileServiceTests
                 It.IsAny<string?>(),
                 It.IsAny<string?>(),
                 It.IsAny<bool?>(),
+                1,
+                50,
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<FileItem>());
+            .ReturnsAsync(new FileSearchResult { Items = [], TotalCount = 0 });
 
         // Act
         var result = await _sut.SearchAsync(request, userId);
@@ -919,6 +938,32 @@ public class FileServiceTests
             ? FileItem.CreateFolder(name, path, $"/mnt/storage{path}", Guid.NewGuid(), Guid.NewGuid(), parentId)
             : FileItem.CreateFile(name, path, $"/mnt/storage{path}", sizeBytes, "text/plain", Guid.NewGuid(), Guid.NewGuid(), parentId);
     }
+
+    /// <summary>
+    /// 浏览摘要的测试替身。服务走 GetChildrenSummariesAsync 而非 GetChildrenAsync，
+    /// 摘要不含 PhysicalPath/StoragePoolId 等浏览 DTO 用不到的列
+    /// </summary>
+    private static FileItemSummary CreateSummary(
+        string name,
+        string path,
+        FileItemType itemType,
+        Guid? parentId = null,
+        long sizeBytes = 0,
+        bool isHidden = false) => new()
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Path = path,
+            ItemType = itemType,
+            SizeBytes = sizeBytes,
+            MimeType = itemType == FileItemType.File ? "text/plain" : null,
+            Extension = itemType == FileItemType.File ? ".txt" : null,
+            OwnerId = Guid.NewGuid(),
+            ParentId = parentId,
+            IsHidden = isHidden,
+            IsReadOnly = false,
+            CreatedAt = DateTime.UtcNow
+        };
 
     private static StoragePool CreateStoragePool(Guid id, string name, string mountPath)
     {
