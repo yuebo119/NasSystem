@@ -120,6 +120,22 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton(UploadLimit.Instance);
 
+        // multipart 表单的两个阈值与 Kestrel 上限对齐。
+        // MultipartBodyLengthLimit 默认 128MB，比 Kestrel 的 500MB 先触发，
+        // 结果是"允许的上传大小"实际由表单层决定而不是配置的那一个。
+        // MemoryBufferThreshold 默认 64KB：超过就落临时盘，于是上传链路是
+        // 网络 → 临时文件 → 目标文件，白翻一倍磁盘 IO。抬到 8MB 后
+        // 8MB 以内的上传全程内存，不再落盘；更大的仍然落盘，不会把内存撑爆。
+        // 没有做成完全流式 multipart 解析：那要手写 boundary 与 section 解析，
+        // 出错面大，且流式下拿不到 part 声明大小，会废掉服务端的配额与容量预检
+        // （前端上传前已调 check-space，服务端这一道是兜底，不宜主动削弱）
+        services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+        {
+            options.MultipartBodyLengthLimit = UploadLimit.MaxRequestBodySize;
+            options.MemoryBufferThreshold = 8 * 1024 * 1024;
+            options.ValueLengthLimit = 1024 * 1024;
+        });
+
         // 注册 Hub 通知服务
         services.AddScoped<IHubNotificationService, HubNotificationService>();
 

@@ -63,14 +63,23 @@ public sealed class NasHub : Hub
 /// </remarks>
 public sealed class HubNotificationService(IHubContext<NasHub> hubContext) : IHubNotificationService
 {
+    /// <summary>
+    /// 向订阅了 <paramref name="path"/> 的客户端推送变更。
+    /// </summary>
+    /// <remarks>
+    /// <b>参数 path 就是订阅组名本身，不再取它的父目录</b>。调用方
+    /// （FileService.NotifyChangedAsync）传进来的已经是受影响的父目录，
+    /// 这里再取一次 GetDirectoryName 会得到祖父目录：在 /docs 里建文件夹时
+    /// 组名算成 path:/，而浏览 /docs 的客户端订阅的是 path:/docs，永远收不到。
+    /// 该缺陷让"实时刷新闭环"只在根目录生效，其余目录全靠 mutation 后前端
+    /// 主动 reload 兜底。根目录文件不受影响是因为 GetDirectoryName("/") 返回 null，
+    /// 被归一回 "/"，恰好等于原值。
+    /// </remarks>
     public async Task NotifyFileChangedAsync(string path, FileChangeType changeType, object? data = null)
     {
-        // 通知订阅该路径的客户端
-        var parentPath = Path.GetDirectoryName(path)?.Replace('\\', '/');
-        if (string.IsNullOrEmpty(parentPath))
-            parentPath = "/"; // 根目录文件的父目录归一为 /（与前端订阅串一致）
+        var groupPath = string.IsNullOrEmpty(path) ? "/" : path.Replace('\\', '/');
 
-        await hubContext.Clients.Group($"path:{parentPath}").SendAsync("FileChanged", new
+        await hubContext.Clients.Group($"path:{groupPath}").SendAsync("FileChanged", new
         {
             Path = path,
             ChangeType = changeType.ToString(),

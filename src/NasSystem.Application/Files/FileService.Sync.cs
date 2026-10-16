@@ -129,8 +129,9 @@ public sealed partial class FileService
         Guid? currentDirId,  // 当前目录的 ID，作为子项的 parentId
         CancellationToken cancellationToken)
     {
-        // 扫描子目录
-        foreach (var dir in Directory.GetDirectories(physicalDir))
+        // 扫描子目录。用 Enumerate 而非 Get：Get* 每次调用都物化整个目录的
+        // 完整字符串数组，深目录树上万目录时是成比例的白分配；Enumerate 边遍历边产出
+        foreach (var dir in Directory.EnumerateDirectories(physicalDir))
         {
             var dirName = Path.GetFileName(dir);
             var dirVirtualPath = CombinePath(virtualPath, dirName);
@@ -183,8 +184,8 @@ public sealed partial class FileService
                 cancellationToken);
         }
 
-        // 扫描文件
-        foreach (var file in Directory.GetFiles(physicalDir))
+        // 扫描文件。同用 Enumerate：GetFiles 会物化整目录文件名字符串数组
+        foreach (var file in Directory.EnumerateFiles(physicalDir))
         {
             var fileName = Path.GetFileName(file);
             var fileVirtualPath = CombinePath(virtualPath, fileName);

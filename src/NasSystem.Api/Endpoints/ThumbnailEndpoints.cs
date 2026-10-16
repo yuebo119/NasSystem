@@ -7,6 +7,7 @@ namespace NasSystem.Api.Extensions;
 
 using System.Security.Claims;
 using NasSystem.Application.Files;
+using NasSystem.Domain.Repositories;
 
 using NasSystem.Shared;
 
@@ -58,19 +59,38 @@ public static class ThumbnailEndpoints
         int? width,
         int? height,
         IThumbnailService thumbnailService,
+        IFileItemRepository fileItemRepository,
         ClaimsPrincipal user,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        var userId = GetUserId(user);
         var targetWidth = width ?? 200;
         var targetHeight = height ?? 200;
 
+        // 条件请求在查库之前判定：ETag 只由 URL 三要素（路径加请求尺寸）决定，
+        // 同一 URL 的服务端吸附结果必然相同，故键稳定。命中 If-None-Match 直接 304，
+        // 连一次 FileItems 查询都省掉。
+        // 不用服务端算出的缓存键当 ETag：那需要先调服务，304 就失去了省成本的意义
+        var etag = $"\"{path}:{targetWidth}:{targetHeight}\"";
+        httpContext.Response.Headers.ETag = etag;
+
+        if (httpContext.Request.Headers.IfNoneMatch.ToString().Contains(etag, StringComparison.Ordinal))
+        {
+            httpContext.Response.Headers.CacheControl = "private, max-age=86400";
+            return Results.StatusCode(StatusCodes.Status304NotModified);
+        }
+
+        // 端点收到的是虚拟路径，缩略图服务要的是物理路径。原先直接把虚拟路径交给
+        // 服务，File.Exists 恒为 false，缩略图功能整个不工作（Thumbnail.FileNotFound）。
+        // 查不到记录时退回原值，让服务给出原有的"源文件不存在"错误而不是崩
+        var item = await fileItemRepository.GetByPathAsync(path, cancellationToken);
+        var physicalPath = item?.PhysicalPath ?? path;
+
         var result = await thumbnailService.GetThumbnailAsync(
-            path,
+            physicalPath,
             targetWidth,
             targetHeight,
-            userId,
+            GetUserId(user),
             cancellationToken);
 
         if (!result.IsSuccess)
@@ -78,28 +98,15 @@ public static class ThumbnailEndpoints
             return result.ToHttpResult();
         }
 
-        var thumbnail = result.Value;
-
-        // 缓存头：缩略图内容由源文件路径加吸附后尺寸唯一决定，CacheKey 就是天然 ETag。
-        // 前端经 fetch + blob + objectURL 引用（Files.vue），浏览器私有缓存能整条命中，
-        // 重复进入同一目录时缩略图零请求。此前这里一个头都没设，注释却写着"设置缓存头"。
-        // max-age 取 1 天：源文件被替换时缓存由服务端 LastWriteTimeUtc 比对自动失效，
-        // 而客户端这边长 TTL 只影响"多久不回源校验"，不影响正确性。
-        var etag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{thumbnail.CacheKey}\"");
-        httpContext.Response.Headers.ETag = etag.ToString();
-
-        if (httpContext.Request.Headers.IfNoneMatch.ToString().Contains(thumbnail.CacheKey, StringComparison.Ordinal))
-        {
-            httpContext.Response.StatusCode = StatusCodes.Status304NotModified;
-            return Results.StatusCode(StatusCodes.Status304NotModified);
-        }
-
-        httpContext.Response.Headers.CacheControl =
-            "private, max-age=86400, must-revalidate";
+        // 缓存头。前端经 fetch + blob + objectURL 引用（Files.vue），浏览器私有缓存
+        // 能整条命中，重复进入同一目录时缩略图零请求。此前这里一个头都没设，
+        // 而注释写着"设置缓存头"。max-age 1 天只影响多久不回源校验，
+        // 不影响正确性：源文件变了 ETag 变，且服务端有 LastWriteTimeUtc 比对兜底
+        httpContext.Response.Headers.CacheControl = "private, max-age=86400";
 
         return Results.Bytes(
-            thumbnail.Data,
-            thumbnail.ContentType,
+            result.Value.Data,
+            result.Value.ContentType,
             enableRangeProcessing: false);
     }
 

@@ -42,18 +42,12 @@ public interface IThumbnailService
 /// <summary>
 /// 缩略图生成结果
 /// </summary>
-/// <param name="CacheKey">
-/// 该缩略图的缓存键（源路径加吸附后尺寸的哈希）。同时用作 HTTP 响应的 ETag：
-/// 内容由源文件与尺寸唯一决定，键不变则内容不变，客户端可凭它拿 304。
-/// 放在结果里而不是让端点重算：吸附逻辑在服务端，端点重算必然漂移。
-/// </param>
 public sealed record ThumbnailResult(
     byte[] Data,
     string ContentType,
     int Width,
     int Height,
-    bool FromCache,
-    string CacheKey);
+    bool FromCache);
 
 /// <summary>
 /// 缩略图配置选项
