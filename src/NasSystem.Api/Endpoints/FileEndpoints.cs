@@ -134,10 +134,31 @@ public static class FileEndpoints
         string? path,
         bool includeHidden = false,
         IFileBrowseService fileService = null!,
-        ClaimsPrincipal user = null!)
+        ClaimsPrincipal user = null!,
+        HttpContext httpContext = null!)
     {
         var userId = GetUserId(user);
-        var result = await fileService.GetDirectoryContentsAsync(path ?? "/", userId, includeHidden);
+        var targetPath = path ?? "/";
+
+        // 条件请求：目录内容版本号未变则回 304，省掉整趟查询、DTO 映射与 JSON 序列化。
+        // 版本号由 UnitOfWork 在写提交成功后递增（DirectoryVersion），
+        // 覆盖建文件夹/上传/重命名/移动/复制/删除/恢复/扫描等全部写入口，
+        // 不依赖在这里枚举用例。
+        // ApiResponse.Timestamp 每次现取，所以校验值不能用响应体哈希，必须用版本号
+        var version = NasSystem.Application.Files.DirectoryVersion.Get(targetPath);
+        var etag = $"\"{targetPath}:{version}\"";
+
+        if (httpContext.Request.Headers.IfNoneMatch.ToString().Contains(etag, StringComparison.Ordinal))
+        {
+            httpContext.Response.Headers.ETag = etag;
+            return Results.StatusCode(StatusCodes.Status304NotModified);
+        }
+
+        var result = await fileService.GetDirectoryContentsAsync(targetPath, userId, includeHidden);
+        if (result.IsFailure)
+            return result.ToHttpResult();
+
+        httpContext.Response.Headers.ETag = etag;
         return result.ToHttpResult();
     }
 

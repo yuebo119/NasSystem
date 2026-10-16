@@ -96,7 +96,8 @@ public class ThumbnailService : IThumbnailService
                         ContentType: "image/jpeg",
                         Width: width,
                         Height: height,
-                        FromCache: true));
+                        FromCache: true,
+                        CacheKey: cacheKey));
                 }
                 catch (Exception ex)
                 {
@@ -139,7 +140,8 @@ public class ThumbnailService : IThumbnailService
                 ContentType: "image/jpeg",
                 Width: width,
                 Height: height,
-                FromCache: false));
+                FromCache: false,
+                CacheKey: cacheKey));
         }
         catch (Exception ex)
         {

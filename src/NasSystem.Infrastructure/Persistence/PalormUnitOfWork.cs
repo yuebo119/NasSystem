@@ -50,7 +50,12 @@ public sealed class PalormUnitOfWork : IUnitOfWork
 
     /// <summary>登记一条删除意图。</summary>
     public void EnqueueDelete<TEntity>(TEntity entity, Func<DataSession<SqliteProvider>, CancellationToken, Task> command)
-        => _commands.Add(command);
+    {
+        _commands.Add(command);
+        // 删除也要跟踪：目录版本号在这里统一递增（见 SaveChangesAsync），
+        // 删除不进跟踪表的话，永久删除后浏览缓存不会失效
+        Track(entity);
+    }
 
     private void Track<TEntity>(TEntity entity)
     {
@@ -68,7 +73,7 @@ public sealed class PalormUnitOfWork : IUnitOfWork
         var db = await _sessions.GetAsync(cancellationToken);
         try
         {
-            return await db.WithTransaction(
+            var affected = await db.WithTransaction(
                 async innerToken =>
                 {
                     var affected = 0;
@@ -81,6 +86,17 @@ public sealed class PalormUnitOfWork : IUnitOfWork
                 },
                 null,
                 cancellationToken);
+
+            // 提交成功后统一递增受影响目录的版本号。放在事务内做不到：
+            // 事务可能回滚，版本号不能为未生效的写入而变。放在事务外、
+            // 且仅在命令真的执行完后，才与"库里确实变了"对齐。
+            //
+            // 为什么在这里而不是各用例里手动 bump：会改目录内容的入口有十几个，
+            // 逐个枚举漏一个就是浏览缓存陈旧。所有写入都经过 SaveChangesAsync，
+            // 且上面已跟踪被写实体，这里一次覆盖全部入口。
+            BumpDirectoryVersions();
+
+            return affected;
         }
         catch (UniqueConstraintViolationException ex)
         {
@@ -114,6 +130,24 @@ public sealed class PalormUnitOfWork : IUnitOfWork
         || ex.SqliteExtendedErrorCode == 787
         || ex.SqliteExtendedErrorCode == 1299
         || ex.SqliteExtendedErrorCode == 275;
+
+    /// <summary>
+    /// 按本次提交涉及的实体递增其所在目录的版本号。
+    /// </summary>
+    /// <remarks>
+    /// 这里出现 <see cref="NasSystem.Domain.Entities.FileItem"/> 的具体类型判断：
+    /// UoW 只知道"有实体被写了"，而目录版本需要的是实体的虚拟路径。
+    /// FileItem 是唯一带 Path 的实体，其余实体（User/StoragePool/FileShare/FileVersion）
+    /// 的变更不改变任何目录的条目集合，不需要 bump。
+    /// </remarks>
+    private void BumpDirectoryVersions()
+    {
+        foreach (var entity in _trackedEntities)
+        {
+            if (entity is NasSystem.Domain.Entities.FileItem fileItem)
+                NasSystem.Application.Files.DirectoryVersion.BumpForFile(fileItem.Path);
+        }
+    }
 
     private async Task DispatchDomainEventsAsync(CancellationToken cancellationToken)
     {

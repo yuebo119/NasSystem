@@ -59,6 +59,7 @@ public static class ThumbnailEndpoints
         int? height,
         IThumbnailService thumbnailService,
         ClaimsPrincipal user,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var userId = GetUserId(user);
@@ -78,8 +79,24 @@ public static class ThumbnailEndpoints
         }
 
         var thumbnail = result.Value;
-        
-        // 设置缓存头
+
+        // 缓存头：缩略图内容由源文件路径加吸附后尺寸唯一决定，CacheKey 就是天然 ETag。
+        // 前端经 fetch + blob + objectURL 引用（Files.vue），浏览器私有缓存能整条命中，
+        // 重复进入同一目录时缩略图零请求。此前这里一个头都没设，注释却写着"设置缓存头"。
+        // max-age 取 1 天：源文件被替换时缓存由服务端 LastWriteTimeUtc 比对自动失效，
+        // 而客户端这边长 TTL 只影响"多久不回源校验"，不影响正确性。
+        var etag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{thumbnail.CacheKey}\"");
+        httpContext.Response.Headers.ETag = etag.ToString();
+
+        if (httpContext.Request.Headers.IfNoneMatch.ToString().Contains(thumbnail.CacheKey, StringComparison.Ordinal))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status304NotModified;
+            return Results.StatusCode(StatusCodes.Status304NotModified);
+        }
+
+        httpContext.Response.Headers.CacheControl =
+            "private, max-age=86400, must-revalidate";
+
         return Results.Bytes(
             thumbnail.Data,
             thumbnail.ContentType,

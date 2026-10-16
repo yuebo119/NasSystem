@@ -12,6 +12,7 @@ using NasSystem.Domain.Entities;
 using NasSystem.Domain.Repositories;
 using NasSystem.Domain.Services;
 using NasSystem.Shared;
+using Microsoft.Extensions.Caching.Memory;
 using static NasSystem.Shared.ByteSizeFormatter;
 
 /// <summary>
@@ -21,8 +22,14 @@ public sealed class StorageService(
     IStoragePoolRepository poolRepository,
     IFileItemRepository fileItemRepository,
     IUnitOfWork unitOfWork,
-    IFileSystemService fileSystemService) : IStorageService
+    IFileSystemService fileSystemService,
+    IMemoryCache cache) : IStorageService
 {
+    /// <summary>
+    /// 池容量上次刷新时间的内存缓存键前缀。按池 Id 分键，
+    /// 值是该池上次完成实测的 UTC 时间。
+    /// </summary>
+    private const string PoolRefreshKeyPrefix = "storageservice:pool-refresh:";
     public async Task<Result<StorageOverviewDto>> GetOverviewAsync(
         CancellationToken cancellationToken = default)
     {
@@ -245,8 +252,8 @@ public sealed class StorageService(
             });
         }
 
-        // 刷新容量信息。这里也要落库：UpdatedAt 是节流窗口的唯一依据，
-        // 不落库则窗口永不推进，每次上传预检都重算一次全池 SUM
+        // 刷新容量信息。窗口内已刷新过则直接跳过：既省掉全池 SUM，
+        // 也省掉一次无谓的 UPDATE + 提交。窗口判定在内存里，不依赖落库推进
         if (await RefreshPoolCapacityAsync(pool, cancellationToken))
         {
             await poolRepository.UpdateAsync(pool, cancellationToken);
@@ -279,6 +286,33 @@ public sealed class StorageService(
     /// 显式 RefreshCapacityAsync 与写路径传 force=true 绕过窗口
     /// </summary>
     private static readonly TimeSpan CapacityRefreshInterval = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// 窗口判定改走内存缓存，不再读池行的 UpdatedAt。
+    /// </summary>
+    /// <remarks>
+    /// 原实现用 <c>pool.UpdatedAt ?? pool.CreatedAt</c> 判定，而首页的 overview 与
+    /// pools 两个端点是并发发出的（前端 Promise.all），两个作用域各读一份旧 UpdatedAt，
+    /// 都判定"超过窗口"，于是同一池被完整遍历两遍、SUM 查两遍。
+    /// 内存缓存在请求之间共享，第一个请求刷新后写入时间戳，第二个请求在窗口内直接跳过。
+    /// 代价是进程重启后第一次请求会重新实测一次，这符合预期：新进程没有旧观测值。
+    /// </remarks>
+    private bool ShouldRefreshPool(StoragePool pool, bool force)
+    {
+        if (force)
+            return true;
+
+        if (cache.TryGetValue(PoolRefreshKeyPrefix + pool.Id.ToString("D"), out DateTime lastRefreshUtc))
+            return DateTime.UtcNow - lastRefreshUtc >= CapacityRefreshInterval;
+
+        return true;
+    }
+
+    private void MarkPoolRefreshed(StoragePool pool) =>
+        cache.Set(
+            PoolRefreshKeyPrefix + pool.Id.ToString("D"),
+            DateTime.UtcNow,
+            CapacityRefreshInterval);
 
     /// <summary>
     /// 就绪的物理磁盘数
@@ -402,7 +436,7 @@ public sealed class StorageService(
         CancellationToken cancellationToken,
         bool force = false)
     {
-        if (!force && DateTime.UtcNow - (pool.UpdatedAt ?? pool.CreatedAt) < CapacityRefreshInterval)
+        if (!ShouldRefreshPool(pool, force))
             return false;
 
         try
@@ -416,6 +450,7 @@ public sealed class StorageService(
             // 计算存储池内 NAS 管理的文件总大小作为已用空间
             var usedBytes = await fileItemRepository.CalculateStoragePoolUsedSpaceAsync(pool.Id, cancellationToken);
             pool.UpdateUsage(folderSizeBytes.Value, usedBytes);
+            MarkPoolRefreshed(pool);
             return true;
         }
         catch

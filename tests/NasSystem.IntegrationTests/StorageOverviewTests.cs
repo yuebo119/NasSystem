@@ -187,6 +187,7 @@ public class StorageOverviewTests : IDisposable
             scope.ServiceProvider.GetRequiredService<IStoragePoolRepository>(),
             scope.ServiceProvider.GetRequiredService<IFileItemRepository>(),
             scope.ServiceProvider.GetRequiredService<IUnitOfWork>(),
-            scope.ServiceProvider.GetRequiredService<NasSystem.Domain.Services.IFileSystemService>());
+            scope.ServiceProvider.GetRequiredService<NasSystem.Domain.Services.IFileSystemService>(),
+            scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>());
     }
 }

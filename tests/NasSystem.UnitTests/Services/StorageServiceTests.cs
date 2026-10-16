@@ -37,7 +37,9 @@ public class StorageServiceTests
             _poolRepositoryMock.Object,
             _fileItemRepositoryMock.Object,
             _unitOfWorkMock.Object,
-            _fileSystemServiceMock.Object);
+            _fileSystemServiceMock.Object,
+            new Microsoft.Extensions.Caching.Memory.MemoryCache(
+                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
     }
 
     #region GetOverviewAsync Tests
