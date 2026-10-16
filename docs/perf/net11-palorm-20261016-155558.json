@@ -1,0 +1,400 @@
+{
+  "Arm": "net11-palorm",
+  "TargetFramework": ".NET 11.0.0-rc.2.26504.105",
+  "OrmDescription": "PalORM 6.5.0.0",
+  "SeedRows": 2000,
+  "Warmup": 100,
+  "Iterations": 800,
+  "Rounds": 3,
+  "ApiConcurrency": 0,
+  "ApiDurationSec": 0,
+  "Machine": {
+    "MachineName": "DESKTOP-IDCGOGO",
+    "OsDescription": "Microsoft Windows NT 10.0.19045.0",
+    "ProcessorCount": 32,
+    "DotNetVersion": "11.0.0",
+    "WorkingSetMb": 93,
+    "CapturedAtUtc": "2026-10-16T15:55:58.193764Z"
+  },
+  "GitSha": "95d2216",
+  "CapturedAtUtc": "2026-10-16T15:55:58.1938245Z",
+  "DataCases": [
+    {
+      "Name": "GetByPath",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.0146,
+        "P50": 0.0194,
+        "P95": 0.0235,
+        "P99": 0.0401,
+        "Mean": 0.020996291666666698,
+        "Max": 1.1856,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.0159,
+        "P50": 0.0206,
+        "P95": 0.0251,
+        "P99": 0.0392,
+        "Mean": 0.021704166666666632,
+        "Max": 0.5299,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.0014713541666666666,
+      "FloorAllocKbPerOp": 0.0010904947916666667,
+      "Ratio": 0.941747572815534
+    },
+    {
+      "Name": "GetChildren",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.3053,
+        "P50": 0.5586,
+        "P95": 0.9357,
+        "P99": 1.2002,
+        "Mean": 0.6112137500000003,
+        "Max": 2.4712,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.2286,
+        "P50": 0.3525,
+        "P95": 0.6027,
+        "P99": 0.8121,
+        "Mean": 0.3897144999999994,
+        "Max": 0.9763,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.055087890625,
+      "FloorAllocKbPerOp": 0.037890625,
+      "Ratio": 1.58468085106383
+    },
+    {
+      "Name": "GetChildrenSummaries_\u6295\u5F71",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.168,
+        "P50": 0.2437,
+        "P95": 0.3383,
+        "P99": 0.5628,
+        "Mean": 0.2400749166666662,
+        "Max": 0.7113,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.0219,
+        "P50": 0.0284,
+        "P95": 0.0547,
+        "P99": 0.0673,
+        "Mean": 0.03127145833333334,
+        "Max": 0.1876,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.039182942708333335,
+      "FloorAllocKbPerOp": 0.0006412760416666666,
+      "Ratio": 8.580985915492958
+    },
+    {
+      "Name": "Search_\u540D\u79F0\u6A21\u7CCA",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.5748,
+        "P50": 0.612,
+        "P95": 0.8493,
+        "P99": 0.9998,
+        "Mean": 0.6371243333333328,
+        "Max": 1.139,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.3925,
+        "P50": 0.4236,
+        "P95": 0.6705,
+        "P99": 0.7477,
+        "Mean": 0.4466669999999997,
+        "Max": 0.927,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.030406901041666667,
+      "FloorAllocKbPerOp": 0.043759765625,
+      "Ratio": 1.4447592067988668
+    },
+    {
+      "Name": "GetStatistics",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.975,
+        "P50": 1.0093,
+        "P95": 1.0698,
+        "P99": 1.2076,
+        "Mean": 1.0251084999999998,
+        "Max": 3.9547,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.571,
+        "P50": 0.6017,
+        "P95": 0.6324,
+        "P99": 0.6939,
+        "Mean": 0.6077243750000003,
+        "Max": 1.3407,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.0027473958333333335,
+      "FloorAllocKbPerOp": 0.0015462239583333333,
+      "Ratio": 1.6774139936845605
+    },
+    {
+      "Name": "GetDescendants",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.3114,
+        "P50": 0.3382,
+        "P95": 0.5829,
+        "P99": 0.6764,
+        "Mean": 0.362289,
+        "Max": 1.5853,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.3196,
+        "P50": 0.3463,
+        "P95": 0.5234,
+        "P99": 0.6029,
+        "Mean": 0.3626822916666665,
+        "Max": 0.7338,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.05552083333333333,
+      "FloorAllocKbPerOp": 0.038359375,
+      "Ratio": 0.9766098758302051
+    },
+    {
+      "Name": "GetPagedUsers",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.0539,
+        "P50": 0.0598,
+        "P95": 0.0798,
+        "P99": 0.1189,
+        "Mean": 0.06464062500000013,
+        "Max": 0.5894,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.0262,
+        "P50": 0.029,
+        "P95": 0.0457,
+        "P99": 0.0641,
+        "Mean": 0.031394333333333295,
+        "Max": 0.3532,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.00935546875,
+      "FloorAllocKbPerOp": 0.0028352864583333333,
+      "Ratio": 2.0620689655172413
+    },
+    {
+      "Name": "CalculateUserUsedSpace",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.0233,
+        "P50": 0.0257,
+        "P95": 0.0293,
+        "P99": 0.039,
+        "Mean": 0.026537416666666577,
+        "Max": 0.5333,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.0215,
+        "P50": 0.0239,
+        "P95": 0.0276,
+        "P99": 0.0369,
+        "Mean": 0.024607875,
+        "Max": 0.4803,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.0006380208333333333,
+      "FloorAllocKbPerOp": 0.0005859375,
+      "Ratio": 1.0753138075313808
+    },
+    {
+      "Name": "PathExists",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.0086,
+        "P50": 0.0092,
+        "P95": 0.0109,
+        "P99": 0.0165,
+        "Mean": 0.010156416666666716,
+        "Max": 0.5599,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.0072,
+        "P50": 0.0077,
+        "P95": 0.0092,
+        "P99": 0.0135,
+        "Mean": 0.008062083333333353,
+        "Max": 0.0484,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.0008658854166666667,
+      "FloorAllocKbPerOp": 0.00044921875,
+      "Ratio": 1.1948051948051948
+    },
+    {
+      "Name": "GetByStoragePool",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.9956,
+        "P50": 1.0754,
+        "P95": 1.4648,
+        "P99": 1.8526,
+        "Mean": 1.1312270416666688,
+        "Max": 2.3125,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.6239,
+        "P50": 0.6815,
+        "P95": 0.9695,
+        "P99": 1.1456,
+        "Mean": 0.7139865833333356,
+        "Max": 1.3496,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.20951497395833332,
+      "FloorAllocKbPerOp": 0.14754231770833334,
+      "Ratio": 1.5779897285399853
+    },
+    {
+      "Name": "GetDeletedItems",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.2766,
+        "P50": 0.2938,
+        "P95": 0.4303,
+        "P99": 0.7057,
+        "Mean": 0.3137282083333334,
+        "Max": 1.0301,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.1681,
+        "P50": 0.1809,
+        "P95": 0.2339,
+        "P99": 0.4965,
+        "Mean": 0.19437741666666677,
+        "Max": 0.6382,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.05605143229166667,
+      "FloorAllocKbPerOp": 0.03697591145833334,
+      "Ratio": 1.6241017136539524
+    },
+    {
+      "Name": "CalculateStoragePoolUsedSpace",
+      "IsWrite": false,
+      "Orm": {
+        "Min": 0.0628,
+        "P50": 0.0734,
+        "P95": 0.0978,
+        "P99": 0.1266,
+        "Mean": 0.07713775000000005,
+        "Max": 1.3176,
+        "Count": 2400
+      },
+      "Floor": {
+        "Min": 0.0596,
+        "P50": 0.0675,
+        "P95": 0.0911,
+        "P99": 0.1185,
+        "Mean": 0.07101479166666651,
+        "Max": 0.47,
+        "Count": 2400
+      },
+      "OrmAllocKbPerOp": 0.0006380208333333333,
+      "FloorAllocKbPerOp": 0.0005891927083333334,
+      "Ratio": 1.0874074074074074
+    },
+    {
+      "Name": "Insert_20\u884C",
+      "IsWrite": true,
+      "Orm": {
+        "Min": 0.4634,
+        "P50": 0.6783,
+        "P95": 1.6225,
+        "P99": 6.0733,
+        "Mean": 0.867321666666666,
+        "Max": 9.2119,
+        "Count": 300
+      },
+      "Floor": {
+        "Min": 3.5135,
+        "P50": 5.2248,
+        "P95": 7.2427,
+        "P99": 9.4416,
+        "Mean": 5.481109,
+        "Max": 24.1138,
+        "Count": 300
+      },
+      "OrmAllocKbPerOp": 0.528125,
+      "FloorAllocKbPerOp": 0.2593229166666667,
+      "Ratio": 0.12982315112540194
+    },
+    {
+      "Name": "Update_20\u884C",
+      "IsWrite": true,
+      "Orm": {
+        "Min": 0.3014,
+        "P50": 0.3285,
+        "P95": 0.479,
+        "P99": 1.016,
+        "Mean": 0.36714766666666676,
+        "Max": 1.1359,
+        "Count": 300
+      },
+      "Floor": {
+        "Min": 2.6818,
+        "P50": 4.0947,
+        "P95": 6.2472,
+        "P99": 7.103,
+        "Mean": 4.819316999999997,
+        "Max": 136.1928,
+        "Count": 300
+      },
+      "OrmAllocKbPerOp": 0.4878125,
+      "FloorAllocKbPerOp": 0.35484375,
+      "Ratio": 0.08022565755733022
+    },
+    {
+      "Name": "Delete_20\u884C",
+      "IsWrite": true,
+      "Orm": {
+        "Min": 0.8954,
+        "P50": 1.0059,
+        "P95": 1.9718,
+        "P99": 7.9706,
+        "Mean": 1.5207719999999987,
+        "Max": 48.8411,
+        "Count": 300
+      },
+      "Floor": {
+        "Min": 3.8753,
+        "P50": 5.7384,
+        "P95": 7.5425,
+        "P99": 27.1859,
+        "Mean": 6.782312000000001,
+        "Max": 214.0065,
+        "Count": 300
+      },
+      "OrmAllocKbPerOp": 0.623359375,
+      "FloorAllocKbPerOp": 0.37059895833333334,
+      "Ratio": 0.1752927645336679
+    }
+  ],
+  "Api": null,
+  "Process": null
+}

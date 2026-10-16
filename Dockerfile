@@ -36,17 +36,29 @@ COPY src/NasSystem.Shared/NasSystem.Shared.csproj src/NasSystem.Shared/
 # 还原依赖。必须显式指定工程而非裸 `dotnet restore`：
 # .dockerignore 排除了 tests 与 tools，而 NasSystem.sln 引用了这两个目录下的工程，
 # 裸 restore 会以 MSB3202 "未找到项目文件" 失败（2026-10-12 实测复现）。
-# 指定 API 工程会连带还原它的全部项目依赖链，行为与还原整个 src 子集等价
-RUN dotnet restore src/NasSystem.Api/NasSystem.Api.csproj
+# 指定 API 工程会连带还原它的全部项目依赖链，行为与还原整个 src 子集等价。
+# 必须带 -r linux-x64：下面的 publish 用了 ReadyToRun，RID 特定的发布需要
+# RID 特定的 assets 文件，否则 --no-restore 会拿到不匹配的还原结果
+RUN dotnet restore src/NasSystem.Api/NasSystem.Api.csproj -r linux-x64
 
 # 复制所有源码
 COPY src/ src/
 
-# 构建发布版本
+# 构建发布版本。
+# PublishReadyToRun：把热点方法预编译为本地码，省掉启动后 tiered 编译的爬坡。
+# 这个项目的启动路径不短（MigrateAsync 建表 + 补两个部分索引 + 5 个实体 schema
+# 校验 + EF 残留检查 + 种子判定），冷启动时间是用户和 HEALTHCHECK 都能感知的。
+# 代价：产物变大（约 +10~20MB），且必须与运行时同 RID 同架构，故只在 Docker
+# 这一条 linux-x64 链路上开，Windows 开发机构保持框架依赖的 JIT 形态。
+# --self-contained false 保持框架依赖：带了 -r 会让 publish 默认变成自包含，
+# 那会把整个运行时打进镜像，与 aspnet 运行时镜像重复
 RUN dotnet publish src/NasSystem.Api/NasSystem.Api.csproj \
     -c Release \
+    -r linux-x64 \
+    --self-contained false \
     -o /app/publish \
-    --no-restore
+    --no-restore \
+    -p:PublishReadyToRun=true
 
 # ============== 阶段 3: 运行时镜像 ==============
 FROM mcr.microsoft.com/dotnet/aspnet:11.0-preview AS runtime

@@ -76,6 +76,34 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 - ✅ SecretKey 占位符化 + 注册期 fail-fast；分享令牌 HMAC-SHA256 签名；分享码/前端密码加密随机数
 - ✅ Kestrel 上传 500MB 限制 + auth 端点限流（仅生产严格）；生产 CORS 白名单策略（SetIsOriginAllowed 拒绝制，来源清单待接入配置）
 
+### 上传链路的两个阈值（2026-10-16 对齐）
+
+Kestrel 的 `MaxRequestBodySize` 不是唯一生效的上限。multipart 表单层有两个独立阈值，
+原先都取框架默认值，与 Kestrel 不一致：
+
+| 阈值 | 默认值 | 现状 | 不一致的后果 |
+|------|--------|------|--------------|
+| `FormOptions.MultipartBodyLengthLimit` | 128MB | 与 `UploadLimit.MaxRequestBodySize` 对齐 | 上传 128MB~500MB 之间的文件被表单层先拒，配置的 500MB 名不副实 |
+| `FormOptions.MemoryBufferThreshold` | 64KB | 8MB | 超过即落临时盘，上传链路变成网络 → 临时文件 → 目标文件，白翻一倍磁盘 IO |
+
+新增上传相关限制时必须三处同源：`UploadLimit` 常量、Kestrel 选项、FormOptions。
+`UploadLimit` 已注入 DI 供系统设置端点回读，是三处的单一事实源。
+
+### 压缩层归属（未决，待部署环境实测）
+
+微软文档记录 nginx 代理时会剥掉请求的 `Accept-Encoding`，若属实则生产路径上
+ASP.NET Core 的响应压缩中间件全程空转，真正压缩的是 nginx 的 gzip（level 6，无 brotli）。
+本机无 nginx 与 docker，该行为**未实测**，仅直连 Kestrel 验证过 br/gzip 都生效。
+
+部署后一条命令可判定：
+
+```
+curl -sD- -o /dev/null -H 'Accept-Encoding: br' https://<host>/api/v1/system/health | grep -i content-encoding
+```
+
+有 `br` 说明压缩在应用侧；只有 `gzip` 或无该头，说明被 nginx 接管，此时调
+`AddResponseCompression` 的任何参数都不产生生产效果，要调的是 nginx 的 gzip 配置。
+
 ## §5 时间处理
 
 | # | 规则 |

@@ -60,6 +60,29 @@ public sealed class AdoNetFloor : IAsyncDisposable
         return await QueryAsync(sql, ("$p", parentId));
     }
 
+    /// <summary>
+    /// 浏览投影的地板臂：只取目录列表 DTO 用得到的 15 列，与仓储的
+    /// GetChildrenSummariesAsync 同口径（默认 includeHidden=false，故带 IsHidden = 0），
+    /// 用于量化"砍掉 PhysicalPath 等 4 列"的收益。
+    /// 只数行数不映射：FileItemLite 的列序是硬编码的 11 列，与投影列序不同，
+    /// 而这条用例要量的正是"数据库读出这些列并传回驱动"的成本
+    /// </summary>
+    public async Task<long> GetChildrenSummariesAsync(Guid? parentId)
+    {
+        const string columns =
+            "\"Id\",\"Name\",\"Path\",\"ItemType\",\"SizeBytes\",\"MimeType\",\"Extension\",\"Hash\"," +
+            "\"OwnerId\",\"ParentId\",\"IsHidden\",\"IsReadOnly\",\"CreatedAt\",\"UpdatedAt\"";
+
+        var sql = parentId.HasValue
+            ? $"SELECT COUNT(*) FROM (SELECT {columns} FROM \"FileItems\" WHERE \"ParentId\" = $p AND \"IsDeleted\" = 0 AND \"IsHidden\" = 0)"
+            : $"SELECT COUNT(*) FROM (SELECT {columns} FROM \"FileItems\" WHERE \"ParentId\" IS NULL AND \"IsDeleted\" = 0 AND \"IsHidden\" = 0)";
+
+        await using var cmd = Command(sql);
+        cmd.Parameters.AddWithValue("$p", parentId ?? Guid.Empty);
+        var count = await cmd.ExecuteScalarAsync();
+        return Convert.ToInt64(count);
+    }
+
     public async Task<List<FileItemLite>> SearchAsync(string term)
     {
         const string sql = """
