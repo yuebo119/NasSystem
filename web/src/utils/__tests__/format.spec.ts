@@ -22,6 +22,7 @@ vi.mock('@/locales', () => ({
           'common.today': '今天',
           'common.yesterday': '昨天',
           'common.daysAgo': `${params?.n ?? ''} 天前`,
+          'common.daysLater': `${params?.n ?? ''} 天后`,
           'storage.healthy': '健康',
           'dashboard.degraded': '降级',
           'dashboard.critical': '严重',
@@ -83,6 +84,21 @@ describe('formatDate', () => {
     const result = formatDate(old.toISOString())
     expect(result).not.toContain('天前')
     expect(result).not.toBe('昨天')
+    expect(result.length).toBeGreaterThan(0)
+  })
+
+  it('未来 3 天内显示 N 天后', () => {
+    const inTwoDays = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
+    expect(formatDate(inTwoDays.toISOString())).toBe('2 天后')
+  })
+
+  it('未来更远显示本地日期而非负天数', () => {
+    // 分享过期时间的真实场景： expiresAt 在未来。原实现对负 days 也走
+    // daysAgo 分支，输出"-76 天前"
+    const far = new Date(Date.now() + 76 * 24 * 60 * 60 * 1000)
+    const result = formatDate(far.toISOString())
+    expect(result).not.toContain('天前')
+    expect(result).not.toContain('-')
     expect(result.length).toBeGreaterThan(0)
   })
 })

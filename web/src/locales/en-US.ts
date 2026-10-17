@@ -20,6 +20,7 @@ export default {
     today: 'Today',
     yesterday: 'Yesterday',
     daysAgo: '{n} days ago',
+    daysLater: 'in {n} days',
     neverLogin: 'Never logged in'
   },
 
@@ -32,7 +33,8 @@ export default {
     users: 'Users',
     settings: 'Settings',
     logout: 'Logout',
-    collapse: 'Collapse'
+    collapse: 'Collapse',
+    menu: 'Menu'
   },
 
   // Login
@@ -131,7 +133,19 @@ export default {
     keepPassword: 'Leave empty to keep current',
     keepCurrent: 'Keep current',
     days: 'd',
-    downloadLimit: 'Download Limit'
+    downloadLimit: 'Download Limit',
+    // Redesign additions: search / sort / view switch / empty states
+    searchPlaceholder: 'Search file name, path or link',
+    sortName: 'Name',
+    sortCreated: 'Created',
+    sortDownloads: 'Downloads',
+    sortExpires: 'Expires',
+    sortAccessType: 'Access',
+    listView: 'List view',
+    gridView: 'Grid view',
+    noSearchResults: 'No matching results',
+    noSearchResultsHint: 'Try different keywords or clear the search',
+    clearSearch: 'Clear search'
   },
 
   // Storage

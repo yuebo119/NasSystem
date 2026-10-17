@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { UserFilled, SwitchButton, Box, Moon, Sunny, Fold, Expand, Odometer, Folder, Share, Setting as SettingIcon, User as UserIcon } from '@element-plus/icons-vue'
 import { getCurrentTheme, type ThemeType, setTheme } from '@/utils/theme'
+import { useIsMobile } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -33,12 +34,34 @@ const visibleMenuItems = computed(() =>
 // 当前选中的菜单
 const activeMenu = computed(() => route.path)
 
+// 窄屏顶栏标题：当前路由对应的菜单标题键（含 /files/子路径 前缀匹配），
+// 分享访问页等非菜单路由回落仪表盘
+const activeTitleKey = computed(() => {
+  const item = menuItems.find(i => route.path === i.path || route.path.startsWith(i.path + '/'))
+  return item?.titleKey ?? 'nav.dashboard'
+})
+
 // 侧边栏折叠
 const isCollapsed = ref(false)
 
 // 切换折叠状态
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
+}
+
+// 窄屏侧边栏：桌面是常驻侧栏，窄屏（≤768px）改为遮罩抽屉——
+// 固定定位抽出文档流，主内容区拿满宽度；汉堡按钮开合，点菜单或遮罩关闭
+const isMobile = useIsMobile()
+const mobileSidebarOpen = ref(false)
+
+// 视口长大的时候收起抽屉状态，避免残留
+watch(isMobile, mobile => {
+  if (!mobile) mobileSidebarOpen.value = false
+})
+
+// 菜单选中后窄屏自动收起（桌面无行为变化）
+function onMenuSelect() {
+  if (isMobile.value) mobileSidebarOpen.value = false
 }
 
 // 切换主题
@@ -84,8 +107,8 @@ async function handleLogout() {
 
 <template>
   <el-container class="main-layout" :class="{ 'dark-mode': isDarkMode }">
-    <!-- 侧边栏 -->
-    <el-aside :width="isCollapsed ? '72px' : '240px'" class="sidebar">
+    <!-- 侧边栏：窄屏为遮罩抽屉（fixed + translateX 开合），桌面为常驻侧栏 -->
+    <el-aside :width="isCollapsed ? '72px' : '240px'" class="sidebar" :class="{ 'mobile-open': mobileSidebarOpen }">
       <!-- Logo 区域 -->
       <div class="sidebar-header">
         <div class="logo-wrapper">
@@ -106,6 +129,7 @@ async function handleLogout() {
           :collapse-transition="false"
           router
           class="sidebar-menu"
+          @select="onMenuSelect"
         >
           <el-menu-item
             v-for="item in visibleMenuItems"
@@ -168,8 +192,18 @@ async function handleLogout() {
       </div>
     </el-aside>
 
+    <!-- 遮罩：窄屏抽屉打开时点击关闭 -->
+    <div v-if="isMobile && mobileSidebarOpen" class="sidebar-backdrop" @click="mobileSidebarOpen = false" />
+
     <!-- 主内容区 -->
     <el-main class="main-content">
+      <!-- 窄屏顶栏：汉堡按钮（桌面隐藏） -->
+      <div class="mobile-header">
+        <button class="hamburger" :aria-label="t('nav.menu')" @click="mobileSidebarOpen = true">
+          <el-icon :size="20"><Fold /></el-icon>
+        </button>
+        <span class="mobile-title">{{ t(activeTitleKey) }}</span>
+      </div>
       <router-view v-slot="{ Component }">
         <transition name="fade" mode="out-in">
           <component :is="Component" />
@@ -391,6 +425,71 @@ async function handleLogout() {
   overflow: auto;
   padding: 24px;
   transition: background-color 0.3s ease;
+}
+
+// 窄屏顶栏与汉堡：桌面隐藏
+.mobile-header {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  margin: -8px 0 16px;
+
+  .hamburger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--mac-hairline);
+    border-radius: var(--mac-radius-control);
+    background: var(--el-bg-color);
+    color: var(--el-text-color-primary);
+    cursor: pointer;
+    box-shadow: var(--card-shadow);
+
+    &:hover { color: var(--el-color-primary); }
+  }
+
+  .mobile-title {
+    font-size: 16px;
+    font-weight: 600;
+  }
+}
+
+// 窄屏（≤768px）：侧边栏改遮罩抽屉。固定定位抽出文档流后主内容区
+// 拿满宽度，工具栏/表格/卡片不再被 240px 侧栏挤扁
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 2001;
+    width: 240px;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--card-shadow-hover);
+
+    &.mobile-open {
+      transform: translateX(0);
+    }
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0, 0, 0, 0.32);
+    backdrop-filter: blur(2px);
+  }
+
+  .mobile-header {
+    display: flex;
+  }
+
+  .main-content {
+    padding: 16px;
+  }
 }
 
 // 文字淡入淡出动画

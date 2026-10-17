@@ -20,6 +20,7 @@ export default {
     today: '今天',
     yesterday: '昨天',
     daysAgo: '{n} 天前',
+    daysLater: '{n} 天后',
     neverLogin: '从未登录'
   },
 
@@ -32,7 +33,8 @@ export default {
     users: '用户管理',
     settings: '系统设置',
     logout: '退出登录',
-    collapse: '收起菜单'
+    collapse: '收起菜单',
+    menu: '菜单'
   },
 
   // 登录页
@@ -131,7 +133,19 @@ export default {
     keepPassword: '留空保持原密码',
     keepCurrent: '保持不变',
     days: '天',
-    downloadLimit: '下载限制'
+    downloadLimit: '下载限制',
+    // 重设计新增：搜索 / 排序 / 视图切换 / 空态
+    searchPlaceholder: '搜索文件名、路径或链接',
+    sortName: '名称',
+    sortCreated: '创建时间',
+    sortDownloads: '下载次数',
+    sortExpires: '过期时间',
+    sortAccessType: '访问方式',
+    listView: '列表视图',
+    gridView: '方格视图',
+    noSearchResults: '无匹配结果',
+    noSearchResultsHint: '尝试更换关键词，或清除搜索条件',
+    clearSearch: '清除搜索'
   },
 
   // 存储管理

@@ -19,7 +19,9 @@ export function formatSize(bytes: number): string {
 }
 
 /**
- * 日期格式化：空值显示从未登录；当天显时间、昨天、7 天内显相对天数，更早显本地日期
+ * 日期格式化：空值显示从未登录；当天显时间、昨天、7 天内显相对天数，更早显本地日期。
+ * 未来日期（分享过期时间等）单独处理：3 天内显"N 天后"，更远显本地日期——
+ * 原实现对负 days 也走 daysAgo 分支，未来日期会输出"-76 天前"
  */
 export function formatDate(dateStr?: string): string {
   if (!dateStr) return i18n.global.t('common.neverLogin')
@@ -29,6 +31,9 @@ export function formatDate(dateStr?: string): string {
   const days = Math.floor(diff / (1000 * 60 * 60 * 24))
   if (days === 0) return i18n.global.t('common.today') + ' ' + date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
   if (days === 1) return i18n.global.t('common.yesterday')
+  if (days < 0) return days > -3
+    ? i18n.global.t('common.daysLater', { n: -days })
+    : date.toLocaleDateString()
   if (days < 7) return i18n.global.t('common.daysAgo', { n: days })
   return date.toLocaleDateString()
 }
