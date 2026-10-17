@@ -25,8 +25,11 @@ app.use(i18n)
 // 初始化主题
 initTheme()
 
-// 初始化：检查并恢复登录状态
+// D1：先挂载再恢复会话。原实现 await checkAuth().finally(mount)，首屏可交互
+// 时间被一个 /users/me 往返拖住；现在挂载与请求并行，登录页/框架立即可见。
+// 路由守卫内部 await 的是 store 里同一个 in-flight checkAuth（并发已合并），
+// 受保护路由的跳转判定不受影响；无 token 时守卫直接放行去登录页
+app.mount('#app')
+
 const userStore = useUserStore()
-userStore.checkAuth().finally(() => {
-  app.mount('#app')
-})
+void userStore.checkAuth()

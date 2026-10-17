@@ -39,7 +39,18 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  async function checkAuth() {
+  // checkAuth 的 in-flight 合并：main.ts 挂载后后台恢复会话与路由守卫的
+  // 等待可能并发（D1 首屏优化），共享同一个请求，不重复打 /users/me
+  let checkAuthInFlight: Promise<boolean> | null = null
+
+  function checkAuth(): Promise<boolean> {
+    checkAuthInFlight ??= doCheckAuth().finally(() => {
+      checkAuthInFlight = null
+    })
+    return checkAuthInFlight
+  }
+
+  async function doCheckAuth() {
     if (!token.value) {
       initialized.value = true
       return false
