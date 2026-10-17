@@ -500,6 +500,81 @@ public sealed class FileItemRepository(
             false, cancellationToken);
     }
 
+    // ---- 扫描同步的轻量对比表与批量写（S2）----
+
+    /// <summary>批量插入的每批行数。PalORM 的 BulkInsertAsync 按此分多值 INSERT 语句</summary>
+    private const int BulkBatchSize = 500;
+
+    public async Task<IReadOnlyList<FileItemScanEntry>> GetScanEntriesAsync(
+        Guid storagePoolId,
+        CancellationToken cancellationToken = default)
+    {
+        var db = await sessions.GetAsync(cancellationToken);
+
+        // 含软删记录（ITM-N26）：其物理文件可能仍在挂载点，必须进对比表，
+        // 否则会被当作"新发现"重建（软删文件复活）且恢复时撞 Path 唯一索引。
+        // 列序与 FileItemScanRow 属性声明序逐列对齐。
+        // storagePoolId 走绑定参数：拼字面量会绕过 Microsoft.Data.Sqlite 的
+        // Guid 大写 D 归一，SQLite TEXT 大小写敏感，带池过滤的查询会恒返回空
+        var rows = await db.QueryAsync<FileItemScanRow>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "SELECT Id, Path, ItemType, SizeBytes, ParentId, IsDeleted " +
+                "FROM FileItems WHERE StoragePoolId = {0}",
+                storagePoolId),
+            false,
+            cancellationToken);
+
+        return rows.Select(r => new FileItemScanEntry(
+            r.Id, r.Path, r.ItemType, r.SizeBytes, r.ParentId, r.IsDeleted)).ToList();
+    }
+
+    public Task BulkInsertAsync(
+        IReadOnlyList<FileItem> entities,
+        CancellationToken cancellationToken = default)
+    {
+        if (entities.Count == 0)
+            return Task.CompletedTask;
+
+        // 行在登记时快照：调用方（扫描同步）登记后不再改这些实体，
+        // 与逐条 AddAsync 的 ToRow 时机一致
+        var rows = entities.Select(e => e.ToRow()).ToList();
+
+        // 经意图队列登记：与同批次其他写入在同一个事务里提交。
+        // BulkInsertAsync 复用会话事务，不会自成一体
+        unitOfWork.EnqueueCommand(async (db, ct) =>
+            await db.BulkInsertAsync(rows, BulkBatchSize, ct));
+
+        return Task.CompletedTask;
+    }
+
+    public Task BulkUpdateAsync(
+        IReadOnlyList<FileItem> entities,
+        CancellationToken cancellationToken = default)
+    {
+        if (entities.Count == 0)
+            return Task.CompletedTask;
+
+        var rows = entities.Select(e => e.ToRow()).ToList();
+        unitOfWork.EnqueueCommand(async (db, ct) =>
+            await db.BulkUpdateAsync(rows, ct));
+
+        return Task.CompletedTask;
+    }
+
+    public Task BulkDeleteAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        if (ids.Count == 0)
+            return Task.CompletedTask;
+
+        // 类型化键重载：IReadOnlyList<Guid> 到 Guid[] 全程零装箱
+        unitOfWork.EnqueueCommand(async (db, ct) =>
+            await db.BulkDeleteAsync<FileItemRow, Guid>(ids, ct));
+
+        return Task.CompletedTask;
+    }
+
     // ---- IRepository<FileItem> 基接口成员：写入走意图队列，读走会话 ----
 
     public async ValueTask<FileItem?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)

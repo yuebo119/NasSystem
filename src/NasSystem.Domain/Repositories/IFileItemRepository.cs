@@ -161,6 +161,37 @@ public interface IFileItemRepository : IRepository<FileItem>
     Task<long> CalculateStoragePoolUsedSpaceAsync(
         Guid storagePoolId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 取存储池全部记录的轻量清单（含软删），供扫描同步建对比表。
+    /// 不排序：调用方建字典并按需自行排序（删除集按路径倒序确保子先于父）。
+    /// </summary>
+    Task<IReadOnlyList<FileItemScanEntry>> GetScanEntriesAsync(
+        Guid storagePoolId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 批量插入（单条多值 SQL，经 UnitOfWork 意图队列与同批次写入同事务）。
+    /// 列表顺序即插入顺序：调用方必须保证父行在子行之前（ParentId 外键 RESTRICT）。
+    /// </summary>
+    Task BulkInsertAsync(
+        IReadOnlyList<FileItem> entities,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 批量更新（逐行执行但复用命令与参数，经意图队列同事务）。
+    /// </summary>
+    Task BulkUpdateAsync(
+        IReadOnlyList<FileItem> entities,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 按 Id 批量删除（每 500 个主键 IN 一批，经意图队列同事务）。
+    /// 调用方必须保证子行 Id 在父行之前（ParentId 外键 RESTRICT）。
+    /// </summary>
+    Task BulkDeleteAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -224,3 +255,20 @@ public sealed record FileSearchResult
 /// 不物化完整实体（万级子树下实体化是纯浪费）。
 /// </summary>
 public sealed record FileItemEntry(string Path, Enums.FileItemType ItemType);
+
+/// <summary>
+/// 扫描同步的轻量投影：路径 + 类型 + 大小 + 父 + 删除态 + Id。
+/// </summary>
+/// <remarks>
+/// 扫描对比只需要这六个字段：路径做对比表键、大小做变更检测、父 Id 做树链接
+/// 修复检测、删除态做跳过判定、Id 做批量删除。含软删记录（ITM-N26：软删记录的
+/// 物理文件可能仍在挂载点，必须进对比表防止被当新文件重建）。物化完整实体是纯浪费：
+/// 十万文件的池就是十万个实体同时驻留。
+/// </remarks>
+public sealed record FileItemScanEntry(
+    Guid Id,
+    string Path,
+    Enums.FileItemType ItemType,
+    long SizeBytes,
+    Guid? ParentId,
+    bool IsDeleted);

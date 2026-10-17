@@ -20,7 +20,7 @@ using static NasSystem.Shared.ByteSizeFormatter;
 
 /// <summary>
 /// 文件服务实现
-public sealed partial class FileService 
+public sealed partial class FileService
 {
     public async Task<Result<ScanResultDto>> ScanAndSyncAsync(
         Guid userId,
@@ -37,54 +37,97 @@ public sealed partial class FileService
                 return Result<ScanResultDto>.Failure(defaultPool.Error);
 
             var storagePath = defaultPool.Value.MountPath;
-            
+
             if (!Directory.Exists(storagePath))
             {
                 Directory.CreateDirectory(storagePath);
             }
 
-            // 获取默认池的文件记录——池过滤下推 SQL（原实现载全表后内存 Where，
-            // 多池数据量随总条目线性放大）。物理扫描仅覆盖默认池挂载点，
-            // 若对比全库记录，其他池的记录会被误判"物理不存在"而批量删除
-            var dbItems = await _fileRepository.GetByStoragePoolAsync(defaultPool.Value.Id, cancellationToken);
+            // S2：轻量对比表。原实现载全池活跃实体 + 软删实体两份再 concat 建字典，
+            // 十万文件的池就是十万个 FileItem 同时驻留；投影只要六个字段
+            // （Id/Path/ItemType/SizeBytes/ParentId/IsDeleted）。含软删记录：
+            // 其物理文件仍存在于挂载点，缺席会被当作新发现重建（软删复活），
+            // 且恢复时撞 Path 唯一索引（ITM-N26）
+            var scanEntries = await _fileRepository.GetScanEntriesAsync(defaultPool.Value.Id, cancellationToken);
+            var dbPathMap = scanEntries.ToDictionary(x => x.Path, x => x);
 
-            // ITM-N26：软删记录也必须进入对比表——其物理文件仍存在于挂载点，
-            // 若缺席则会被扫描当作"新发现"重建（软删文件复活），且恢复时撞 Path 唯一索引
-            var softDeletedInPool = await _fileRepository.GetDeletedItemsAsync(
-                ownerId: null, storagePoolId: defaultPool.Value.Id, cancellationToken);
-
-            var dbPathMap = dbItems.Concat(softDeletedInPool)
-                .ToDictionary(x => x.Path, x => x);
-
-            // 扫描物理文件系统
+            // 扫描物理文件系统。三类写操作收集到列表末尾一次批量提交：
+            // 原实现逐条 AddAsync/UpdateAsync（每文件一条独立 SQL），
+            // 首次扫描十万文件就是十万条 INSERT
             var physicalPaths = new HashSet<string>();
+            var newItems = new List<FileItem>();
+            var updatedItems = new List<FileItem>();
+            var changedDirs = new HashSet<string>(StringComparer.Ordinal);
+
             await ScanDirectoryAsync(
                 storagePath,
                 "/",
                 defaultPool.Value.Id,
-                userId, 
-                dbPathMap, 
+                userId,
+                dbPathMap,
                 physicalPaths,
                 counters,
+                newItems,
+                updatedItems,
+                changedDirs,
                 null,  // 根目录的 parentId 为 null
                 cancellationToken);
 
-            // 删除数据库中存在但物理文件不存在的记录
-            var itemsToRemove = dbItems.Where(item => !physicalPaths.Contains(item.Path)).ToList();
-            foreach (var item in itemsToRemove)
+            // 删除集：库里有、物理上没了的活跃记录。软删记录不进（ITM-N26 语义），
+            // 但被删文件夹下的软删后代要一并删：ParentId 外键是 ON DELETE RESTRICT，
+            // 父行被子行引用时删父必失败，软删后代同样引用父行
+            var activeRemoved = scanEntries
+                .Where(e => !e.IsDeleted && !physicalPaths.Contains(e.Path))
+                .ToList();
+
+            var toDelete = activeRemoved.ToList();
+            var removedFolderPrefixes = activeRemoved
+                .Where(e => e.ItemType == FileItemType.Folder)
+                .Select(e => e.Path + "/")
+                .ToList();
+            if (removedFolderPrefixes.Count > 0)
             {
-                if (item.IsFolder)
+                toDelete.AddRange(scanEntries.Where(e =>
+                    e.IsDeleted &&
+                    removedFolderPrefixes.Any(p => e.Path.StartsWith(p, StringComparison.Ordinal))));
+            }
+
+            foreach (var e in activeRemoved)
+            {
+                if (e.ItemType == FileItemType.Folder)
                     counters.RemovedFolders++;
                 else
                     counters.RemovedFiles++;
+                // 删除也改变父目录的条目集合
+                changedDirs.Add(GetParentPath(e.Path));
             }
 
-            if (itemsToRemove.Count > 0)
+            if (newItems.Count > 0)
+                await _fileRepository.BulkInsertAsync(newItems, cancellationToken);
+            if (updatedItems.Count > 0)
+                await _fileRepository.BulkUpdateAsync(updatedItems, cancellationToken);
+
+            // 子先父：同父下子路径以 父+/ 开头，字典序子大于父。但要注意
+            // BulkDeleteAsync 把 Id 合成一条 DELETE ... IN (...) 语句，语句内部的
+            // 行序由 SQLite 决定而不受传入顺序控制，父行先删就撞 ParentId 外键
+            // RESTRICT（实测：两个 Id 一条语句照样失败）。安全的分批维度是路径
+            // 深度：父的深度恒小于子，同深度的行互不为父子，可一批删掉。
+            // 原实现按路径升序逐条删（父先于子），删整目录树时第一个父行删除
+            // 就撞外键，整个扫描事务回滚报"扫描失败"
+            foreach (var depthGroup in toDelete
+                .GroupBy(e => e.Path.Count(c => c == '/'))
+                .OrderByDescending(g => g.Key))
             {
-                await _fileRepository.DeleteRangeAsync(itemsToRemove, cancellationToken);
+                await _fileRepository.BulkDeleteAsync(
+                    depthGroup.Select(e => e.Id).ToList(), cancellationToken);
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            // 版本号：批量写不跟踪实体（UoW 的 BumpDirectoryVersions 无实体可 bump），
+            // 显式递增有变更的目录（新增/删除/大小变化/父链接修复的所在目录）
+            foreach (var dir in changedDirs)
+                DirectoryVersion.Bump(dir);
 
             var duration = DateTime.UtcNow - startTime;
             return Result<ScanResultDto>.Success(new ScanResultDto
@@ -123,9 +166,12 @@ public sealed partial class FileService
         string virtualPath,
         Guid storagePoolId,
         Guid userId,
-        Dictionary<string, FileItem> dbPathMap,
+        Dictionary<string, FileItemScanEntry> dbPathMap,
         HashSet<string> physicalPaths,
         ScanCounters counters,
+        List<FileItem> newItems,
+        List<FileItem> updatedItems,
+        HashSet<string> changedDirs,
         Guid? currentDirId,  // 当前目录的 ID，作为子项的 parentId
         CancellationToken cancellationToken)
     {
@@ -137,11 +183,12 @@ public sealed partial class FileService
             var dirVirtualPath = CombinePath(virtualPath, dirName);
             physicalPaths.Add(dirVirtualPath);
 
-            FileItem folder;
+            Guid dirId;
             if (!dbPathMap.TryGetValue(dirVirtualPath, out var existingFolder))
             {
-                // 新文件夹，添加到数据库
-                folder = FileItem.CreateFolder(
+                // 新文件夹：只建实体进批量插入列表，不碰数据库（父先于子的顺序由
+                // 遍历顺序天然保证，BulkInsertAsync 按列表顺序执行）
+                var folder = FileItem.CreateFolder(
                     name: dirName,
                     path: dirVirtualPath,
                     physicalPath: dir,
@@ -149,13 +196,14 @@ public sealed partial class FileService
                     ownerId: userId,
                     parentId: currentDirId);
 
-                await _fileRepository.AddAsync(folder, cancellationToken);
-                dbPathMap[dirVirtualPath] = folder;
+                newItems.Add(folder);
+                dirId = folder.Id;
                 counters.AddedFolders++;
+                changedDirs.Add(virtualPath);
             }
             else
             {
-                folder = existingFolder;
+                dirId = existingFolder.Id;
                 // 【保留论证】软删命中物理存在时为何"什么都不做"而不是恢复或重建：
                 // 软删语义=用户明确不要了但暂存回收站；扫描只负责"物理↔数据库对齐"，
                 // 无权替用户改变删除决定（NPD-4 同族：扫描不是所有权/状态改写工具）。
@@ -163,24 +211,34 @@ public sealed partial class FileService
                 if (existingFolder.IsDeleted)
                     continue;
 
-                // 修复 parentId 如果不正确
+                // 修复 parentId 如果不正确。按需加载实体：修复是少见路径
+                // （树链接漂移），不值得为它把全池实体物化出来
                 if (existingFolder.ParentId != currentDirId)
                 {
-                    existingFolder.MoveTo(existingFolder.Path, existingFolder.PhysicalPath, currentDirId);
-                    await _fileRepository.UpdateAsync(existingFolder, cancellationToken);
+                    var entity = await _fileRepository.GetByPathAsync(dirVirtualPath, cancellationToken);
+                    if (entity is not null)
+                    {
+                        entity.MoveTo(entity.Path, entity.PhysicalPath, currentDirId);
+                        updatedItems.Add(entity);
+                        counters.UpdatedFiles++;
+                        changedDirs.Add(virtualPath);
+                    }
                 }
             }
 
             // 递归扫描子目录，传递文件夹的 ID 作为子项的 parentId
             await ScanDirectoryAsync(
-                dir, 
-                dirVirtualPath, 
-                storagePoolId, 
-                userId, 
-                dbPathMap, 
+                dir,
+                dirVirtualPath,
+                storagePoolId,
+                userId,
+                dbPathMap,
                 physicalPaths,
                 counters,
-                folder.Id,
+                newItems,
+                updatedItems,
+                changedDirs,
+                dirId,
                 cancellationToken);
         }
 
@@ -196,7 +254,7 @@ public sealed partial class FileService
 
             if (!dbPathMap.TryGetValue(fileVirtualPath, out var existingFile))
             {
-                // 新文件，添加到数据库
+                // 新文件，进批量插入列表
                 var newFile = FileItem.CreateFile(
                     name: fileName,
                     path: fileVirtualPath,
@@ -207,9 +265,9 @@ public sealed partial class FileService
                     ownerId: userId,
                     parentId: currentDirId);
 
-                await _fileRepository.AddAsync(newFile, cancellationToken);
-                dbPathMap[fileVirtualPath] = newFile;
+                newItems.Add(newFile);
                 counters.AddedFiles++;
+                changedDirs.Add(virtualPath);
             }
             else
             {
@@ -217,18 +275,22 @@ public sealed partial class FileService
                 if (existingFile.IsDeleted)
                     continue;
 
-                // 修复 parentId 如果不正确
-                if (existingFile.ParentId != currentDirId)
+                // 修复 parentId 或大小变化。两者都按需加载实体（少见路径）
+                var needsParentFix = existingFile.ParentId != currentDirId;
+                var needsSizeUpdate = existingFile.SizeBytes != fileInfo.Length;
+                if (needsParentFix || needsSizeUpdate)
                 {
-                    existingFile.MoveTo(existingFile.Path, existingFile.PhysicalPath, currentDirId);
-                    await _fileRepository.UpdateAsync(existingFile, cancellationToken);
-                    counters.UpdatedFiles++;
-                }
-                else if (existingFile.SizeBytes != fileInfo.Length)
-                {
-                    // 文件大小变化，更新
-                    existingFile.UpdateSize(fileInfo.Length);
-                    counters.UpdatedFiles++;
+                    var entity = await _fileRepository.GetByPathAsync(fileVirtualPath, cancellationToken);
+                    if (entity is not null)
+                    {
+                        if (needsParentFix)
+                            entity.MoveTo(entity.Path, entity.PhysicalPath, currentDirId);
+                        if (needsSizeUpdate)
+                            entity.UpdateSize(fileInfo.Length);
+                        updatedItems.Add(entity);
+                        counters.UpdatedFiles++;
+                        changedDirs.Add(virtualPath);
+                    }
                 }
             }
         }
