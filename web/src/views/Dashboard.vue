@@ -1060,7 +1060,10 @@ onUnmounted(() => {
 
 // 并排卡片等高：el-row 的 align-items 默认 stretch 已把 el-col 拉到同行最高，
 // 这里让 el-card 撑满 el-col，消除左右两张卡底边不齐。
-// header 排版（flex 两端分布、图标与文字间距）四卡统一收口，原先各写各的
+// header 排版（flex 两端分布、图标与文字间距）四卡统一收口，原先各写各的。
+// 注意：这里只挂 height:100%，不挂 margin-bottom——卡片自身 margin 会让
+// 百分比高度参照的列高把外边距也算进去（列高 = 卡高 + margin 的反馈），
+// 窄屏堆叠时卡内底部撑出一段死空白。行间距由 .dash-row-gap 统一提供
 .storage-overview-card,
 .file-stats-card,
 .disks-card,
@@ -1068,7 +1071,6 @@ onUnmounted(() => {
 .recent-files-card,
 .recycle-card {
   height: 100%;
-  margin-bottom: 16px;
 
   .card-header {
     display: flex;
@@ -1086,8 +1088,12 @@ onUnmounted(() => {
 
 // 等高行（四张卡）的行级间距：卡片 margin-bottom 被 height:100% 溢出吃掉，
 // 推不开行外后续卡片，改由 row 提供，保证行与行之间也是统一的 16px
+// 行级间距：margin-bottom 推开下方行（卡片自身 margin 被 height:100% 吃掉，
+// 不能用来推间距）；row-gap 管窄屏堆叠时换行列之间的竖向间距——
+// el-row 的 gutter 只做水平分栏，竖向往全靠它
 .dash-row-gap {
   margin-bottom: 16px;
+  row-gap: 16px;
 }
 
 .storage-overview-card {
@@ -1160,10 +1166,9 @@ onUnmounted(() => {
 }
 
 // 物理磁盘卡：与存储池卡分开的第二个概念。多盘自适应网格，
-// 盘数多时自动分栏（NAS 动辄 4-8 盘），窄屏退化单列
+// 盘数多时自动分栏（NAS 动辄 4-8 盘），窄屏退化单列。
+// margin-bottom 由 .dash-row-gap 行级提供（原因见等高卡规则处的注释）
 .disks-card {
-  margin-bottom: 16px;
-
   .card-header {
     display: flex;
     justify-content: space-between;
