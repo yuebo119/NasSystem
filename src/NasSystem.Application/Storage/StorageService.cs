@@ -28,7 +28,7 @@ public sealed class StorageService(
 {
     /// <summary>
     /// 池容量上次刷新时间的内存缓存键前缀。按池 Id 分键，
-    /// 值是该池上次完成实测的 UTC 时间。
+    /// 值是该池上次完成记账的 UTC 时间。
     /// </summary>
     private const string PoolRefreshKeyPrefix = "storageservice:pool-refresh:";
 
@@ -56,8 +56,8 @@ public sealed class StorageService(
         }
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // 池大小 = 各池文件夹实测大小之和。虚拟池：一个池就是一个固定文件夹，
-        // 池的大小即文件夹的大小，不是所在磁盘的容量
+        // 池大小 = 各池的库记账之和（2026-10-17 起以库记账为准，原文件夹
+        // 实测口径废止）。与已用同源同值，两个数字保留是 API 兼容
         long folderSizeBytes = pools.Sum(p => p.FolderSizeBytes);
         long usedBytes = pools.Sum(p => p.UsedBytes);
         // 可用 = 文件夹的增长空间。同一磁盘上的多个池共享该盘剩余，
@@ -144,7 +144,7 @@ public sealed class StorageService(
             description: request.Description,
             maxCapacityBytes: request.MaxCapacityBytes);
 
-        // 初始实测必须 force：节流窗口按 UpdatedAt ?? CreatedAt 判定，
+        // 初始记账必须 force：节流窗口按 UpdatedAt ?? CreatedAt 判定，
         // 刚建出来的池两者都是当下，不 force 的话第一次刷新必然被窗口挡掉，
         // 新建一个有内容的池会先显示 0 B 满 60 秒
         await RefreshPoolCapacityAsync(pool, cancellationToken, force: true);
@@ -306,9 +306,9 @@ public sealed class StorageService(
     /// <remarks>
     /// 原实现用 <c>pool.UpdatedAt ?? pool.CreatedAt</c> 判定，而首页的 overview 与
     /// pools 两个端点是并发发出的（前端 Promise.all），两个作用域各读一份旧 UpdatedAt，
-    /// 都判定"超过窗口"，于是同一池被完整遍历两遍、SUM 查两遍。
+    /// 都判定"超过窗口"，于是同一池被完整记账两遍、SUM 查两遍。
     /// 内存缓存在请求之间共享，第一个请求刷新后写入时间戳，第二个请求在窗口内直接跳过。
-    /// 代价是进程重启后第一次请求会重新实测一次，这符合预期：新进程没有旧观测值。
+    /// 代价是进程重启后第一次请求会重新记账一次，这符合预期：新进程没有旧观测值。
     /// </remarks>
     private bool ShouldRefreshPool(StoragePool pool, bool force)
     {
@@ -355,79 +355,6 @@ public sealed class StorageService(
     }
 
     /// <summary>
-    /// 递归实测文件夹大小（挂载点下所有文件的长度之和）。这是池大小的唯一来源：
-    /// 虚拟池即文件夹，池的大小就是文件夹的大小
-    /// </summary>
-    /// <remarks>
-    /// 根目录枚举失败（不存在、无权限、磁盘未就绪）返回 null，调用方不覆盖存量值，
-    /// 避免把"读不到"写成"池大小 0"。子目录逐个入栈，单目录读不了只跳过该分支，
-    /// 与 du 一类工具的行为一致
-    /// </remarks>
-    private static long? MeasureFolderBytes(string mountPath)
-    {
-        try
-        {
-            // 根目录可枚举性先行：读不了与真空文件夹是两件事，
-            // 前者不能把池大小覆盖成 0（调用方据此不覆盖存量值）
-            try
-            {
-                _ = Directory.EnumerateFiles(mountPath).FirstOrDefault();
-            }
-            catch
-            {
-                return null;
-            }
-
-            long total = 0;
-            var pending = new Stack<string>();
-            pending.Push(mountPath);
-
-            while (pending.Count > 0)
-            {
-                var dir = pending.Pop();
-                try
-                {
-                    foreach (var file in Directory.EnumerateFiles(dir))
-                    {
-                        try
-                        {
-                            // FileInfo.Length 是逐文件取长度的唯一 API（System.IO.File
-                            // 没有静态 Length）。每个 FileInfo 是小对象，实测分配占比
-                            // 远小于遍历本身的目录枚举系统调用，不额外优化
-                            total += new FileInfo(file).Length;
-                        }
-                        catch (FileNotFoundException)
-                        {
-                            // 扫描期间被移走，跳过
-                        }
-                        catch (IOException)
-                        {
-                            // 单文件被锁或不可读，跳过
-                        }
-                    }
-
-                    foreach (var sub in Directory.EnumerateDirectories(dir))
-                        pending.Push(sub);
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    // 单个子目录无权限，只跳过该分支
-                }
-                catch (IOException)
-                {
-                    // 单个子目录不可访问，只跳过该分支
-                }
-            }
-
-            return total;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
     /// 存储健康状态，由池的真实可达性推导而非硬编码：任一启用池不可达
     /// 或使用率超过 90% 记 Warning
     /// </summary>
@@ -444,8 +371,9 @@ public sealed class StorageService(
     }
 
     /// <summary>
-    /// 刷新单个池的实测大小与已用容量（读路径受节流窗口保护）。
-    /// 两个数字来源不同：大小扫文件夹，已用查数据库里该池的文件记账
+    /// 刷新单个池的大小与已用容量（读路径受节流窗口保护）。
+    /// 2026-10-17 起大小与已用同源：都是库内记账 SUM（用户裁决"以库记账为准"，
+    /// 原扫目录取大小的口径废止，MeasureFolderBytes 随之删除）
     /// </summary>
     private async Task<bool> RefreshPoolCapacityAsync(
         StoragePool pool,
@@ -456,7 +384,7 @@ public sealed class StorageService(
             return false;
 
         // 同一池的并发刷新合并：前端 overview/pools 两个端点并发打出时，
-        // 两者都未命中节流缓存（缓存在遍历完成后才写），无闸门会完整遍历两遍
+        // 两者都未命中节流缓存（缓存在刷新完成后才写），无闸门会各查一次 SUM
         var gate = RefreshGates.GetOrAdd(pool.Id, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
         try
@@ -471,39 +399,32 @@ public sealed class StorageService(
         {
             gate.Release();
             // CurrentCount 回 1 表示没有等待者，移除闸门防字典随池增删无限增长。
-            // 竞态窗口内新等待者取到的是同一实例引用，最坏后果是多一次遍历（与无闸门同），不会错
+            // 竞态窗口内新等待者取到的是同一实例引用，最坏后果是多一次 SUM，不会错
             if (gate.CurrentCount == 1)
                 RefreshGates.TryRemove(new KeyValuePair<Guid, SemaphoreSlim>(pool.Id, gate));
         }
     }
 
     /// <summary>
-    /// 实测并更新单个池的大小与已用容量（调用方已持有该池的刷新闸门）。
-    /// 两个数字来源不同：大小扫文件夹，已用查数据库里该池的文件记账
+    /// 记账并更新单个池的大小与已用容量（调用方已持有该池的刷新闸门）。
     /// </summary>
+    /// <remarks>
+    /// S1b（用户 2026-10-17 裁决：以库记账为准）：池大小不再物理实测挂载点目录
+    /// （十万文件的池要数秒且阻塞请求线程，是唯一随文件数线性增长并同步阻塞的
+    /// 读路径操作），改为库内 SUM。语义变化：外部直接放到盘上、不经本应用的
+    /// 文件不再计入池大小；这样的文件本来也不在库内，扫描同步会把它们收进来。
+    /// 与原实测口径的差别由 StorageOverviewTests 的新口径用例锁住。
+    /// </remarks>
     private async Task<bool> MeasureAndUpdatePoolAsync(
         StoragePool pool,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            // 实测挂载点文件夹大小。读不到（不存在/无权限/盘未就绪）时
-            // 不覆盖存量值，由健康状态的 Warning 暴露不可达
-            var folderSizeBytes = MeasureFolderBytes(pool.MountPath);
-            if (folderSizeBytes is null)
-                return false;
-
-            // 计算存储池内 NAS 管理的文件总大小作为已用空间
-            var usedBytes = await fileItemRepository.CalculateStoragePoolUsedSpaceAsync(pool.Id, cancellationToken);
-            pool.UpdateUsage(folderSizeBytes.Value, usedBytes);
-            MarkPoolRefreshed(pool);
-            return true;
-        }
-        catch
-        {
-            // 忽略无法访问的存储池
-        }
-        return false;
+        // NAS 管理的文件总大小：大小与已用同源（见 StoragePool.UpdateUsage 注释）
+        var managedBytes = await fileItemRepository.CalculateStoragePoolUsedSpaceAsync(
+            pool.Id, cancellationToken);
+        pool.UpdateUsage(managedBytes);
+        MarkPoolRefreshed(pool);
+        return true;
     }
 
     private static StoragePoolDto MapToDto(StoragePool pool)

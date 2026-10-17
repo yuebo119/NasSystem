@@ -807,19 +807,27 @@
 
 需要认证
 
+容量口径（2026-10-17 起以库记账为准）：`folderSizeBytes` 与 `usedBytes` 同源
+同值，都是 NAS 管理的文件数据库记账 SUM；外部直接放到盘上、不经本应用的文件
+不计入。`availableBytes` = 配额剩余与磁盘物理剩余取小（无上限时只受物理剩余
+约束）。`usagePercentage` 只对全部启用池都设了容量上限时有意义，混合配置时不
+展示（`hasCapacityLimit` 为 false）。
+
 **响应：**
 ```json
 {
   "success": true,
   "data": {
-    "totalBytes": 1099511627776,
-    "usedBytes": 549755813888,
+    "folderSizeBytes": 1099511627776,
+    "usedBytes": 1099511627776,
     "availableBytes": 549755813888,
     "usagePercentage": 50.0,
-    "totalDisplay": "1 TB",
-    "usedDisplay": "512 GB",
+    "hasCapacityLimit": true,
+    "folderSizeDisplay": "1 TB",
+    "usedDisplay": "1 TB",
     "availableDisplay": "512 GB",
     "poolCount": 2,
+    "diskCount": 1,
     "healthStatus": "Healthy"
   }
 }

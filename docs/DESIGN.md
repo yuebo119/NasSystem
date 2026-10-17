@@ -213,11 +213,17 @@ public sealed class StoragePool : Entity
     public string? Description { get; }       // 描述
     public bool IsDefault { get; }            // 是否默认
     public bool IsEnabled { get; }            // 是否启用
-    public long TotalBytes { get; }           // 总容量
-    public long UsedBytes { get; }            // 已使用
+    public long FolderSizeBytes { get; }      // 池大小：NAS 管理文件的库记账 SUM
+    public long UsedBytes { get; }            // 已使用：同源同值（2026-10-17 起）
     public long? MaxCapacityBytes { get; }    // 最大容量限制
 }
 ```
+
+容量口径（2026-10-17 用户裁决"以库记账为准"）：池大小 = NAS 管理的文件数据库
+记账 SUM，与已用同源同值；外部直接放到盘上、不经本应用的文件不计入（扫描同步
+会把它们收进来）。可用 = 配额剩余与磁盘物理剩余取小（每次调用一次 syscall，
+不遍历目录）。此前的"池即文件夹实测"口径（池大小扫挂载点目录）已废止：
+物理遍历是唯一随文件数线性增长且同步阻塞请求线程的读路径操作。
 
 #### FileShare（文件分享）
 ```csharp

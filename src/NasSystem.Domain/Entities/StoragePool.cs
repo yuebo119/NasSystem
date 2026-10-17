@@ -40,14 +40,20 @@ public sealed class StoragePool : Entity
     public bool IsEnabled { get; private set; } = true;
 
     /// <summary>
-    /// 池文件夹的实测大小（递归扫描挂载点下所有文件得出）。
-    /// 文件池是虚拟池：一个池就是一个固定文件夹，池的大小即文件夹的大小，
-    /// 不是所在磁盘的容量。存储列名 TotalBytes 是历史遗留，未做列迁移
+    /// 池大小：NAS 管理的文件总量（数据库记账）。
     /// </summary>
+    /// <remarks>
+    /// 2026-10-17 用户裁决"以库记账为准"后从物理实测改来：原实现递归扫描挂载点
+    /// 目录求和，十万文件的池要数秒且阻塞请求线程；改为库内 SUM 后读路径是一条
+    /// 聚合 SQL。语义变化：外部直接放到盘上、不经本应用的文件不再计入池大小。
+    /// 与 <see cref="UsedBytes"/> 同源同值，两个字段保留是 API 与存量列的兼容
+    /// （存储列名 TotalBytes 是历史遗留，未做列迁移）。
+    /// </remarks>
     public long FolderSizeBytes { get; private set; }
 
     /// <summary>
-    /// 已使用容量：NAS 管理的文件占用（数据库记账）
+    /// 已使用容量：NAS 管理的文件占用（数据库记账）。与 <see cref="FolderSizeBytes"/>
+    /// 同源同值，见其注释
     /// </summary>
     public long UsedBytes { get; private set; }
 
@@ -100,15 +106,15 @@ public sealed class StoragePool : Entity
     }
 
     /// <summary>
-    /// 更新实测大小与已用容量。folderSizeBytes 是挂载点文件夹的实测大小，
-    /// usedBytes 是 NAS 管理的文件占用，两者来源不同（前者扫目录，后者查数据库）
+    /// 更新池大小与已用容量。2026-10-17 起两者同源：都是 NAS 管理的文件
+    /// 数据库记账 SUM（用户裁决"以库记账为准"，原 folderSizeBytes 扫目录、
+    /// usedBytes 查数据库的两个来源口径废止）。单参数即因为这个同源。
     /// </summary>
-    public void UpdateUsage(long folderSizeBytes, long usedBytes)
+    public void UpdateUsage(long managedBytes)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(folderSizeBytes);
-        ArgumentOutOfRangeException.ThrowIfNegative(usedBytes);
-        FolderSizeBytes = folderSizeBytes;
-        UsedBytes = usedBytes;
+        ArgumentOutOfRangeException.ThrowIfNegative(managedBytes);
+        FolderSizeBytes = managedBytes;
+        UsedBytes = managedBytes;
         MarkAsModified();
     }
 

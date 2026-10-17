@@ -95,17 +95,15 @@ public class StoragePoolTests
     #region UpdateUsage Tests
 
     [Fact]
-    public void UpdateUsage_SetsFolderSizeAndUsedBytes()
+    public void UpdateUsage_SetsFolderSizeAndUsedBytesFromSameAccounting()
     {
-        // 池即文件夹：FolderSizeBytes 是文件夹实测大小，UsedBytes 是 NAS 文件记账，
-        // 两者来源不同（前者扫目录，后者查数据库）
+        // 2026-10-17 起以库记账为准：池大小与已用同源同值（都是 NAS 管理的
+        // 文件数据库记账 SUM），原"大小扫目录、已用查数据库"的双来源口径废止
         var pool = StoragePool.Create("TestPool", "/mnt/test");
 
-        pool.UpdateUsage(
-            folderSizeBytes: 1024L * 1024 * 1024 * 100, // 100GB
-            usedBytes: 1024L * 1024 * 1024 * 50);       // 50GB
+        pool.UpdateUsage(1024L * 1024 * 1024 * 50); // 50GB 记账
 
-        pool.FolderSizeBytes.Should().Be(1024L * 1024 * 1024 * 100);
+        pool.FolderSizeBytes.Should().Be(1024L * 1024 * 1024 * 50);
         pool.UsedBytes.Should().Be(1024L * 1024 * 1024 * 50);
     }
 
@@ -152,7 +150,7 @@ public class StoragePoolTests
     {
         // 没设容量上限的池没有账目上限，是"无此概念"而不是"无限大"
         var pool = StoragePool.Create("TestPool", "/mnt/test");
-        pool.UpdateUsage(folderSizeBytes: 1024L * 1024 * 1024 * 100, usedBytes: 0);
+        pool.UpdateUsage(0);
 
         pool.QuotaRemainingBytes.Should().BeNull();
     }
@@ -161,7 +159,7 @@ public class StoragePoolTests
     public void QuotaRemainingBytes_WithQuota_SubtractsUsed()
     {
         var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 50);
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 1024L * 1024 * 1024 * 10);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 10);
 
         pool.QuotaRemainingBytes.Should().Be(1024L * 1024 * 1024 * 40);
     }
@@ -171,7 +169,7 @@ public class StoragePoolTests
     {
         // 已用超过上限（历史数据或手工改库）时剩余不能为负
         var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 50);
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 1024L * 1024 * 1024 * 60);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 60);
 
         pool.QuotaRemainingBytes.Should().Be(0);
     }
@@ -182,7 +180,7 @@ public class StoragePoolTests
         // 配额说还能写 40GB，但盘上只剩 20GB：可用必须是 20GB。
         // 曾按"盘总 − NAS记账"算可用，把盘上其他内容算成可用，虚高约 6 倍
         var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 50);
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 1024L * 1024 * 1024 * 10);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 10);
 
         pool.AvailableBytesWithin(1024L * 1024 * 1024 * 20)
             .Should().Be(1024L * 1024 * 1024 * 20);
@@ -194,7 +192,7 @@ public class StoragePoolTests
         // 配额是更紧的约束：配额 50GB 用掉 10GB，盘上还很空，
         // 可用应是配额的 40GB 而不是盘的一大片剩余
         var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 50);
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 1024L * 1024 * 1024 * 10);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 10);
 
         pool.AvailableBytesWithin(1024L * 1024 * 1024 * 500)
             .Should().Be(1024L * 1024 * 1024 * 40);
@@ -205,7 +203,7 @@ public class StoragePoolTests
     {
         // 无配额池的增长空间只受所在盘约束
         var pool = StoragePool.Create("TestPool", "/mnt/test");
-        pool.UpdateUsage(folderSizeBytes: 1024L * 1024 * 1024, usedBytes: 0);
+        pool.UpdateUsage(0);
 
         pool.AvailableBytesWithin(1024L * 1024 * 1024 * 142)
             .Should().Be(1024L * 1024 * 1024 * 142);
@@ -216,7 +214,7 @@ public class StoragePoolTests
     {
         // 挂载点不可达拿不到物理剩余，有配额时退回配额剩余
         var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 50);
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 1024L * 1024 * 1024 * 10);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 10);
 
         pool.AvailableBytesWithin(null).Should().Be(1024L * 1024 * 1024 * 40);
     }
@@ -226,7 +224,7 @@ public class StoragePoolTests
     {
         // 无配额又拿不到物理剩余时无从判断，返回 null 而不是编一个大数字
         var pool = StoragePool.Create("TestPool", "/mnt/test");
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 0);
+        pool.UpdateUsage(0);
 
         pool.AvailableBytesWithin(null).Should().BeNull();
     }
@@ -236,7 +234,7 @@ public class StoragePoolTests
     {
         // 盘满了时可用必须是 0，不能是记账的大数字
         var pool = StoragePool.Create("TestPool", "/mnt/test");
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 0);
+        pool.UpdateUsage(0);
 
         pool.AvailableBytesWithin(0).Should().Be(0);
     }
@@ -247,7 +245,7 @@ public class StoragePoolTests
         // 放不下的判定不能猜：物理剩余不可知且无配额时返回 false，
         // 由健康状态的 Warning 暴露挂载点不可达
         var pool = StoragePool.Create("TestPool", "/mnt/test");
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 0);
+        pool.UpdateUsage(0);
 
         pool.HasEnoughSpace(1024, null).Should().BeFalse();
     }
@@ -256,7 +254,7 @@ public class StoragePoolTests
     public void HasEnoughSpace_WhenQuotaSufficient_ReturnsTrue()
     {
         var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 50);
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 1024L * 1024 * 1024 * 10);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 10);
 
         pool.HasEnoughSpace(1024L * 1024 * 1024 * 10, null).Should().BeTrue();
     }
@@ -265,7 +263,7 @@ public class StoragePoolTests
     public void HasEnoughSpace_WhenQuotaInsufficient_ReturnsFalse()
     {
         var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 50);
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 1024L * 1024 * 1024 * 45);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 45);
 
         pool.HasEnoughSpace(1024L * 1024 * 1024 * 10, null).Should().BeFalse();
     }
@@ -275,7 +273,7 @@ public class StoragePoolTests
     {
         // 未设上限的池没有容量概念，使用率返回 0，展示层据此不渲染百分比
         var pool = StoragePool.Create("TestPool", "/mnt/test");
-        pool.UpdateUsage(folderSizeBytes: 1024L * 1024 * 1024 * 100, usedBytes: 1024L * 1024 * 1024 * 50);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 50);
 
         pool.UsagePercentage.Should().Be(0);
     }
@@ -284,7 +282,7 @@ public class StoragePoolTests
     public void UsagePercentage_WithQuota_CalculatesAgainstQuota()
     {
         var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 100);
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 1024L * 1024 * 1024 * 50);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 50);
 
         pool.UsagePercentage.Should().Be(50);
     }
@@ -294,7 +292,7 @@ public class StoragePoolTests
     {
         // 无配额池不存在"即将满"：文件夹本身没有容量上限
         var pool = StoragePool.Create("TestPool", "/mnt/test");
-        pool.UpdateUsage(folderSizeBytes: 1024L * 1024 * 1024 * 100, usedBytes: 1024L * 1024 * 1024 * 99);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 99);
 
         pool.IsNearlyFull.Should().BeFalse();
     }
@@ -303,7 +301,7 @@ public class StoragePoolTests
     public void IsNearlyFull_WithQuotaOver90Percent_ReturnsTrue()
     {
         var pool = StoragePool.Create("TestPool", "/mnt/test", maxCapacityBytes: 1024L * 1024 * 1024 * 100);
-        pool.UpdateUsage(folderSizeBytes: 0, usedBytes: 1024L * 1024 * 1024 * 95);
+        pool.UpdateUsage(1024L * 1024 * 1024 * 95);
 
         pool.IsNearlyFull.Should().BeTrue();
     }
