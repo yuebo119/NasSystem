@@ -4,6 +4,10 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // 2026-10-17 全检体检结论：关掉本项会炸出 57 个第三方包错误
+    // （element-plus 40 / @vueuse 16 / vue-i18n 1），实测 TS 5.9.3 与 6.0.3
+    // 错误集逐行相同，全部是历史遗留与 TS 版本无关。本项目使用侧类型
+    // （props/composable 推断）在全量检查下已通过，保持跳过库内部检查
     "skipLibCheck": true,
 
     /* Bundler mode */

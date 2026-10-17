@@ -4,6 +4,7 @@
     "target": "ES2022",
     "lib": ["ES2023"],
     "module": "ESNext",
+    // 与 tsconfig.json 同：跳过库内部检查，2026-10-17 体检结论见那边注释
     "skipLibCheck": true,
 
     /* Bundler mode */
