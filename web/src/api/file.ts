@@ -83,6 +83,11 @@ export const fileApi = {
     return http.get('/files/statistics')
   },
 
+  // 最近文件（Dashboard 面板）：按创建时间倒序取前 count 条
+  async getRecentFiles(count = 6): Promise<ApiResponse<FileItem[]>> {
+    return http.get('/files/recent', { params: { count } })
+  },
+
   // 扫描并同步文件
   async scanAndSync(): Promise<ApiResponse<ScanResult>> {
     return http.post('/files/scan')

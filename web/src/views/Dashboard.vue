@@ -2,15 +2,18 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
+import { ElMessage } from 'element-plus'
 import { storageApi } from '@/api/storage'
 import { fileApi } from '@/api/file'
 import http from '@/api/http'
 import {
   Files, User, Box, Share,
   Monitor, Timer, Cpu, Connection, Refresh,
-  Picture, VideoPlay, Headset, Document, FolderOpened, Warning, InfoFilled, Pointer
+  Picture, VideoPlay, Headset, Document, FolderOpened, Warning, InfoFilled, Pointer,
+  Upload, FolderAdd, Delete, Search, Download
 } from '@element-plus/icons-vue'
-import { formatSize, getPoolStatusInfo } from '@/utils/format'
+import { formatSize, getPoolStatusInfo, getFileIcon, getFileIconColor, formatDate } from '@/utils/format'
+import { fileShareApi } from '@/api/fileShare'
 
 const { t } = useI18n()
 const userStore = useUserStore()
@@ -36,6 +39,15 @@ const drivesError = ref('')
 
 // 存储池列表
 const storagePools = ref<any[]>([])
+
+// 分享概览（/file-shares 一次全量，仪表盘只取聚合数字）
+const shares = ref<any[]>([])
+
+// 最近文件（/files/recent，倒序前 6 条）
+const recentFiles = ref<any[]>([])
+
+// 回收站（只取条目数与总大小，恢复/清空操作在文件管理页）
+const recycleBinItems = ref<any[]>([])
 
 // 文件统计
 const fileStats = ref({
@@ -184,6 +196,98 @@ const loadSystemInfo = async () => {
   }
 }
 
+// 加载分享列表（概览卡聚合用）
+const loadShares = async () => {
+  try {
+    const response = await fileShareApi.getMyShares() as any
+    if (response.success && response.data) {
+      shares.value = response.data
+    }
+  } catch (e) {
+    console.error('加载分享失败', e)
+  }
+}
+
+// 加载最近文件
+const loadRecentFiles = async () => {
+  try {
+    const response = await fileApi.getRecentFiles(6) as any
+    if (response.success && response.data) {
+      recentFiles.value = response.data
+    }
+  } catch (e) {
+    console.error('加载最近文件失败', e)
+  }
+}
+
+// 加载回收站（条目数 + 总大小）
+const loadRecycleBin = async () => {
+  try {
+    const response = await fileApi.getRecycleBin() as any
+    if (response.success && response.data) {
+      recycleBinItems.value = response.data
+    }
+  } catch (e) {
+    console.error('加载回收站失败', e)
+  }
+}
+
+// 快捷操作：强制刷新容量记账（POST /storage/refresh，绕过 60s 节流窗口）。
+// 与顶部"刷新"的区别：顶部只重新读取，这个是让后端立即重算并落库
+const refreshingCapacity = ref(false)
+const handleRefreshCapacity = async () => {
+  refreshingCapacity.value = true
+  try {
+    await storageApi.refreshCapacity() as any
+    ElMessage.success(t('dashboard.capacityRefreshed'))
+    await Promise.all([loadStorageOverview(), loadStoragePools(), loadDrives()])
+  } catch {
+    ElMessage.error(t('common.failed'))
+  } finally {
+    refreshingCapacity.value = false
+  }
+}
+
+// 快捷操作：扫描同步（物理文件入库）。耗时操作，按钮 loading 常驻
+const scanning = ref(false)
+const handleScanSync = async () => {
+  scanning.value = true
+  try {
+    const response = await fileApi.scanAndSync() as any
+    if (response.success) {
+      const r = response.data
+      ElMessage.success(t('dashboard.scanDone', {
+        added: (r?.addedFiles ?? 0) + (r?.addedFolders ?? 0),
+        updated: r?.updatedFiles ?? 0
+      }))
+      await Promise.all([loadFileStats(), loadRecentFiles(), loadStorageOverview(), loadStoragePools()])
+    } else {
+      ElMessage.error(response.message || t('common.failed'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || t('common.failed'))
+  } finally {
+    scanning.value = false
+  }
+}
+
+// 分享概览聚合：有效 = 启用且未过期且未达下载上限
+const shareStats = computed(() => {
+  const list = shares.value
+  return {
+    total: list.length,
+    active: list.filter((s: any) => s.isEnabled && !s.isExpired && !s.isDownloadLimitReached).length,
+    expired: list.filter((s: any) => s.isExpired).length,
+    downloads: list.reduce((sum: number, s: any) => sum + (s.downloadCount || 0), 0)
+  }
+})
+
+// 回收站聚合
+const recycleBinStats = computed(() => ({
+  count: recycleBinItems.value.length,
+  size: recycleBinItems.value.reduce((sum: number, i: any) => sum + (i.sizeBytes || 0), 0)
+}))
+
 // 加载所有数据
 const loadAllData = async () => {
   loading.value = true
@@ -193,6 +297,9 @@ const loadAllData = async () => {
       loadStoragePools(),
       loadDrives(),
       loadFileStats(),
+      loadShares(),
+      loadRecentFiles(),
+      loadRecycleBin(),
       loadSystemStatus(),
       loadSystemInfo()
     ])
@@ -229,6 +336,9 @@ const startAutoRefresh = () => {
     loadStoragePools()
     loadDrives()
     loadFileStats()
+    loadShares()
+    loadRecentFiles()
+    loadRecycleBin()
     loadSystemStatus()
     lastUpdateTime.value = new Date()
   }
@@ -430,7 +540,69 @@ onUnmounted(() => {
           </div>
         </el-card>
       </el-col>
-      
+
+      <!-- 物理磁盘列：与存储池账目左右并列，两个存储概念同屏对照 -->
+      <el-col :xs="24" :md="12">
+        <el-card class="disks-card">
+          <template #header>
+            <div class="card-header">
+              <span><el-icon><Monitor /></el-icon> {{ t('dashboard.physicalDisks') }}</span>
+              <el-tag type="info">{{ drives.length }}</el-tag>
+            </div>
+          </template>
+
+          <div v-if="drivesError" class="disks-error">
+            <el-icon><Warning /></el-icon>
+            <span>{{ drivesError }}</span>
+          </div>
+          <div v-else-if="drives.length === 0 && !loading" class="disks-empty">
+            {{ t('dashboard.drivesEmpty') }}
+          </div>
+          <div v-else class="disks-list">
+            <!-- 多盘自适应网格：每盘一张紧凑磁贴，盘数多时自动分栏，窄屏退化为单列 -->
+            <div v-for="drive in drives" :key="drive.name" class="disk-item">
+              <div class="disk-head">
+                <div class="disk-icon">
+                  <el-icon :size="20"><Monitor /></el-icon>
+                </div>
+                <span class="disk-letter">{{ drive.name }}</span>
+                <!-- 无卷标时后端 label 回落为驱动类型（如 Fixed），两者相同只显示一个 -->
+                <el-tag size="small" effect="plain">{{ drive.label }}</el-tag>
+                <el-tag v-if="drive.label !== drive.driveType" size="small" effect="plain" type="info">{{ drive.driveType }}</el-tag>
+              </div>
+              <div class="disk-bar">
+                <div class="bar-track">
+                  <div
+                    class="bar-fill"
+                    :style="{ width: driveUsedPercent(drive) + '%', background: driveBarColor(driveUsedPercent(drive)) }"
+                  ></div>
+                </div>
+                <span class="disk-percent" :style="{ color: driveBarColor(driveUsedPercent(drive)) }">
+                  {{ driveUsedPercent(drive) }}%
+                </span>
+              </div>
+              <div class="disk-figures">
+                <div class="figure">
+                  <span class="figure-label">{{ t('dashboard.driveTotal') }}</span>
+                  <span class="figure-value">{{ formatSize(drive.totalSize) }}</span>
+                </div>
+                <div class="figure">
+                  <span class="figure-label">{{ t('dashboard.driveUsed') }}</span>
+                  <span class="figure-value">{{ formatSize(drive.totalSize - drive.availableSpace) }}</span>
+                </div>
+                <div class="figure">
+                  <span class="figure-label">{{ t('dashboard.driveFree') }}</span>
+                  <span class="figure-value success">{{ formatSize(drive.availableSpace) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <!-- 内容统计行：文件统计 + 分享概览 -->
+    <el-row :gutter="16" class="dash-row-gap">
       <el-col :xs="24" :md="12">
         <el-card class="file-stats-card">
           <template #header>
@@ -524,64 +696,104 @@ onUnmounted(() => {
           </div>
         </el-card>
       </el-col>
+
+      <!-- 分享概览：分享是 NAS 的核心对外功能，概览卡补上这块数据 -->
+      <el-col :xs="24" :md="12">
+        <el-card class="shares-overview-card">
+          <template #header>
+            <div class="card-header">
+              <span><el-icon><Share /></el-icon> {{ t('dashboard.sharesOverview') }}</span>
+              <router-link to="/shares">
+                <el-button type="primary" link>{{ t('dashboard.viewAll') }}</el-button>
+              </router-link>
+            </div>
+          </template>
+          <div class="shares-overview-main">
+            <div class="big-stat">
+              <div class="big-value">{{ shareStats.active }}</div>
+              <div class="big-label">{{ t('dashboard.activeShares') }}</div>
+            </div>
+            <div class="big-stat">
+              <div class="big-value">
+                <el-icon :size="22" color="#3b82f6"><Download /></el-icon>
+                {{ shareStats.downloads }}
+              </div>
+              <div class="big-label">{{ t('dashboard.totalDownloads') }}</div>
+            </div>
+          </div>
+          <el-divider />
+          <div class="shares-mini-stats">
+            <div class="mini-stat">
+              <span class="mini-label">{{ t('shares.totalShares') }}</span>
+              <span class="mini-value">{{ shareStats.total }}</span>
+            </div>
+            <div class="mini-stat">
+              <span class="mini-label">{{ t('shares.expired') }}</span>
+              <span class="mini-value warning">{{ shareStats.expired }}</span>
+            </div>
+            <div class="mini-stat">
+              <span class="mini-label">{{ t('dashboard.passwordProtected') }}</span>
+              <span class="mini-value">{{ shares.filter((s: any) => s.accessType === 1).length }}</span>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
     </el-row>
 
-    <!-- 物理磁盘：DriveInfo 真实盘信息，与上方存储池账目是两个概念，分开展示 -->
-    <el-card class="disks-card">
-      <template #header>
-        <div class="card-header">
-          <span><el-icon><Monitor /></el-icon> {{ t('dashboard.physicalDisks') }}</span>
-          <el-tag type="info">{{ drives.length }}</el-tag>
-        </div>
-      </template>
+    <!-- 最近文件 + 回收站 -->
+    <el-row :gutter="16" class="dash-row-gap">
+      <el-col :xs="24" :md="16">
+        <el-card class="recent-files-card">
+          <template #header>
+            <div class="card-header">
+              <span><el-icon><Document /></el-icon> {{ t('dashboard.recentFiles') }}</span>
+              <router-link to="/files">
+                <el-button type="primary" link>{{ t('dashboard.viewAll') }}</el-button>
+              </router-link>
+            </div>
+          </template>
+          <div class="recent-list" v-loading="loading">
+            <div v-for="item in recentFiles" :key="item.id" class="recent-item" @click="$router.push('/files')">
+              <div class="file-icon" :style="{ background: getFileIconColor(item) + '20', color: getFileIconColor(item) }">
+                <el-icon :size="18"><component :is="getFileIcon(item)" /></el-icon>
+              </div>
+              <div class="recent-info">
+                <div class="recent-name" :title="item.name">{{ item.name }}</div>
+                <div class="recent-meta">{{ item.path }}</div>
+              </div>
+              <div class="recent-side">
+                <span class="recent-size">{{ item.isFolder ? t('files.folder') : formatSize(item.sizeBytes) }}</span>
+                <span class="recent-time">{{ formatDate(item.createdAt) }}</span>
+              </div>
+            </div>
+            <div v-if="recentFiles.length === 0 && !loading" class="recent-empty">
+              <el-icon :size="40" color="#d1d5db"><Document /></el-icon>
+              <p>{{ t('dashboard.recentEmpty') }}</p>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
 
-      <div v-if="drivesError" class="disks-error">
-        <el-icon><Warning /></el-icon>
-        <span>{{ drivesError }}</span>
-      </div>
-      <div v-else-if="drives.length === 0 && !loading" class="disks-empty">
-        {{ t('dashboard.drivesEmpty') }}
-      </div>
-      <div v-else class="disks-list">
-        <!-- 多盘自适应网格：每盘一张紧凑磁贴，盘数多时自动分栏，窄屏退化为单列 -->
-        <div v-for="drive in drives" :key="drive.name" class="disk-item">
-          <div class="disk-head">
-            <div class="disk-icon">
-              <el-icon :size="20"><Monitor /></el-icon>
+      <el-col :xs="24" :md="8">
+        <el-card class="recycle-card">
+          <template #header>
+            <div class="card-header">
+              <span><el-icon><Delete /></el-icon> {{ t('filesView.recycleBinTitle') }}</span>
             </div>
-            <span class="disk-letter">{{ drive.name }}</span>
-            <!-- 无卷标时后端 label 回落为驱动类型（如 Fixed），两者相同只显示一个 -->
-            <el-tag size="small" effect="plain">{{ drive.label }}</el-tag>
-            <el-tag v-if="drive.label !== drive.driveType" size="small" effect="plain" type="info">{{ drive.driveType }}</el-tag>
-          </div>
-          <div class="disk-bar">
-            <div class="bar-track">
-              <div
-                class="bar-fill"
-                :style="{ width: driveUsedPercent(drive) + '%', background: driveBarColor(driveUsedPercent(drive)) }"
-              ></div>
-            </div>
-            <span class="disk-percent" :style="{ color: driveBarColor(driveUsedPercent(drive)) }">
-              {{ driveUsedPercent(drive) }}%
-            </span>
-          </div>
-          <div class="disk-figures">
-            <div class="figure">
-              <span class="figure-label">{{ t('dashboard.driveTotal') }}</span>
-              <span class="figure-value">{{ formatSize(drive.totalSize) }}</span>
-            </div>
-            <div class="figure">
-              <span class="figure-label">{{ t('dashboard.driveUsed') }}</span>
-              <span class="figure-value">{{ formatSize(drive.totalSize - drive.availableSpace) }}</span>
-            </div>
-            <div class="figure">
-              <span class="figure-label">{{ t('dashboard.driveFree') }}</span>
-              <span class="figure-value success">{{ formatSize(drive.availableSpace) }}</span>
+          </template>
+          <div class="recycle-main">
+            <div class="recycle-count">{{ recycleBinStats.count }}</div>
+            <div class="recycle-meta">
+              <div class="recycle-size">{{ t('dashboard.occupiedSpace') }} {{ formatSize(recycleBinStats.size) }}</div>
+              <div class="recycle-hint">{{ t('dashboard.recycleHint') }}</div>
             </div>
           </div>
-        </div>
-      </div>
-    </el-card>
+          <router-link to="/files?recycle=1">
+            <el-button type="primary" plain class="recycle-btn">{{ t('dashboard.manageRecycle') }}</el-button>
+          </router-link>
+        </el-card>
+      </el-col>
+    </el-row>
 
     <!-- 存储池列表 -->
     <el-card class="pools-card">
@@ -643,72 +855,108 @@ onUnmounted(() => {
       <el-empty v-if="storagePools.length === 0 && !loading" :description="t('storage.noPools')" />
     </el-card>
 
-    <!-- 快捷操作和系统信息 -->
-    <el-row :gutter="16">
-      <el-col :xs="24" :md="12">
-        <el-card class="quick-actions-card">
-          <template #header>
-            <div class="card-header">
-              <span><el-icon><Pointer /></el-icon> {{ t('dashboard.quickAccess') }}</span>
-            </div>
-          </template>
-          <div class="quick-actions">
-            <router-link to="/files" class="action-item">
-              <el-icon :size="32" color="#409EFF"><Files /></el-icon>
-              <span>{{ t('nav.files') }}</span>
-            </router-link>
-            <router-link to="/shares" class="action-item">
-              <el-icon :size="32" color="#67C23A"><Share /></el-icon>
-              <span>{{ t('nav.shares') }}</span>
-            </router-link>
-            <router-link to="/storage" class="action-item">
-              <el-icon :size="32" color="#E6A23C"><Box /></el-icon>
-              <span>{{ t('nav.storage') }}</span>
-            </router-link>
-            <router-link to="/users" class="action-item" v-if="userStore.isAdmin">
-              <el-icon :size="32" color="#F56C6C"><User /></el-icon>
-              <span>{{ t('nav.users') }}</span>
-            </router-link>
+    <!-- 快捷操作：导航 + 实际行动混合。导航类带副标题说明去向，
+         动作类（刷新容量/扫描同步）直接调 API 并原地反馈结果 -->
+    <el-card class="quick-actions-card">
+      <template #header>
+        <div class="card-header">
+          <span><el-icon><Pointer /></el-icon> {{ t('dashboard.quickActions') }}</span>
+        </div>
+      </template>
+      <div class="quick-actions">
+        <router-link to="/files" class="action-item">
+          <div class="action-icon files"><el-icon :size="22"><Files /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('nav.files') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionFilesDesc') }}</span>
           </div>
-        </el-card>
-      </el-col>
-      
-      <el-col :xs="24" :md="12">
-        <el-card class="system-info-card">
-          <template #header>
-            <div class="card-header">
-              <span><el-icon><Monitor /></el-icon> {{ t('settings.system') }}</span>
-            </div>
-          </template>
-          <div class="info-list">
-            <div class="info-item">
-              <span class="label">{{ t('settings.systemName') }}</span>
-              <span class="value">{{ systemInfo.name }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">{{ t('settings.version') }}</span>
-              <span class="value">{{ systemInfo.version }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">{{ t('settings.hostname') }}</span>
-              <span class="value">{{ systemInfo.machineName }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">{{ t('settings.os') }}</span>
-              <span class="value">{{ systemInfo.os }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">{{ t('settings.cpuCores') }}</span>
-              <span class="value">{{ systemInfo.processorCount }} {{ t('dashboard.cores') }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">{{ t('settings.dotnetVersion') }}</span>
-              <span class="value">{{ systemInfo.dotNetVersion }}</span>
-            </div>
+        </router-link>
+        <router-link to="/files?upload=1" class="action-item">
+          <div class="action-icon upload"><el-icon :size="22"><Upload /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('dashboard.actionUpload') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionUploadDesc') }}</span>
           </div>
-        </el-card>
-      </el-col>
-    </el-row>
+        </router-link>
+        <router-link to="/files?newFolder=1" class="action-item">
+          <div class="action-icon folder"><el-icon :size="22"><FolderAdd /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('dashboard.actionNewFolder') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionNewFolderDesc') }}</span>
+          </div>
+        </router-link>
+        <router-link to="/shares" class="action-item">
+          <div class="action-icon share"><el-icon :size="22"><Share /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('nav.shares') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionSharesDesc') }}</span>
+          </div>
+        </router-link>
+        <router-link to="/storage" class="action-item">
+          <div class="action-icon storage"><el-icon :size="22"><Box /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('nav.storage') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionStorageDesc') }}</span>
+          </div>
+        </router-link>
+        <router-link to="/users" class="action-item" v-if="userStore.isAdmin">
+          <div class="action-icon users"><el-icon :size="22"><User /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('nav.users') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionUsersDesc') }}</span>
+          </div>
+        </router-link>
+        <div class="action-item clickable" @click="handleRefreshCapacity">
+          <div class="action-icon refresh"><el-icon :size="22" :class="{ spinning: refreshingCapacity }"><Refresh /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('dashboard.actionRefreshCapacity') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionRefreshCapacityDesc') }}</span>
+          </div>
+        </div>
+        <div class="action-item clickable" @click="handleScanSync">
+          <div class="action-icon scan"><el-icon :size="22" :class="{ spinning: scanning }"><Search /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('dashboard.actionScanSync') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionScanSyncDesc') }}</span>
+          </div>
+        </div>
+        <router-link to="/files?recycle=1" class="action-item">
+          <div class="action-icon recycle"><el-icon :size="22"><Delete /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('dashboard.actionRecycle') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionRecycleDesc') }}</span>
+          </div>
+        </router-link>
+      </div>
+    </el-card>
+
+    <!-- 系统信息横条：静态详情，横向铺开比占半张卡更省地方 -->
+    <el-card class="system-info-strip">
+      <div class="strip-item">
+        <span class="strip-label">{{ t('settings.systemName') }}</span>
+        <span class="strip-value">{{ systemInfo.name }}</span>
+      </div>
+      <div class="strip-item">
+        <span class="strip-label">{{ t('settings.version') }}</span>
+        <span class="strip-value">v{{ systemInfo.version }}</span>
+      </div>
+      <div class="strip-item">
+        <span class="strip-label">{{ t('settings.hostname') }}</span>
+        <span class="strip-value">{{ systemInfo.machineName }}</span>
+      </div>
+      <div class="strip-item">
+        <span class="strip-label">{{ t('settings.os') }}</span>
+        <span class="strip-value">{{ systemInfo.os }}</span>
+      </div>
+      <div class="strip-item">
+        <span class="strip-label">{{ t('settings.cpuCores') }}</span>
+        <span class="strip-value">{{ systemInfo.processorCount }} {{ t('dashboard.cores') }}</span>
+      </div>
+      <div class="strip-item">
+        <span class="strip-label">{{ t('settings.dotnetVersion') }}</span>
+        <span class="strip-value">.NET {{ systemInfo.dotNetVersion }}</span>
+      </div>
+    </el-card>
   </div>
 </template>
 
@@ -811,8 +1059,10 @@ onUnmounted(() => {
 // header 排版（flex 两端分布、图标与文字间距）四卡统一收口，原先各写各的
 .storage-overview-card,
 .file-stats-card,
-.quick-actions-card,
-.system-info-card {
+.disks-card,
+.shares-overview-card,
+.recent-files-card,
+.recycle-card {
   height: 100%;
   margin-bottom: 16px;
 
@@ -1199,69 +1449,317 @@ onUnmounted(() => {
   }
 }
 
+// 快捷操作：全宽网格，磁贴横向排（图标 + 名称 + 副标题），
+// 导航与实际行动同一形态，实际行动的图标在执行中旋转
 .quick-actions-card {
-  // 与左侧系统信息卡等高后，磁贴拉伸填满卡内空间，底部不留空白
+  margin-bottom: 16px;
+
   .quick-actions {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    grid-auto-rows: 1fr;
-    gap: 16px;
-    height: 100%;
-    
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+
     .action-item {
       display: flex;
-      flex-direction: column;
       align-items: center;
-      justify-content: center;
       gap: 12px;
-      padding: 24px 16px;
-      border-radius: 12px;
+      padding: 14px 16px;
+      border-radius: var(--mac-radius-control);
       background: var(--el-fill-color-light);
       text-decoration: none;
       color: var(--el-text-color-primary);
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.2s ease;
       border: 1px solid transparent;
-      
+      cursor: pointer;
+
       &:hover {
-        // mac 风 hover：浅底 + 主色细边 + 令牌阴影，位移克制
-        background: var(--el-fill-color-light);
         border-color: color-mix(in srgb, var(--el-color-primary) 30%, transparent);
-        transform: translateY(-2px);
+        transform: translateY(-1px);
         box-shadow: var(--card-shadow-hover);
       }
-      
-      span {
-        font-size: 13px;
-        font-weight: 500;
+
+      .action-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        flex-shrink: 0;
+
+        &.files { background: #3b82f6; }
+        &.upload { background: #10b981; }
+        &.folder { background: #f59e0b; }
+        &.share { background: #8b5cf6; }
+        &.storage { background: #64748b; }
+        &.users { background: #ef4444; }
+        &.refresh { background: #0ea5e9; }
+        &.scan { background: #14b8a6; }
+        &.recycle { background: #94a3b8; }
+
+        .spinning {
+          animation: spin 1s linear infinite;
+        }
+      }
+
+      .action-text {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+
+        .action-name {
+          font-size: 13px;
+          font-weight: 600;
+        }
+
+        .action-desc {
+          font-size: 12px;
+          color: var(--el-text-color-secondary);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
       }
     }
   }
 }
 
-.system-info-card {
-  .info-list {
-    .info-item {
-      display: flex;
-      justify-content: space-between;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--el-border-color-lighter);
-      
-      &:last-child {
-        border-bottom: none;
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+// 系统信息横条：静态详情横向铺开，发丝线分隔，比占半张卡省地方
+.system-info-strip {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+
+  .strip-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 24px;
+    min-width: 140px;
+    flex: 1;
+
+    & + .strip-item {
+      border-left: 1px solid var(--mac-hairline);
+    }
+
+    .strip-label {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+
+    .strip-value {
+      font-size: 13px;
+      font-weight: 600;
+      word-break: break-all;
+    }
+  }
+}
+
+// 分享概览卡：两个大数字 + 三个小指标
+.shares-overview-card {
+  height: 100%;
+  margin-bottom: 16px;
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .shares-overview-main {
+    display: flex;
+    gap: 48px;
+
+    .big-stat {
+      .big-value {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 32px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
       }
-      
-      .label {
+
+      .big-label {
+        font-size: 13px;
         color: var(--el-text-color-secondary);
-      }
-      
-      .value {
-        color: var(--el-text-color-primary);
-        font-weight: 500;
-        max-width: 60%;
-        text-align: right;
-        word-break: break-all;
+        margin-top: 4px;
       }
     }
+  }
+
+  .shares-mini-stats {
+    display: flex;
+    justify-content: space-between;
+
+    .mini-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+
+      .mini-label {
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+      }
+
+      .mini-value {
+        font-size: 16px;
+        font-weight: 600;
+
+        &.warning {
+          color: #ef4444;
+        }
+      }
+    }
+  }
+}
+
+// 最近文件列表
+.recent-files-card {
+  height: 100%;
+  margin-bottom: 16px;
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .recent-list {
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+
+    .recent-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 8px;
+      border-radius: var(--mac-radius-control);
+      cursor: pointer;
+      transition: background 0.15s ease;
+
+      & + .recent-item {
+        border-top: 1px solid var(--mac-hairline);
+      }
+
+      &:hover {
+        background: var(--el-fill-color-light);
+      }
+
+      .file-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+
+      .recent-info {
+        flex: 1;
+        min-width: 0;
+
+        .recent-name {
+          font-size: 13px;
+          font-weight: 500;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .recent-meta {
+          font-size: 12px;
+          color: var(--el-text-color-secondary);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+      }
+
+      .recent-side {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 2px;
+        flex-shrink: 0;
+
+        .recent-size {
+          font-size: 12px;
+          color: var(--el-text-color-secondary);
+        }
+
+        .recent-time {
+          font-size: 12px;
+          color: var(--el-text-color-placeholder);
+        }
+      }
+    }
+
+    .recent-empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--el-text-color-secondary);
+      font-size: 13px;
+    }
+  }
+}
+
+// 回收站小卡：条目数 + 占用 + 入口
+.recycle-card {
+  height: 100%;
+  margin-bottom: 16px;
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .recycle-main {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+
+    .recycle-count {
+      font-size: 40px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -1px;
+    }
+
+    .recycle-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+
+      .recycle-size {
+        font-size: 13px;
+        color: var(--el-text-color-regular);
+      }
+
+      .recycle-hint {
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+      }
+    }
+  }
+
+  .recycle-btn {
+    width: 100%;
   }
 }
 </style>

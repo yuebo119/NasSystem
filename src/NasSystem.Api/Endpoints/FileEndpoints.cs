@@ -121,6 +121,13 @@ public static class FileEndpoints
              .WithDescription("获取当前用户的文件统计信息，包括文件数量、类型分布等")
              .RequireAuthorization();
 
+        // 最近文件（Dashboard 面板）
+        files.MapGet("/recent", GetRecentFiles)
+             .WithName("GetRecentFiles")
+             .WithSummary("获取最近文件")
+             .WithDescription("按创建时间倒序取当前用户最近的文件与文件夹，供 Dashboard 最近文件面板使用")
+             .RequireAuthorization();
+
         // 扫描同步
         files.MapPost("/scan", ScanAndSync)
              .WithName("ScanAndSync")
@@ -401,6 +408,20 @@ public static class FileEndpoints
     {
         var userId = GetUserId(user);
         var result = await fileService.GetStatisticsAsync(userId);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> GetRecentFiles(
+        int count,
+        IFileBrowseService fileService,
+        ClaimsPrincipal user)
+    {
+        var userId = GetUserId(user);
+        // 防御性夹取：查询串直传，无上限时一个超大 count 会把整表拖回来。
+        // 仓储层也夹一次，这里是入口侧早退
+        if (count < 1) count = 6;
+        if (count > 50) count = 50;
+        var result = await fileService.GetRecentFilesAsync(userId, count);
         return result.ToHttpResult();
     }
 

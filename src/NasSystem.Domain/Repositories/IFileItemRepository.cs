@@ -159,6 +159,16 @@ public interface IFileItemRepository : IRepository<FileItem>
     Task<bool> PathExistsAsync(string path, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 取当前用户最近修改的文件（按 CreatedAt 倒序，含文件夹）。
+    /// 供 Dashboard"最近文件"面板使用：与统计同口径按 OwnerId 过滤，
+    /// 不做分页（面板只要前几条，count 由调用方夹取）
+    /// </summary>
+    Task<IReadOnlyList<FileItem>> GetRecentAsync(
+        Guid ownerId,
+        int count,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 批量删除文件项
     /// </summary>
     Task DeleteRangeAsync(

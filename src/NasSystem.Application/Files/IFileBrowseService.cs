@@ -36,4 +36,13 @@ public interface IFileBrowseService
     Task<Result<FileStatisticsDto>> GetStatisticsAsync(
         Guid userId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 最近文件（Dashboard 面板）：按 CreatedAt 倒序取前 count 条，
+    /// 与统计同口径按 OwnerId 过滤
+    /// </summary>
+    Task<Result<IReadOnlyList<FileItemDto>>> GetRecentFilesAsync(
+        Guid userId,
+        int count,
+        CancellationToken cancellationToken = default);
 }

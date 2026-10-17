@@ -250,6 +250,28 @@ public sealed class FileItemRepository(
         };
     }
 
+    public async Task<IReadOnlyList<FileItem>> GetRecentAsync(
+        Guid ownerId,
+        int count,
+        CancellationToken cancellationToken = default)
+    {
+        if (count < 1) count = 1;
+        if (count > 50) count = 50;
+
+        var db = await sessions.GetAsync(cancellationToken);
+        // CreatedAt 倒序取前 N 条。OwnerId 走插值参数绑定（不拼字面量），
+        // 理由同 GetStatisticsAsync 的注释：小写 Guid 字面量在 SQLite TEXT
+        // 大小写敏感下恒 0 命中
+        var rows = await db.QueryAsync<FileItemRow>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "SELECT * FROM FileItems WHERE IsDeleted = 0 AND OwnerId = {0} ORDER BY CreatedAt DESC LIMIT {1}",
+                new object[] { ownerId, count }),
+            false,
+            cancellationToken);
+
+        return rows.ConvertAll(r => r.ToDomain());
+    }
+
     public async Task<FileStatistics> GetStatisticsAsync(
         Guid? ownerId = null,
         CancellationToken cancellationToken = default)

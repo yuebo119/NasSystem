@@ -95,6 +95,26 @@ watch(
   { immediate: true }
 )
 
+// Dashboard 快捷操作的跳转意图：?upload=1 / ?newFolder=1 / ?recycle=1
+// 分别打开上传、新建文件夹、回收站。用完即清 query——不清的话刷新会
+// 重复弹出，浏览器返回也会再次触发
+watch(
+  () => route.query,
+  (query) => {
+    if (query.upload) {
+      uploadDialogVisible.value = true
+      router.replace({ path: route.path })
+    } else if (query.newFolder) {
+      createFolderDialogVisible.value = true
+      router.replace({ path: route.path })
+    } else if (query.recycle) {
+      openRecycleBin()
+      router.replace({ path: route.path })
+    }
+  },
+  { immediate: true }
+)
+
 // 监听搜索关键词变化，自动触发搜索（防抖）
 watch(
   [searchQuery, searchItemType, searchExtension, searchInCurrentDir],

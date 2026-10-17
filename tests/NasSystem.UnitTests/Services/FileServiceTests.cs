@@ -864,6 +864,51 @@ public class FileServiceTests
 
     #endregion
 
+    #region GetRecentFilesAsync Tests
+
+    [Fact]
+    public async Task GetRecentFilesAsync_ReturnsItemsFromRepositoryMappedToDtos()
+    {
+        // Dashboard 最近文件面板的数据源：仓储按 CreatedAt 倒序取前 N 条，
+        // 服务只做映射，顺序原样透出（面板依赖仓储的倒序）
+        var userId = Guid.NewGuid();
+        var items = new List<FileItem>
+        {
+            CreateFileItem(Guid.NewGuid(), "latest.txt", "/latest.txt", FileItemType.File, null, 2048),
+            CreateFileItem(Guid.NewGuid(), "newfolder", "/newfolder", FileItemType.Folder)
+        };
+
+        _fileRepositoryMock
+            .Setup(x => x.GetRecentAsync(userId, 6, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(items);
+
+        var result = await _sut.GetRecentFilesAsync(userId, 6);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+        result.Value[0].Name.Should().Be("latest.txt");
+        result.Value[0].SizeBytes.Should().Be(2048);
+        result.Value[0].IsFile.Should().BeTrue();
+        result.Value[1].Name.Should().Be("newfolder");
+        result.Value[1].IsFolder.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetRecentFilesAsync_WithNoItems_ReturnsEmptyList()
+    {
+        var userId = Guid.NewGuid();
+        _fileRepositoryMock
+            .Setup(x => x.GetRecentAsync(userId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItem>());
+
+        var result = await _sut.GetRecentFilesAsync(userId, 6);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
+    }
+
+    #endregion
+
     #region SearchAsync Tests
 
     [Fact]

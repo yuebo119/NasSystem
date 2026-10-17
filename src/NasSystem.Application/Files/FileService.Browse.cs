@@ -168,4 +168,18 @@ public sealed partial class FileService
         });
     }
 
+    /// <summary>
+    /// 最近文件：Dashboard 面板数据源。与统计同口径按 OwnerId 过滤，
+    /// count 夹取在仓储层；文件夹与文件一起返回（建文件夹同样是"活动"）
+    /// </summary>
+    public async Task<Result<IReadOnlyList<FileItemDto>>> GetRecentFilesAsync(
+        Guid userId,
+        int count,
+        CancellationToken cancellationToken = default)
+    {
+        var items = await _fileRepository.GetRecentAsync(userId, count, cancellationToken);
+        return Result<IReadOnlyList<FileItemDto>>.Success(
+            items.Select(MapToDto).ToList());
+    }
+
 }

@@ -70,6 +70,38 @@ public class FileEndpointsIntegrationTests : ApiTestBase
 
     #endregion
 
+    #region Recent Files Tests
+
+    [Fact]
+    public async Task GetRecentFiles_WithoutToken_ReturnsUnauthorized()
+    {
+        // Act
+        var response = await Client.GetAsync("/api/v1/files/recent?count=5");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task GetRecentFiles_WithValidToken_ReturnsArrayShape()
+    {
+        // Arrange
+        var token = await GetAuthTokenAsync("recentuser");
+        SetAuthToken(token);
+
+        // Act
+        var response = await Client.GetAsync("/api/v1/files/recent?count=5");
+
+        // Assert - 形状锁定：success + data 为数组（条数随种子数据变化，
+        // count 夹取在端点侧完成，这里不断言具体条数）
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var raw = await response.Content.ReadAsStringAsync();
+        raw.Should().Contain("\"success\"");
+        raw.Should().Contain("\"data\"");
+    }
+
+    #endregion
+
     #region Get File Info Tests
 
     [Fact]

@@ -105,6 +105,9 @@ export const storageApi = {
   // 设置为默认存储池
   setDefault: (id: string) => http.post(`/storage/pools/${id}/default`),
 
+  // 强制刷新所有池的容量记账（绕过 60s 节流窗口）
+  refreshCapacity: () => http.post<void>('/storage/refresh'),
+
   // 浏览目录
   browseDirectories: (path?: string) => 
     http.get<BrowseDirectoriesResult>('/system/browse-directories', { params: { path } }),
