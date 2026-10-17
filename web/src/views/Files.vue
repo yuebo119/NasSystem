@@ -19,15 +19,15 @@ import {
 import type { FileItem } from '@/types'
 import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
 import { createPreviewUrlManager } from '@/utils/previewUrl'
-import { useIsMobile } from '@/utils/useIsMobile'
+import { useDrawerSize } from '@/utils/useIsMobile'
 
 // ITM-M3 收尾：Files 页 i18n 全量接入
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const fileStore = useFileStore()
-// 模态统一右侧抽屉：宽屏保持原定宽，窄屏（手机）取全宽
-const isMobile = useIsMobile()
+// 模态统一右侧抽屉：窄屏全宽，宽屏 clamp 随视口连续缩放
+const drawerSize = useDrawerSize()
 
 // 对话框状态
 const createFolderDialogVisible = ref(false)
@@ -1333,7 +1333,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 新建文件夹抽屉 -->
-    <el-drawer v-model="createFolderDialogVisible" :title="$t('filesView.newFolderTitle')" :size="isMobile ? '100%' : '400px'" :mask-closable="false">
+    <el-drawer v-model="createFolderDialogVisible" :title="$t('filesView.newFolderTitle')" :size="drawerSize('360px', '32vw', '440px')" :mask-closable="false">
       <el-input
         v-model="newFolderName"
         :placeholder="$t('filesView.folderNamePlaceholder')"
@@ -1347,7 +1347,7 @@ onUnmounted(() => {
     </el-drawer>
 
     <!-- 重命名抽屉 -->
-    <el-drawer v-model="renameDialogVisible" :title="$t('filesView.renameTitle')" :size="isMobile ? '100%' : '400px'" :mask-closable="false">
+    <el-drawer v-model="renameDialogVisible" :title="$t('filesView.renameTitle')" :size="drawerSize('360px', '32vw', '440px')" :mask-closable="false">
       <el-input
         v-model="newName"
         :placeholder="$t('filesView.newNamePlaceholder')"
@@ -1361,7 +1361,7 @@ onUnmounted(() => {
     </el-drawer>
 
     <!-- 搜索抽屉 -->
-    <el-drawer v-model="searchDialogVisible" :title="$t('filesView.searchDialogTitle')" :size="isMobile ? '100%' : '650px'" @close="resetSearch">
+    <el-drawer v-model="searchDialogVisible" :title="$t('filesView.searchDialogTitle')" :size="drawerSize('520px', '46vw', '760px')" @close="resetSearch">
       <div class="search-form">
         <el-input
           v-model="searchQuery"
@@ -1423,7 +1423,7 @@ onUnmounted(() => {
     </el-drawer>
 
     <!-- 回收站抽屉 -->
-    <el-drawer v-model="recycleBinDialogVisible" :title="$t('filesView.recycleBinTitle')" :size="isMobile ? '100%' : '700px'">
+    <el-drawer v-model="recycleBinDialogVisible" :title="$t('filesView.recycleBinTitle')" :size="drawerSize('560px', '50vw', '820px')">
       <template #header>
         <div class="recycle-header">
           <span>{{ $t('filesView.recycleBinTitle') }}</span>
@@ -1454,7 +1454,7 @@ onUnmounted(() => {
     </el-drawer>
 
     <!-- 上传抽屉 -->
-    <el-drawer v-model="uploadDialogVisible" :title="$t('filesView.uploadTitle')" :size="isMobile ? '100%' : '500px'" :mask-closable="false">
+    <el-drawer v-model="uploadDialogVisible" :title="$t('filesView.uploadTitle')" :size="drawerSize('420px', '38vw', '560px')" :mask-closable="false">
       <div class="upload-path-info">
         <el-icon><Folder /></el-icon>
         <span>{{ $t('filesView.uploadTo') }} <strong>{{ fileStore.currentPath }}</strong></span>
@@ -1484,11 +1484,11 @@ onUnmounted(() => {
       </template>
     </el-drawer>
 
-    <!-- 预览抽屉：媒体内容要宽屏视野，宽屏 80%、窄屏全宽 -->
+    <!-- 预览抽屉：媒体内容要宽屏视野，宽屏 80% 视口（clamp 夹住上下限）、窄屏全宽 -->
     <el-drawer
       v-model="previewDialogVisible"
       :title="previewItem?.name || $t('filesView.previewFallbackTitle')"
-      :size="isMobile ? '100%' : '80%'"
+      :size="drawerSize('640px', '80vw', '1200px')"
       class="preview-drawer"
       @closed="revokePreviewUrl"
     >
@@ -1517,7 +1517,7 @@ onUnmounted(() => {
     </el-drawer>
 
     <!-- 分享抽屉 -->
-    <el-drawer v-model="shareDialogVisible" :title="$t('filesView.shareDialogTitle')" :size="isMobile ? '100%' : '500px'" :mask-closable="false">
+    <el-drawer v-model="shareDialogVisible" :title="$t('filesView.shareDialogTitle')" :size="drawerSize('420px', '38vw', '560px')" :mask-closable="false">
       <div class="share-target" v-if="shareTarget">
         <el-icon :size="24" :color="getFileIconColor(shareTarget)">
           <component :is="getFileIcon(shareTarget)" />

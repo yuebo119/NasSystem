@@ -9,7 +9,7 @@ import {
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fileShareApi, ShareAccessType, type FileShareDto, type UpdateFileShareRequest } from '@/api/fileShare'
 import { getFileIcon, formatDate } from '@/utils/format'
-import { useIsMobile } from '@/utils/useIsMobile'
+import { useDrawerSize } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -18,8 +18,8 @@ const editDialogVisible = ref(false)
 const editTarget = ref<FileShareDto | null>(null)
 const editForm = ref<UpdateFileShareRequest>({})
 const editExpiresOption = ref('keep')
-// 模态统一右侧抽屉：宽屏保持原定宽，窄屏（手机）取全宽
-const isMobile = useIsMobile()
+// 模态统一右侧抽屉：窄屏全宽，宽屏 clamp 随视口连续缩放
+const drawerSize = useDrawerSize()
 const editMaxDownloadsOption = ref('keep')
 const editPassword = ref('')
 
@@ -501,7 +501,7 @@ onMounted(() => loadData())
     </div>
 
     <!-- 编辑分享抽屉 -->
-    <el-drawer v-model="editDialogVisible" :title="t('shares.editShare')" :size="isMobile ? '100%' : '480px'" :mask-closable="false">
+    <el-drawer v-model="editDialogVisible" :title="t('shares.editShare')" :size="drawerSize('420px', '38vw', '560px')" :mask-closable="false">
       <el-form v-if="editTarget" label-position="top">
         <el-form-item :label="t('shares.accessType')">
           <el-radio-group v-model="editForm.accessType">

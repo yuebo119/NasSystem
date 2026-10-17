@@ -6,7 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '@/api/user'
 import type { User as UserType } from '@/types'
 import { formatSize, formatDate } from '@/utils/format'
-import { useIsMobile } from '@/utils/useIsMobile'
+import { useDrawerSize } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -22,8 +22,8 @@ const editDialogVisible = ref(false)
 const resetPasswordDialogVisible = ref(false)
 const creating = ref(false)
 const updating = ref(false)
-// 模态统一右侧抽屉：宽屏保持原定宽，窄屏（手机）取全宽
-const isMobile = useIsMobile()
+// 模态统一右侧抽屉：窄屏全宽，宽屏 clamp 随视口连续缩放
+const drawerSize = useDrawerSize()
 
 // 表单数据
 const newUser = ref({
@@ -345,7 +345,7 @@ onMounted(() => loadData())
     </div>
 
     <!-- 创建用户对话框 -->
-    <el-drawer v-model="createDialogVisible" :title="t('users.createUser')" :size="isMobile ? '100%' : '500px'" :mask-closable="false">
+    <el-drawer v-model="createDialogVisible" :title="t('users.createUser')" :size="drawerSize('420px', '38vw', '560px')" :mask-closable="false">
       <el-form :model="newUser" label-position="top">
         <el-form-item :label="t('users.username')" required>
           <el-input v-model="newUser.username" :placeholder="t('users.usernamePlaceholder')" maxlength="30" show-word-limit />
@@ -396,7 +396,7 @@ onMounted(() => loadData())
     </el-drawer>
 
     <!-- 编辑用户抽屉 -->
-    <el-drawer v-model="editDialogVisible" :title="t('users.editUser')" :size="isMobile ? '100%' : '500px'" :mask-closable="false">
+    <el-drawer v-model="editDialogVisible" :title="t('users.editUser')" :size="drawerSize('420px', '38vw', '560px')" :mask-closable="false">
       <el-form :model="editForm" label-position="top">
         <el-form-item :label="t('users.username')">
           <el-input :model-value="editUser?.username" disabled />
@@ -434,7 +434,7 @@ onMounted(() => loadData())
     </el-drawer>
 
     <!-- 重置密码抽屉 -->
-    <el-drawer v-model="resetPasswordDialogVisible" :title="t('users.resetPassword')" :size="isMobile ? '100%' : '400px'" :mask-closable="false">
+    <el-drawer v-model="resetPasswordDialogVisible" :title="t('users.resetPassword')" :size="drawerSize('360px', '32vw', '440px')" :mask-closable="false">
       <el-form :model="resetPasswordForm" label-position="top">
         <el-form-item :label="t('users.username')">
           <el-input :model-value="resetPasswordForm.username" disabled />

@@ -13,6 +13,7 @@ import {
   Upload, FolderAdd, Delete, Search, Download
 } from '@element-plus/icons-vue'
 import { formatSize, getPoolStatusInfo, getFileIcon, getFileIconColor, formatDate } from '@/utils/format'
+import { useIsMobile } from '@/utils/useIsMobile'
 import { fileShareApi } from '@/api/fileShare'
 
 const { t } = useI18n()
@@ -85,6 +86,8 @@ const systemInfo = ref({
 })
 
 const loading = ref(false)
+// 窄屏适配：池状态表列宽收紧、路径列隐藏
+const isMobile = useIsMobile()
 const lastUpdateTime = ref<Date | null>(null)
 const autoRefresh = ref(true)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
@@ -806,9 +809,10 @@ onUnmounted(() => {
         </div>
       </template>
       
-      <!-- 多池时表内滚动，避免池多把页面撑得很长 -->
+      <!-- 多池时表内滚动，避免池多把页面撑得很长。窄屏列宽收紧、
+           路径列隐藏（最不关键的信息），让表格在手机上不必横滚 -->
       <el-table :data="storagePools" v-loading="loading" style="width: 100%" max-height="400">
-        <el-table-column prop="name" :label="t('storage.poolName')" min-width="120">
+        <el-table-column prop="name" :label="t('storage.poolName')" :min-width="isMobile ? 100 : 120">
           <template #default="{ row }">
             <div class="pool-name">
               <el-tag v-if="row.isDefault" size="small" type="success">{{ t('storage.default') }}</el-tag>
@@ -816,14 +820,14 @@ onUnmounted(() => {
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="status" :label="t('common.status')" width="100">
+        <el-table-column prop="status" :label="t('common.status')" :width="isMobile ? 70 : 100">
           <template #default="{ row }">
             <el-tag :color="getPoolStatusInfo(row.status).color" effect="dark" size="small">
               {{ getPoolStatusInfo(row.status).text }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('dashboard.capacity')" min-width="200">
+        <el-table-column :label="t('dashboard.capacity')" :min-width="isMobile ? 130 : 200">
           <template #default="{ row }">
             <div class="capacity-cell">
               <div class="capacity-text">
@@ -841,7 +845,7 @@ onUnmounted(() => {
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="usagePercentage" :label="t('storage.usagePercent')" width="100">
+        <el-table-column prop="usagePercentage" :label="t('storage.usagePercent')" :width="isMobile ? 70 : 100">
           <template #default="{ row }">
             <span v-if="row.maxCapacityBytes" :style="{ color: row.usagePercentage > 90 ? '#F56C6C' : row.usagePercentage > 70 ? '#E6A23C' : '#67C23A' }">
               {{ row.usagePercentage.toFixed(1) }}%
@@ -849,7 +853,7 @@ onUnmounted(() => {
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="mountPath" :label="t('storage.mountPath')" min-width="150" />
+        <el-table-column v-if="!isMobile" prop="mountPath" :label="t('storage.mountPath')" min-width="150" />
       </el-table>
       
       <el-empty v-if="storagePools.length === 0 && !loading" :description="t('storage.noPools')" />
@@ -1575,7 +1579,8 @@ onUnmounted(() => {
 
   .shares-overview-main {
     display: flex;
-    gap: 48px;
+    flex-wrap: wrap;
+    gap: 16px 48px;
 
     .big-stat {
       .big-value {
