@@ -717,7 +717,9 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 20px;
+  // 与卡片间距统一为 16px：此前这里是 20px，页面出现"头部-卡片"与
+  // "卡片-卡片"两套间距
+  margin-bottom: 16px;
   flex-wrap: wrap;
   gap: 16px;
   

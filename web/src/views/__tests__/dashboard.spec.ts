@@ -12,9 +12,6 @@
  * mock，返回数据逐字段可控。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h } from 'vue'
-import { createPinia } from 'pinia'
-import i18n from '@/locales'
 
 // 三个数据源全部 mock，字段与 types/index.ts 的接口对齐
 vi.mock('@/api/storage', () => ({
@@ -34,7 +31,9 @@ vi.mock('@/api/http', () => ({
 import { storageApi } from '@/api/storage'
 import { fileApi } from '@/api/file'
 import http from '@/api/http'
+import i18n from '@/locales'
 import Dashboard from '@/views/Dashboard.vue'
+import { flush, mountView } from '@/__tests__/helpers'
 
 const mockOverview = vi.mocked(storageApi.getOverview)
 const mockPools = vi.mocked(storageApi.getPools)
@@ -70,21 +69,14 @@ function setupMocks() {
   )
 }
 
-/** 挂载 Dashboard，返回容器与卸载函数 */
+/** 挂载 Dashboard，等 onMounted 的数据链走完 */
 async function mountDashboard() {
-  const div = document.createElement('div')
-  const app = createApp({ render: () => h(Dashboard) })
-  app.use(createPinia())
-  app.use(i18n)
-  // 模板里的 router-link 在测试环境没有 router 实例，注册全局替身
-  app.component('RouterLink', { props: ['to'], render: () => h('a') })
-  app.mount(div)
-  // 等 onMounted 的 Promise.all 与微任务链走完
+  const mounted = await mountView(Dashboard)
   await vi.waitFor(() => {
-    if (!div.querySelector('.disks-card')) throw new Error('dashboard not mounted')
+    if (!mounted.div.querySelector('.disks-card')) throw new Error('dashboard not mounted')
   })
-  await new Promise(r => setTimeout(r, 30))
-  return { div, unmount: () => app.unmount() }
+  await flush()
+  return mounted
 }
 
 function textOf(div: HTMLElement, selector: string): string {
