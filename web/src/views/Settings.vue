@@ -368,7 +368,8 @@ const roleDisplay = computed(() => {
               <div class="about-meta">
                 <span>v1.0.0</span>
                 <span>•</span>
-                <span>.NET 10</span>
+                <!-- 版本取运行时真实值：原硬编码 ".NET 10" 与实际 net11.0 不符 -->
+                <span>.NET {{ systemInfo?.dotNetVersion || '11' }}</span>
                 <span>•</span>
                 <span>Vue 3</span>
               </div>

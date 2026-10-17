@@ -469,6 +469,26 @@ public sealed class FileItemRepository(
             false, cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<Guid, long>> CalculateUsersUsedSpaceAsync(
+        IReadOnlyCollection<Guid> userIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (userIds.Count == 0)
+            return new Dictionary<Guid, long>();
+
+        var db = await sessions.GetAsync(cancellationToken);
+        var idList = userIds.Distinct().ToArray();
+        var placeholders = string.Join(", ", idList.Select((_, i) => $"{{{i}}}"));
+        var rows = await db.QueryAsync<UserUsedSpaceRow>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                $"SELECT OwnerId, SUM(SizeBytes) AS UsedBytes FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0 AND OwnerId IN ({placeholders}) GROUP BY OwnerId",
+                idList.Cast<object>().ToArray()),
+            false,
+            cancellationToken);
+
+        return rows.ToDictionary(r => r.OwnerId, r => r.UsedBytes);
+    }
+
     public async Task<bool> PathExistsAsync(string path, CancellationToken cancellationToken = default)
     {
         var normalizedPath = NormalizePath(path);

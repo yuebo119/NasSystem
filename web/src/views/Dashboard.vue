@@ -84,19 +84,6 @@ const formatUptime = (uptime: string): string => {
   return uptime
 }
 
-// 获取 RAID 级别名称
-const getRaidLevelName = (level: number): string => {
-  switch (level) {
-    case 0: return t('common.none')
-    case 1: return 'RAID 0'
-    case 2: return 'RAID 1'
-    case 3: return 'RAID 5'
-    case 4: return 'RAID 6'
-    case 5: return 'RAID 10'
-    default: return t('dashboard.unknown')
-  }
-}
-
 // 加载存储概览
 const loadStorageOverview = async () => {
   try {
@@ -510,11 +497,6 @@ onUnmounted(() => {
             <el-tag :color="getPoolStatusInfo(row.status).color" effect="dark" size="small">
               {{ getPoolStatusInfo(row.status).text }}
             </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="raidLevel" label="RAID" width="100">
-          <template #default="{ row }">
-            {{ getRaidLevelName(row.raidLevel) }}
           </template>
         </el-table-column>
         <el-table-column :label="t('dashboard.capacity')" min-width="200">

@@ -11,10 +11,7 @@ export interface StoragePool {
   name: string
   description?: string
   mountPath: string
-  raidLevel: number
-  raidLevelName: string
   status: number
-  statusName: string
   folderSizeBytes: number
   usedBytes: number
   availableBytes: number
@@ -22,11 +19,10 @@ export interface StoragePool {
   maxCapacityBytes?: number
   maxCapacityDisplay?: string
   folderSizeDisplay?: string
+  usedDisplay?: string
+  availableDisplay?: string
   isDefault: boolean
   isEnabled: boolean
-  enableDeduplication: boolean
-  enableCompression: boolean
-  diskCount: number
   createdAt: string
 }
 
@@ -44,9 +40,7 @@ export interface StorageOverview {
 export interface CreatePoolRequest {
   name: string
   mountPath: string
-  raidLevel: number
   description?: string
-  diskIds?: string[]
   maxCapacityBytes?: number
 }
 

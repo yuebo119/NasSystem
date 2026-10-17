@@ -20,6 +20,7 @@ using static NasSystem.Shared.ByteSizeFormatter;
 /// </summary>
 public sealed class UserService(
     IUserRepository userRepository,
+    IFileItemRepository fileItemRepository,
     IUnitOfWork unitOfWork,
     IPasswordHasher passwordHasher,
     IJwtService jwtService) : IUserService
@@ -30,7 +31,9 @@ public sealed class UserService(
         if (user is null)
             return Result<UserDto>.Failure(UserErrors.NotFound(id));
 
-        return Result<UserDto>.Success(MapToDto(user));
+        // 已用空间取实时聚合：User.UsedBytes 字段没有生产维护者，直接映射永远是 0
+        var usedBytes = await fileItemRepository.CalculateUserUsedSpaceAsync(id, cancellationToken);
+        return Result<UserDto>.Success(MapToDto(user, usedBytes));
     }
 
     public async Task<Result<PagedResult<UserDto>>> GetPagedAsync(
@@ -41,7 +44,16 @@ public sealed class UserService(
     {
         var (users, totalCount) = await userRepository.GetPagedAsync(page, pageSize, searchTerm, cancellationToken);
 
-        var dtos = users.Select(MapToDto).ToList();
+        // 已用空间批量实时聚合（一条 GROUP BY）：User.UsedBytes 字段没有生产维护者，
+        // 直接映射永远是 0，用户列表的"已使用空间/总使用空间/配额条"全显示 0
+        var usedSpaceByUser = users.Count > 0
+            ? await fileItemRepository.CalculateUsersUsedSpaceAsync(
+                users.Select(u => u.Id).ToList(), cancellationToken)
+            : new Dictionary<Guid, long>();
+
+        var dtos = users
+            .Select(u => MapToDto(u, usedSpaceByUser.TryGetValue(u.Id, out var used) ? used : 0))
+            .ToList();
         var result = PagedResult<UserDto>.Create(dtos, page, pageSize, totalCount);
 
         return Result<PagedResult<UserDto>>.Success(result);
@@ -234,9 +246,10 @@ public sealed class UserService(
     }
 
     /// <summary>
-    /// 映射实体到 DTO
+    /// 映射实体到 DTO。<paramref name="usedBytesOverride"/> 非空时用实时聚合值
+    /// 覆盖实体字段（读路径）；写路径（创建/更新/登录）不传，用实体值
     /// </summary>
-    private static UserDto MapToDto(User user) => new(
+    private static UserDto MapToDto(User user, long? usedBytesOverride = null) => new(
         Id: user.Id,
         Username: user.Username,
         DisplayName: user.DisplayName,
@@ -245,10 +258,12 @@ public sealed class UserService(
         IsEnabled: user.IsEnabled,
         LastLoginAt: user.LastLoginAt,
         QuotaBytes: user.QuotaBytes,
-        UsedBytes: user.UsedBytes,
+        UsedBytes: usedBytesOverride ?? user.UsedBytes,
         QuotaDisplay: FormatSize(user.QuotaBytes),
-        UsedDisplay: FormatSize(user.UsedBytes),
-        UsagePercentage: user.QuotaBytes > 0 ? Math.Round((double)user.UsedBytes / user.QuotaBytes.Value * 100, 2) : null,
+        UsedDisplay: FormatSize(usedBytesOverride ?? user.UsedBytes),
+        UsagePercentage: user.QuotaBytes > 0
+            ? Math.Round((double)(usedBytesOverride ?? user.UsedBytes) / user.QuotaBytes.Value * 100, 2)
+            : null,
         CreatedAt: user.CreatedAt);
 
     // 【单一真源】尺标逻辑委托 ByteSizeFormatter；保留 0/无配额返回 null 的既有显示语义

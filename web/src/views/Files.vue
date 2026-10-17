@@ -717,9 +717,9 @@ const columns = computed<Column<FileItem>[]>(() => {
     flexGrow: 1,
     sortable: true,
     cellRenderer: ({ rowData }) => h('div', { class: 'file-name' }, [
-      h('span', { style: { color: getFileIconColor(rowData), display: 'inline-flex' } },
+      h('span', { style: { color: getFileIconColor(rowData), display: 'inline-flex', flexShrink: 0 } },
         h(getFileIcon(rowData))),
-      h('span', rowData.name),
+      h('span', { class: 'file-name-text' }, rowData.name),
       rowData.isHidden ? h('span', { class: 'hidden-tag' }, t('filesView.hiddenTag')) : null
     ])
   }
@@ -1718,19 +1718,34 @@ onUnmounted(() => {
   }
 }
 
-.file-name {
+// h() 创建的单元格元素（列 cellRenderer、行操作按钮）运行在 el-table-v2 子组件的
+// 渲染上下文里，拿不到本组件的 scoped data-v 属性，普通 scoped 规则匹配不到——
+// 自 el-table-v2 迁移（4ca712c）起这批样式一直没生效（行按钮只有 17px、文件名换行）。
+// :deep() 编译为 [data-v-x] .cls，根元素带 data-v，模板与 h() 创建的后代都能命中，
+// 且选择器仍以本组件根为锚，不会泄漏到其他视图
+:deep(.file-name) {
   display: flex;
   align-items: center;
   gap: 8px;
+  // 长文件名在 44px 固定行高的单元格里必须单行省略号：flex 子项默认
+  // min-width:auto 不可收缩，中文名无空格会整体顶出单元格被 mid-glyph 裁切
+  min-width: 0;
+}
 
-  .hidden-tag {
-    font-size: 11px;
-    line-height: 1;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: var(--el-fill-color);
-    color: var(--el-text-color-secondary);
-  }
+:deep(.file-name-text) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:deep(.hidden-tag) {
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+  flex-shrink: 0;
 }
 
 // el-table-v2 的容器必须有确定高度，auto-resizer 才能测出可用空间
@@ -1749,8 +1764,9 @@ onUnmounted(() => {
   background: var(--el-fill-color-lighter);
 }
 
-// 行操作按钮：el-table-v2 的 cellRenderer 里渲染的按钮，需要明确的尺寸与可点区域
-.row-action-btn {
+// 行操作按钮：h() 创建于 cellRenderer，同 :deep() 理由见 .file-name 处注释。
+// el-table-v2 的 cellRenderer 里渲染的按钮，需要明确的尺寸与可点区域
+:deep(.row-action-btn) {
   width: 28px;
   height: 28px;
   border: none;

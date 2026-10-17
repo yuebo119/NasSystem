@@ -144,6 +144,16 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 按用户 Id 集合批量计算已使用空间，一条 GROUP BY 代替 N 次单用户聚合。
+    /// 返回字典只含有文件的用户，无文件的用户不在字典里（调用方按 0 处理）。
+    /// 用户列表展示口径用这个方法：User.UsedBytes 字段没有生产维护者，
+    /// 直接展示它永远是 0
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, long>> CalculateUsersUsedSpaceAsync(
+        IReadOnlyCollection<Guid> userIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 检查路径是否存在
     /// </summary>
     Task<bool> PathExistsAsync(string path, CancellationToken cancellationToken = default);

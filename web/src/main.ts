@@ -6,6 +6,11 @@ import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
 import 'element-plus/es/components/notification/style/css'
 import 'element-plus/es/components/loading/style/css'
+// Files.vue 的 el-table-v2 是 script 内手动 import 后经 h()/模板绑定使用的，
+// Vue 编译器不为它生成 resolveComponent 调用，resolver 看不到这个标签，
+// 样式副作用不会注入——表头会按 DOM 顺序掉到数据行下方。此路径与 resolver
+// 生成的按需路径一致（含 base/virtual-list/empty 依赖）
+import 'element-plus/es/components/table-v2/style/css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import './styles/main.scss'
 

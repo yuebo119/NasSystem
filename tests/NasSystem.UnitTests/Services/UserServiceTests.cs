@@ -23,6 +23,7 @@ using Xunit;
 public class UserServiceTests
 {
     private readonly Mock<IUserRepository> _userRepositoryMock;
+    private readonly Mock<IFileItemRepository> _fileItemRepositoryMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IPasswordHasher> _passwordHasherMock;
     private readonly Mock<IJwtService> _jwtServiceMock;
@@ -31,12 +32,22 @@ public class UserServiceTests
     public UserServiceTests()
     {
         _userRepositoryMock = new Mock<IUserRepository>();
+        _fileItemRepositoryMock = new Mock<IFileItemRepository>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _passwordHasherMock = new Mock<IPasswordHasher>();
         _jwtServiceMock = new Mock<IJwtService>();
 
+        // 已用空间默认 0：个别用例要特定值时在用例内再 Setup 覆盖
+        _fileItemRepositoryMock
+            .Setup(x => x.CalculateUserUsedSpaceAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0L);
+        _fileItemRepositoryMock
+            .Setup(x => x.CalculateUsersUsedSpaceAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, long>());
+
         _sut = new UserService(
             _userRepositoryMock.Object,
+            _fileItemRepositoryMock.Object,
             _unitOfWorkMock.Object,
             _passwordHasherMock.Object,
             _jwtServiceMock.Object);
@@ -62,6 +73,55 @@ public class UserServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.Username.Should().Be("testuser");
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_UsedBytes_ComesFromRealtimeAggregateNotEntityField()
+    {
+        // 锁定修复：User.UsedBytes 字段没有生产维护者，读路径必须取实时聚合。
+        // 修复前返回实体字段值（恒 0），本测试红；修复后返回聚合值，转绿
+        var userId = Guid.NewGuid();
+        var user = User.Create("testuser", "hash", "salt");
+        SetUserId(user, userId);
+
+        _userRepositoryMock
+            .Setup(x => x.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        _fileItemRepositoryMock
+            .Setup(x => x.CalculateUserUsedSpaceAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(4_096L);
+
+        var result = await _sut.GetByIdAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.UsedBytes.Should().Be(4_096L);
+        result.Value.UsedDisplay.Should().Be("4 KB");
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_UsedBytes_ComesFromBatchAggregate()
+    {
+        // 分页路径批量聚合：有文件的用户返回聚合值，无文件的用户返回 0
+        var withFiles = User.Create("withfiles", "hash", "salt");
+        SetUserId(withFiles, Guid.NewGuid());
+        var withoutFiles = User.Create("nofiles", "hash", "salt");
+        SetUserId(withoutFiles, Guid.NewGuid());
+
+        _userRepositoryMock
+            .Setup(x => x.GetPagedAsync(1, 20, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<User> { withFiles, withoutFiles }, 2));
+        _fileItemRepositoryMock
+            .Setup(x => x.CalculateUsersUsedSpaceAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, long> { [withFiles.Id] = 2_048L });
+
+        var result = await _sut.GetPagedAsync(1, 20);
+
+        result.IsSuccess.Should().BeTrue();
+        var dtos = result.Value.Items.ToList();
+        dtos.Should().HaveCount(2);
+        dtos.Single(u => u.Username == "withfiles").UsedBytes.Should().Be(2_048L);
+        dtos.Single(u => u.Username == "nofiles").UsedBytes.Should().Be(0L);
     }
 
     [Fact]

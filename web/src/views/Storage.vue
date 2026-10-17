@@ -108,7 +108,6 @@ const handleCreate = async () => {
     const result = await storageApi.createPool({
       name: poolForm.value.name.trim(),
       mountPath: poolForm.value.mountPath.trim(),
-      raidLevel: 0,
       description: poolForm.value.description.trim(),
       maxCapacityBytes
     }) as any

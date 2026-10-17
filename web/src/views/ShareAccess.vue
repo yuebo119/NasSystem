@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Download, Lock, Warning, User, ArrowLeft,
-  Clock, View, Link as LinkIcon
+  Clock, View, Link as LinkIcon, Folder, FolderOpened
 } from '@element-plus/icons-vue'
 import { publicShareApi, ShareAccessType, type PublicShareInfoDto, type ShareFolderContentDto, type ShareFileItemDto } from '@/api/fileShare'
 import { getFileIcon, getFileIconColor } from '@/utils/format'
