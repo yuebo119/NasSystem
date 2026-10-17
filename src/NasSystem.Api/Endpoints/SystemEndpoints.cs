@@ -92,18 +92,12 @@ public static class SystemEndpoints
         }));
     }
 
-    private static IResult GetSystemInfo()
+    private static async Task<IResult> GetSystemInfo(
+        NasSystem.Application.SystemInfo.ISystemInfoService systemInfoService,
+        CancellationToken cancellationToken)
     {
-        return Results.Ok(ApiResponse<object>.Ok(new
-        {
-            Name = "NAS System",
-            Version = "1.0.0",
-            Os = Environment.OSVersion.ToString(),
-            MachineName = Environment.MachineName,
-            ProcessorCount = Environment.ProcessorCount,
-            DotNetVersion = Environment.Version.ToString(),
-            StartTime = DateTime.UtcNow.AddMilliseconds(-Environment.TickCount64)
-        }));
+        var result = await systemInfoService.GetSystemInfoAsync(cancellationToken);
+        return Results.Ok(ApiResponse<object>.Ok(result));
     }
 
     private static IResult GetSystemStatus()

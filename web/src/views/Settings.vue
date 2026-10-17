@@ -294,6 +294,8 @@ const roleDisplay = computed(() => {
             </div>
           </div>
           <div class="card-content" v-loading="loading">
+            <!-- 字段跟随 /system/info 的分组结构（2026-10-17 扩容）；
+                 Dashboard 有完整八组模块，这里保留最常看的六项 -->
             <div class="info-grid" v-if="systemInfo">
               <div class="info-item">
                 <span class="info-label">{{ t('settings.systemName') }}</span>
@@ -305,7 +307,7 @@ const roleDisplay = computed(() => {
               </div>
               <div class="info-item">
                 <span class="info-label">{{ t('settings.os') }}</span>
-                <span class="info-value">{{ systemInfo.os }}</span>
+                <span class="info-value">{{ systemInfo.operatingSystem?.description || '-' }}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">{{ t('settings.hostname') }}</span>
@@ -313,11 +315,11 @@ const roleDisplay = computed(() => {
               </div>
               <div class="info-item">
                 <span class="info-label">{{ t('settings.cpuCores') }}</span>
-                <span class="info-value">{{ systemInfo.processorCount }}</span>
+                <span class="info-value">{{ systemInfo.cpu?.logicalCores }} {{ t('dashboard.cores') }}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">{{ t('settings.dotnetVersion') }}</span>
-                <span class="info-value">{{ systemInfo.dotNetVersion }}</span>
+                <span class="info-value">.NET {{ systemInfo.runtime?.version }}</span>
               </div>
             </div>
             

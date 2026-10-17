@@ -74,16 +74,51 @@ const systemStatus = ref({
   handleCount: 0
 })
 
-// 系统信息
-const systemInfo = ref({
+// 系统信息（分组结构，字段与 /system/info 返回一一对应；
+// 首屏加载完成前各组用空值占位，模板里统一回落 '-')
+const systemInfo = ref<any>({
   name: 'NAS System',
   version: '1.0.0',
-  os: '',
   machineName: '',
-  processorCount: 0,
-  dotNetVersion: '',
-  startTime: ''
+  startTime: '',
+  runningInContainer: false,
+  runtime: {
+    framework: '', version: '', runtimeIdentifier: '', osArchitecture: '',
+    processArchitecture: '', is64BitProcess: true, gcMode: '',
+    gcGen0Collections: 0, gcGen1Collections: 0, gcGen2Collections: 0
+  },
+  operatingSystem: {
+    description: '', version: '', architecture: '', is64Bit: true,
+    timeZone: '', culture: '', userName: ''
+  },
+  cpu: { logicalCores: 0, model: '', processCpuPercent: 0 },
+  memory: { totalPhysicalBytes: 0, processWorkingSetBytes: 0, gcHeapBytes: 0 },
+  database: { provider: '', version: '', filePath: '', fileSizeBytes: 0, journalMode: '' },
+  network: {
+    isAvailable: false, hostName: '', primaryInterface: '', interfaceType: '',
+    ipv4Addresses: [] as string[], receivedBytes: 0, sentBytes: 0
+  },
+  process: { threadCount: 0, handleCount: 0, pagedMemoryBytes: 0, totalProcessorSeconds: 0 }
 })
+
+// 绝对时间（启动时间这类需要精确时刻的场景；formatDate 是相对时间不适用）
+const formatDateTime = (iso?: string): string => {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? '-' : d.toLocaleString('zh-CN', { hour12: false })
+}
+
+// GC 三代回收次数合成一格
+const gcCollections = computed(() => {
+  const r = systemInfo.value.runtime
+  return `${r.gcGen0Collections} / ${r.gcGen1Collections} / ${r.gcGen2Collections}`
+})
+
+// CPU 时间：不足一分钟显秒，否则显分钟
+const formatSeconds = (seconds: number): string => {
+  if (!seconds) return '-'
+  return seconds >= 60 ? `${(seconds / 60).toFixed(1)} min` : `${seconds.toFixed(1)} s`
+}
 
 const loading = ref(false)
 // 窄屏适配：池状态表列宽收紧、路径列隐藏
@@ -934,31 +969,84 @@ onUnmounted(() => {
       </div>
     </el-card>
 
-    <!-- 系统信息横条：静态详情，横向铺开比占半张卡更省地方 -->
-    <el-card class="system-info-strip">
-      <div class="strip-item">
-        <span class="strip-label">{{ t('settings.systemName') }}</span>
-        <span class="strip-value">{{ systemInfo.name }}</span>
-      </div>
-      <div class="strip-item">
-        <span class="strip-label">{{ t('settings.version') }}</span>
-        <span class="strip-value">v{{ systemInfo.version }}</span>
-      </div>
-      <div class="strip-item">
-        <span class="strip-label">{{ t('settings.hostname') }}</span>
-        <span class="strip-value">{{ systemInfo.machineName }}</span>
-      </div>
-      <div class="strip-item">
-        <span class="strip-label">{{ t('settings.os') }}</span>
-        <span class="strip-value">{{ systemInfo.os }}</span>
-      </div>
-      <div class="strip-item">
-        <span class="strip-label">{{ t('settings.cpuCores') }}</span>
-        <span class="strip-value">{{ systemInfo.processorCount }} {{ t('dashboard.cores') }}</span>
-      </div>
-      <div class="strip-item">
-        <span class="strip-label">{{ t('settings.dotnetVersion') }}</span>
-        <span class="strip-value">.NET {{ systemInfo.dotNetVersion }}</span>
+    <!-- 系统信息：按域分组的全量模块。原 6 项横条信息量太薄，
+         扩到运行时/操作系统/处理器/内存/数据库/网络/进程/应用八组 -->
+    <el-card class="system-info-card">
+      <template #header>
+        <div class="card-header">
+          <span><el-icon><Monitor /></el-icon> {{ t('dashboard.sysInfo') }}</span>
+        </div>
+      </template>
+      <div class="sysinfo-grid">
+        <!-- 应用 -->
+        <div class="sys-group">
+          <div class="group-title">{{ t('dashboard.sysApp') }}</div>
+          <div class="group-row"><span class="row-label">{{ t('settings.systemName') }}</span><span class="row-value">{{ systemInfo.name }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('settings.version') }}</span><span class="row-value">v{{ systemInfo.version }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysRunEnv') }}</span><span class="row-value">{{ systemInfo.runningInContainer ? t('dashboard.sysContainer') : t('dashboard.sysBareMetal') }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysStartTime') }}</span><span class="row-value">{{ formatDateTime(systemInfo.startTime) }}</span></div>
+        </div>
+
+        <!-- .NET 运行时 -->
+        <div class="sys-group">
+          <div class="group-title">{{ t('dashboard.sysRuntime') }}</div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysFramework') }}</span><span class="row-value" :title="systemInfo.runtime.framework">{{ systemInfo.runtime.framework || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysRid') }}</span><span class="row-value">{{ systemInfo.runtime.runtimeIdentifier || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysGcMode') }}</span><span class="row-value">{{ systemInfo.runtime.gcMode || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysGcCollections') }}</span><span class="row-value">{{ gcCollections }}</span></div>
+        </div>
+
+        <!-- 操作系统 -->
+        <div class="sys-group">
+          <div class="group-title">{{ t('dashboard.sysOs') }}</div>
+          <div class="group-row"><span class="row-label">{{ t('settings.os') }}</span><span class="row-value" :title="systemInfo.operatingSystem.description">{{ systemInfo.operatingSystem.description || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysArch') }}</span><span class="row-value">{{ systemInfo.operatingSystem.architecture }} · {{ systemInfo.operatingSystem.is64Bit ? '64-bit' : '32-bit' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysTimezone') }}</span><span class="row-value" :title="systemInfo.operatingSystem.timeZone">{{ systemInfo.operatingSystem.timeZone || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysUser') }}</span><span class="row-value">{{ systemInfo.operatingSystem.userName || '-' }}</span></div>
+        </div>
+
+        <!-- 处理器 -->
+        <div class="sys-group">
+          <div class="group-title">{{ t('dashboard.sysCpu') }}</div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysCpuModel') }}</span><span class="row-value" :title="systemInfo.cpu.model">{{ systemInfo.cpu.model || t('dashboard.unknown') }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysLogicalCores') }}</span><span class="row-value">{{ systemInfo.cpu.logicalCores }} {{ t('dashboard.cores') }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysProcessCpu') }}</span><span class="row-value">{{ systemInfo.cpu.processCpuPercent.toFixed(1) }}%</span></div>
+        </div>
+
+        <!-- 内存 -->
+        <div class="sys-group">
+          <div class="group-title">{{ t('dashboard.sysMemory') }}</div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysTotalPhysical') }}</span><span class="row-value">{{ formatSize(systemInfo.memory.totalPhysicalBytes) }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysWorkingSet') }}</span><span class="row-value">{{ formatSize(systemInfo.memory.processWorkingSetBytes) }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysGcHeap') }}</span><span class="row-value">{{ formatSize(systemInfo.memory.gcHeapBytes) }}</span></div>
+        </div>
+
+        <!-- 数据库 -->
+        <div class="sys-group">
+          <div class="group-title">{{ t('dashboard.sysDatabase') }}</div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysDbEngine') }}</span><span class="row-value">{{ systemInfo.database.provider || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysDbVersion') }}</span><span class="row-value">{{ systemInfo.database.version || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysDbSize') }}</span><span class="row-value">{{ formatSize(systemInfo.database.fileSizeBytes) }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysJournal') }}</span><span class="row-value">{{ systemInfo.database.journalMode || '-' }}</span></div>
+        </div>
+
+        <!-- 网络 -->
+        <div class="sys-group">
+          <div class="group-title">{{ t('dashboard.sysNetwork') }}</div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysNic') }}</span><span class="row-value" :title="systemInfo.network.primaryInterface">{{ systemInfo.network.primaryInterface || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">IPv4</span><span class="row-value">{{ systemInfo.network.ipv4Addresses?.join(', ') || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysReceived') }}</span><span class="row-value">{{ formatSize(systemInfo.network.receivedBytes) }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysSent') }}</span><span class="row-value">{{ formatSize(systemInfo.network.sentBytes) }}</span></div>
+        </div>
+
+        <!-- 进程 -->
+        <div class="sys-group">
+          <div class="group-title">{{ t('dashboard.sysProcess') }}</div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysThreads') }}</span><span class="row-value">{{ systemInfo.process.threadCount }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysHandles') }}</span><span class="row-value">{{ systemInfo.process.handleCount }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysPagedMemory') }}</span><span class="row-value">{{ formatSize(systemInfo.process.pagedMemoryBytes) }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysCpuTime') }}</span><span class="row-value">{{ formatSeconds(systemInfo.process.totalProcessorSeconds) }}</span></div>
+        </div>
       </div>
     </el-card>
   </div>
@@ -1578,32 +1666,59 @@ onUnmounted(() => {
 }
 
 // 系统信息横条：静态详情横向铺开，发丝线分隔，比占半张卡省地方
-.system-info-strip {
-  display: flex;
-  flex-wrap: wrap;
+// 系统信息模块：八组域信息自适应网格。每组一个发丝线分隔的小块，
+// 组内行 = 标签（左，次要色）+ 值（右，等宽数字对齐感）
+.system-info-card {
   margin-bottom: 16px;
 
-  .strip-item {
+  .card-header {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 4px 24px;
-    min-width: 140px;
-    flex: 1;
+    justify-content: space-between;
+    align-items: center;
+  }
 
-    & + .strip-item {
-      border-left: 1px solid var(--mac-hairline);
-    }
+  .sysinfo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 12px 20px;
 
-    .strip-label {
-      font-size: 12px;
-      color: var(--el-text-color-secondary);
-    }
+    .sys-group {
+      padding: 12px 14px;
+      border-radius: var(--mac-radius-control);
+      background: var(--el-fill-color-lighter);
 
-    .strip-value {
-      font-size: 13px;
-      font-weight: 600;
-      word-break: break-all;
+      .group-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--el-text-color-secondary);
+        letter-spacing: 0.02em;
+        margin-bottom: 8px;
+      }
+
+      .group-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        padding: 4px 0;
+
+        .row-label {
+          font-size: 12px;
+          color: var(--el-text-color-secondary);
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+
+        .row-value {
+          font-size: 12px;
+          font-weight: 500;
+          text-align: right;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          min-width: 0;
+        }
+      }
     }
   }
 }

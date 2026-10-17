@@ -67,6 +67,10 @@ public static class DependencyInjection
         // 注册基础设施服务
         services.AddSingleton<IFileSystemService, FileSystemService>();
 
+        // 系统信息采集（运行时自省 + 数据库版本 + 网卡统计）。
+        // Scoped：内部用 PalormSessionHolder 查 SQLite 版本，与仓储同生命周期
+        services.AddScoped<Application.SystemInfo.ISystemInfoService, SystemInfoService>();
+
         // 注册缩略图服务
         services.Configure<Application.Files.ThumbnailOptions>(
             configuration.GetSection("Thumbnails"));
