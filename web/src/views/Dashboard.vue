@@ -5,10 +5,10 @@ import { useUserStore } from '@/stores/user'
 import { storageApi } from '@/api/storage'
 import { fileApi } from '@/api/file'
 import http from '@/api/http'
-import { 
+import {
   Files, User, Box, Share,
   Monitor, Timer, Cpu, Connection, Refresh,
-  Picture, VideoPlay, Headset, Document, FolderOpened, Warning, InfoFilled
+  Picture, VideoPlay, Headset, Document, FolderOpened, Warning, InfoFilled, Pointer
 } from '@element-plus/icons-vue'
 import { formatSize, getPoolStatusInfo } from '@/utils/format'
 
@@ -642,7 +642,9 @@ onUnmounted(() => {
       <el-col :xs="24" :md="12">
         <el-card class="quick-actions-card">
           <template #header>
-            <span>{{ t('dashboard.quickAccess') }}</span>
+            <div class="card-header">
+              <span><el-icon><Pointer /></el-icon> {{ t('dashboard.quickAccess') }}</span>
+            </div>
           </template>
           <div class="quick-actions">
             <router-link to="/files" class="action-item">
@@ -668,7 +670,9 @@ onUnmounted(() => {
       <el-col :xs="24" :md="12">
         <el-card class="system-info-card">
           <template #header>
-            <span><el-icon><Monitor /></el-icon> {{ t('settings.system') }}</span>
+            <div class="card-header">
+              <span><el-icon><Monitor /></el-icon> {{ t('settings.system') }}</span>
+            </div>
           </template>
           <div class="info-list">
             <div class="info-item">
@@ -741,10 +745,8 @@ onUnmounted(() => {
   }
 }
 
-.stats-row {
-  margin-bottom: 16px;
-}
-
+// stats-row 不设行级 margin：行间距统一由卡自身的 margin-bottom 提供。
+// 早先两者叠加使这一行与下方间距翻倍（32px），且 xs 断点两行卡会紧贴
 .stat-card {
   margin-bottom: 16px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -796,15 +798,31 @@ onUnmounted(() => {
   }
 }
 
-.storage-overview-card {
+// 并排卡片等高：el-row 的 align-items 默认 stretch 已把 el-col 拉到同行最高，
+// 这里让 el-card 撑满 el-col，消除左右两张卡底边不齐。
+// header 排版（flex 两端分布、图标与文字间距）四卡统一收口，原先各写各的
+.storage-overview-card,
+.file-stats-card,
+.quick-actions-card,
+.system-info-card {
+  height: 100%;
   margin-bottom: 16px;
-  
+
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-  
+
+  .card-header > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+}
+
+.storage-overview-card {
   .storage-main {
     display: flex;
     align-items: center;
@@ -997,13 +1015,6 @@ onUnmounted(() => {
 }
 
 .file-stats-card {
-  margin-bottom: 16px;
-  
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
   .file-stats-main {
     .file-stats-summary {
       display: flex;
@@ -1175,17 +1186,19 @@ onUnmounted(() => {
 }
 
 .quick-actions-card {
-  margin-bottom: 16px;
-  
+  // 与左侧系统信息卡等高后，磁贴拉伸填满卡内空间，底部不留空白
   .quick-actions {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    grid-auto-rows: 1fr;
     gap: 16px;
+    height: 100%;
     
     .action-item {
       display: flex;
       flex-direction: column;
       align-items: center;
+      justify-content: center;
       gap: 12px;
       padding: 24px 16px;
       border-radius: 12px;
@@ -1211,8 +1224,6 @@ onUnmounted(() => {
 }
 
 .system-info-card {
-  margin-bottom: 16px;
-  
   .info-list {
     .info-item {
       display: flex;
