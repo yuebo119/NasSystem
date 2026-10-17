@@ -19,7 +19,10 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* vite.config.ts 用 node:url 与 process，TS 6.0 起 types 默认空列表，需显式列出 */
+    "types": ["node"]
   },
   "include": ["vite.config.ts"]
 }
