@@ -23,6 +23,10 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/nas.db
       - NasSystem__StoragePath=/app/storage
+      # ServerGC 堆数上限。容器未设 CPU limit 时运行时可视线宿主全部逻辑核
+      # （开发机 32），默认每核建一个 GC 堆，小负载服务白背每堆的固定开销。
+      # NAS 负载（IO 为主 + 偶发缩略图编解码）用不到 32 堆，固定为 8
+      - DOTNET_GCHeapCount=8
       # 键名必须与 JwtSettings 的属性一一对应：Jwt__Secret 会映射到 Jwt:Secret，
       # 而代码读的是 Jwt:SecretKey，键名写错的后果是 Production 下启动即抛
       # InvalidOperationException（AuthenticationExtensions 的 fail-fast），容器反复重启

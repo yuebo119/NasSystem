@@ -5,6 +5,7 @@
 
 namespace NasSystem.Application.Storage;
 
+using System.Collections.Concurrent;
 using NasSystem.Application.Common;
 using NasSystem.Application.Storage.Dtos;
 using NasSystem.Domain.Common;
@@ -30,6 +31,18 @@ public sealed class StorageService(
     /// 值是该池上次完成实测的 UTC 时间。
     /// </summary>
     private const string PoolRefreshKeyPrefix = "storageservice:pool-refresh:";
+
+    /// <summary>
+    /// 按池 Id 的刷新闸门：同一池的并发刷新请求合并为一次全盘遍历。
+    /// </summary>
+    /// <remarks>
+    /// 前端首页的 overview 与 pools 两个端点由 Promise.all 并发发出，两者各自检查
+    /// 60s 节流缓存都未命中（缓存只在遍历完成后才写），结果是同一池被完整遍历两遍。
+    /// 闸门让第二个请求等第一个的结果，等待期间再双检一次节流缓存，命中即跳过。
+    /// 静态字典：闸门必须跨请求共享才有意义，与 DirectoryVersion 同一先例。
+    /// 无等待者时移除闸门，字典规模不随池的增删增长。
+    /// </remarks>
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> RefreshGates = new();
     public async Task<Result<StorageOverviewDto>> GetOverviewAsync(
         CancellationToken cancellationToken = default)
     {
@@ -378,6 +391,9 @@ public sealed class StorageService(
                     {
                         try
                         {
+                            // FileInfo.Length 是逐文件取长度的唯一 API（System.IO.File
+                            // 没有静态 Length）。每个 FileInfo 是小对象，实测分配占比
+                            // 远小于遍历本身的目录枚举系统调用，不额外优化
                             total += new FileInfo(file).Length;
                         }
                         catch (FileNotFoundException)
@@ -439,6 +455,36 @@ public sealed class StorageService(
         if (!ShouldRefreshPool(pool, force))
             return false;
 
+        // 同一池的并发刷新合并：前端 overview/pools 两个端点并发打出时，
+        // 两者都未命中节流缓存（缓存在遍历完成后才写），无闸门会完整遍历两遍
+        var gate = RefreshGates.GetOrAdd(pool.Id, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            // 双检：等待期间前一个请求可能已完成刷新并写了缓存
+            if (!ShouldRefreshPool(pool, force))
+                return false;
+
+            return await MeasureAndUpdatePoolAsync(pool, cancellationToken);
+        }
+        finally
+        {
+            gate.Release();
+            // CurrentCount 回 1 表示没有等待者，移除闸门防字典随池增删无限增长。
+            // 竞态窗口内新等待者取到的是同一实例引用，最坏后果是多一次遍历（与无闸门同），不会错
+            if (gate.CurrentCount == 1)
+                RefreshGates.TryRemove(new KeyValuePair<Guid, SemaphoreSlim>(pool.Id, gate));
+        }
+    }
+
+    /// <summary>
+    /// 实测并更新单个池的大小与已用容量（调用方已持有该池的刷新闸门）。
+    /// 两个数字来源不同：大小扫文件夹，已用查数据库里该池的文件记账
+    /// </summary>
+    private async Task<bool> MeasureAndUpdatePoolAsync(
+        StoragePool pool,
+        CancellationToken cancellationToken)
+    {
         try
         {
             // 实测挂载点文件夹大小。读不到（不存在/无权限/盘未就绪）时

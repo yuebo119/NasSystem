@@ -10,6 +10,12 @@ using NasSystem.Domain.Enums;
 /// <summary>
 /// 文件项 DTO
 /// </summary>
+/// <remarks>
+/// 2026-10-17 移除 Hash 与 SizeDisplay 两个死载荷字段：前端全仓 grep 证实两者
+/// 零使用（大小展示一律前端 formatSize 现算），万行目录下仅这两项就是约 540KB
+/// 白传 JSON 加服务端每行一次 FormatSize 字符串分配。分享域另有自己的 DTO，
+/// 不受影响；文件哈希能力保留在领域实体与数据库中，只是不再进浏览/搜索响应。
+/// </remarks>
 public sealed record FileItemDto
 {
     public required Guid Id { get; init; }
@@ -17,10 +23,8 @@ public sealed record FileItemDto
     public required string Path { get; init; }
     public required FileItemType ItemType { get; init; }
     public required long SizeBytes { get; init; }
-    public string? SizeDisplay { get; init; }
     public string? MimeType { get; init; }
     public string? Extension { get; init; }
-    public string? Hash { get; init; }
     public Guid? ParentId { get; init; }
     public required Guid OwnerId { get; init; }
     public required bool IsHidden { get; init; }
@@ -52,7 +56,6 @@ public sealed record DirectoryContentDto
     public required int FolderCount { get; init; }
     public required int FileCount { get; init; }
     public required long TotalSizeBytes { get; init; }
-    public string? TotalSizeDisplay { get; init; }
     public required IReadOnlyList<BreadcrumbDto> Breadcrumbs { get; init; }
 }
 

@@ -44,7 +44,9 @@ public sealed partial class FileService
         var breadcrumbs = BuildBreadcrumbs(path);
 
         // 单趟遍历同时产出 DTO 列表与计数/求和：原先对 children 做四次完整枚举
-        // （隐藏过滤一趟、folders/files 各一趟、MapToDto 一趟）加四个 List 分配
+        // （隐藏过滤一趟、folders/files 各一趟、MapToDto 一趟）加四个 List 分配。
+        // DTO 不再带 Hash/SizeDisplay（前端零使用，见 FileItemDto 注释），
+        // 每行省一次 FormatSize 字符串分配
         var items = new List<FileItemDto>(children.Count);
         var folderCount = 0;
         var fileCount = 0;
@@ -68,10 +70,8 @@ public sealed partial class FileService
                 Path = c.Path,
                 ItemType = c.ItemType,
                 SizeBytes = c.SizeBytes,
-                SizeDisplay = FormatSize(c.SizeBytes),
                 MimeType = c.MimeType,
                 Extension = c.Extension,
-                Hash = c.Hash,
                 ParentId = c.ParentId,
                 OwnerId = c.OwnerId,
                 IsHidden = c.IsHidden,
@@ -91,7 +91,6 @@ public sealed partial class FileService
             FolderCount = folderCount,
             FileCount = fileCount,
             TotalSizeBytes = totalSizeBytes,
-            TotalSizeDisplay = FormatSize(totalSizeBytes),
             Breadcrumbs = breadcrumbs
         });
     }

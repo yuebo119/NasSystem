@@ -63,7 +63,7 @@ public sealed class FileItemRepository(
     }
 
     /// <summary>
-    /// 浏览专用子项查询：按需取 15 列 + IsHidden 下推 SQL + 不排序。
+    /// 浏览专用子项查询：按需取 14 列 + IsHidden 下推 + 不排序。
     /// </summary>
     /// <remarks>
     /// 列序必须与 <see cref="FileItemBrowseRow"/> 的属性声明序逐列对齐（PalORM 投影
@@ -79,7 +79,7 @@ public sealed class FileItemRepository(
         var db = await sessions.GetAsync(cancellationToken);
 
         const string Columns =
-            "Id, Name, Path, ItemType, SizeBytes, MimeType, Extension, Hash, " +
+            "Id, Name, Path, ItemType, SizeBytes, MimeType, Extension, " +
             "OwnerId, ParentId, IsHidden, IsReadOnly, CreatedAt, UpdatedAt";
 
         // 隐藏文件过滤下推：原先载回全部子项再内存 Where，这里直接少读少传。
@@ -112,7 +112,6 @@ public sealed class FileItemRepository(
             SizeBytes = r.SizeBytes,
             MimeType = r.MimeType,
             Extension = r.Extension,
-            Hash = r.Hash,
             OwnerId = r.OwnerId,
             ParentId = r.ParentId,
             IsHidden = r.IsHidden,

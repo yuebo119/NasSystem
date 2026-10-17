@@ -230,10 +230,8 @@
         "path": "/documents/report.pdf",
         "itemType": "File",
         "sizeBytes": 1024000,
-        "sizeDisplay": "1 MB",
         "mimeType": "application/pdf",
         "extension": ".pdf",
-        "hash": "sha256...",
         "parentId": "guid",
         "ownerId": "guid",
         "ownerName": "admin",
@@ -246,7 +244,6 @@
     "folderCount": 5,
     "fileCount": 10,
     "totalSizeBytes": 10485760,
-    "totalSizeDisplay": "10 MB",
     "breadcrumbs": [
       { "name": "根目录", "path": "/" },
       { "name": "documents", "path": "/documents" }

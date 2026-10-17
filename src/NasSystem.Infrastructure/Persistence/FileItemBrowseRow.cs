@@ -9,7 +9,7 @@ using PalORM;
 namespace NasSystem.Infrastructure.Persistence;
 
 /// <summary>
-/// FileItems 表的浏览专用投影：只含目录列表 DTO 用得到的 15 列。
+/// FileItems 表的浏览专用投影：只含目录列表 DTO 用得到的 14 列。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,7 +42,6 @@ public partial class FileItemBrowseRow
     [Column("SizeBytes")] public long SizeBytes { get; set; }
     [Column("MimeType")] public string? MimeType { get; set; }
     [Column("Extension")] public string? Extension { get; set; }
-    [Column("Hash")] public string? Hash { get; set; }
     [Column("OwnerId")] public Guid OwnerId { get; set; }
     [Column("ParentId")] public Guid? ParentId { get; set; }
     [Column("IsHidden")] public bool IsHidden { get; set; }

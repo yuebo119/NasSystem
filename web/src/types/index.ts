@@ -60,16 +60,16 @@ export interface LoginResponse {
 }
 
 // 文件
+// 2026-10-17：移除 sizeDisplay 与 hash，与后端 FileItemDto 对齐（后端不再下发，
+// 大小展示一律前端 formatSize 现算；hash 全前端零使用）
 export interface FileItem {
   id: string
   name: string
   path: string
   itemType: FileItemType
   sizeBytes: number
-  sizeDisplay?: string
   mimeType?: string
   extension?: string
-  hash?: string
   parentId?: string
   ownerId: string
   ownerName?: string
@@ -92,7 +92,6 @@ export interface DirectoryContent {
   folderCount: number
   fileCount: number
   totalSizeBytes: number
-  totalSizeDisplay?: string
   breadcrumbs: Breadcrumb[]
 }
 

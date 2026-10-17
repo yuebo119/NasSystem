@@ -30,10 +30,9 @@ public interface IFileItemRepository : IRepository<FileItem>
     /// 获取目录下的子项摘要（浏览专用）
     /// </summary>
     /// <remarks>
-    /// 与 <see cref="GetChildrenAsync"/> 的区别只在取数列：浏览 DTO 只要 15 个字段，
-    /// 实体行有 19 列，其中 PhysicalPath 是绝对路径长串、Hash 是 44 字符 base64，
-    /// 千项目录下这两项就是上百 KB 的白读白分配。摘要查询按需取列，并把 IsHidden
-    /// 过滤下推 SQL（原先载回全部再内存过滤）。
+    /// 与 <see cref="GetChildrenAsync"/> 的区别只在取数列：浏览 DTO 只要 14 个字段，
+    /// 实体行有 19 列，其中 PhysicalPath 是绝对路径长串，千项目录下就是几十 KB 的白读白分配。
+    /// 摘要查询按需取列，并把 IsHidden 过滤下推 SQL（原先载回全部再内存过滤）。
     /// 排序不在此做：前端 store 的 sortedFiles 会按用户选择重排，服务端 ORDER BY
     /// 的产物被完整丢弃，省掉这次排序。
     /// 软删过滤仍是硬约束：WHERE 必须带 IsDeleted = 0，否则回收站记录会出现在浏览结果里。
@@ -140,7 +139,8 @@ public sealed record FileStatistics
 /// </summary>
 /// <remarks>
 /// 与 <see cref="Entities.FileItem"/> 同字段但少了 PhysicalPath、StoragePoolId、
-/// IsDeleted、DeletedAt、IsSystem 五项，浏览 DTO 一个都不用它们。
+/// IsDeleted、DeletedAt、IsSystem、Hash 六项，浏览 DTO 一个都不用它们
+/// （Hash 于 2026-10-17 移除：前端零使用，万行目录下是白读白传，见 FileItemDto 注释）。
 /// 定义在 Domain 而非 Application：它是仓储查询的返回形状，按 FileStatistics
 /// 的同一先例放在仓储接口文件里，Domain 零外部依赖不受影响。
 /// </remarks>
@@ -153,7 +153,6 @@ public sealed record FileItemSummary
     public required long SizeBytes { get; init; }
     public string? MimeType { get; init; }
     public string? Extension { get; init; }
-    public string? Hash { get; init; }
     public required Guid OwnerId { get; init; }
     public Guid? ParentId { get; init; }
     public required bool IsHidden { get; init; }

@@ -18,6 +18,9 @@ using Microsoft.Net.Http.Headers;
 /// </remarks>
 internal sealed class ZipDirectoryResult : IResult
 {
+    /// <summary>压缩复制的缓冲区，与 FileSystemService 同规格（80KB）</summary>
+    private const int BufferSize = 81920;
+
     private readonly string _directory;
     private readonly string _fileName;
 
@@ -46,7 +49,9 @@ internal sealed class ZipDirectoryResult : IResult
         string entryPrefix,
         CancellationToken cancellationToken)
     {
-        foreach (var filePath in Directory.GetFiles(sourceDir))
+        // Enumerate 而非 Get：Get* 每次物化整个目录的名字符串数组，
+        // 深目录树上万目录时是成比例的白分配（与扫描同步同一取舍）
+        foreach (var filePath in Directory.EnumerateFiles(sourceDir))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -56,11 +61,12 @@ internal sealed class ZipDirectoryResult : IResult
             var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
             await using var entryStream = entry.Open();
             await using var fileStream = new FileStream(
-                filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            await fileStream.CopyToAsync(entryStream, cancellationToken);
+                filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await fileStream.CopyToAsync(entryStream, BufferSize, cancellationToken);
         }
 
-        foreach (var subDir in Directory.GetDirectories(sourceDir))
+        foreach (var subDir in Directory.EnumerateDirectories(sourceDir))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
