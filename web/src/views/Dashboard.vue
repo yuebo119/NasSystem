@@ -350,7 +350,11 @@ onUnmounted(() => {
     </el-row>
 
     <!-- 存储池（账目口径：分配与使用，物理磁盘见下方独立卡片） -->
-    <el-row :gutter="16">
+    <!-- dash-row-gap：本行四张卡 height:100% 撑满 el-col 后，卡片自身的
+       margin-bottom 会溢出到 row 之外、推不开后续卡片（实测行尾与磁盘卡
+       间距为 0），行间距改由 row 级 margin 提供；卡片 margin 保留给 xs
+       折行场景 -->
+    <el-row :gutter="16" class="dash-row-gap">
       <el-col :xs="24" :md="12">
         <el-card class="storage-overview-card">
           <template #header>
@@ -824,6 +828,12 @@ onUnmounted(() => {
     gap: 6px;
     min-width: 0;
   }
+}
+
+// 等高行（四张卡）的行级间距：卡片 margin-bottom 被 height:100% 溢出吃掉，
+// 推不开行外后续卡片，改由 row 提供，保证行与行之间也是统一的 16px
+.dash-row-gap {
+  margin-bottom: 16px;
 }
 
 .storage-overview-card {
