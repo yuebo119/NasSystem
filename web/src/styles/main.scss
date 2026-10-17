@@ -147,21 +147,21 @@ html:not(.dark) {
   }
 }
 
-.el-dialog {
-  border-radius: 16px;
-  
-  .el-dialog__header {
-    padding: 20px 24px 16px;
+// 模态统一右侧抽屉后的全局样式。原 .el-dialog 块随全站组件替换转为死代码，
+// 视觉语言平移过来：头部下边框、Footer 上边框；内缘（左侧）加圆角。
+// 内边距沿用 el-drawer 自身默认值（--el-drawer-padding-primary），不另设 24px
+.el-drawer {
+  border-radius: 16px 0 0 16px;
+
+  .el-drawer__header {
     border-bottom: 1px solid var(--el-border-color-lighter);
+    margin-bottom: 0;
+    padding-bottom: var(--el-drawer-padding-primary);
   }
-  
-  .el-dialog__body {
-    padding: 24px;
-  }
-  
-  .el-dialog__footer {
-    padding: 16px 24px 20px;
+
+  .el-drawer__footer {
     border-top: 1px solid var(--el-border-color-lighter);
+    padding-top: var(--el-drawer-padding-primary);
   }
 }
 

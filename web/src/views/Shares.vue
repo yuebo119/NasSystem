@@ -8,6 +8,7 @@ import {
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fileShareApi, ShareAccessType, type FileShareDto, type UpdateFileShareRequest } from '@/api/fileShare'
 import { getFileIcon, formatDate } from '@/utils/format'
+import { useIsMobile } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -16,6 +17,8 @@ const editDialogVisible = ref(false)
 const editTarget = ref<FileShareDto | null>(null)
 const editForm = ref<UpdateFileShareRequest>({})
 const editExpiresOption = ref('keep')
+// 模态统一右侧抽屉：宽屏保持原定宽，窄屏（手机）取全宽
+const isMobile = useIsMobile()
 const editMaxDownloadsOption = ref('keep')
 const editPassword = ref('')
 
@@ -299,7 +302,8 @@ onMounted(() => loadData())
       </div>
     </div>
 
-    <el-dialog v-model="editDialogVisible" :title="t('shares.editShare')" width="480px">
+    <!-- 编辑分享抽屉 -->
+    <el-drawer v-model="editDialogVisible" :title="t('shares.editShare')" :size="isMobile ? '100%' : '480px'" :mask-closable="false">
       <el-form v-if="editTarget" label-position="top">
         <el-form-item :label="t('shares.accessType')">
           <el-radio-group v-model="editForm.accessType">
@@ -335,7 +339,7 @@ onMounted(() => loadData())
         <el-button @click="editDialogVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleSaveEdit">{{ t('common.save') }}</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 

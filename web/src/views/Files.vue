@@ -19,12 +19,15 @@ import {
 import type { FileItem } from '@/types'
 import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
 import { createPreviewUrlManager } from '@/utils/previewUrl'
+import { useIsMobile } from '@/utils/useIsMobile'
 
 // ITM-M3 收尾：Files 页 i18n 全量接入
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const fileStore = useFileStore()
+// 模态统一右侧抽屉：宽屏保持原定宽，窄屏（手机）取全宽
+const isMobile = useIsMobile()
 
 // 对话框状态
 const createFolderDialogVisible = ref(false)
@@ -1338,8 +1341,8 @@ onUnmounted(() => {
       </span>
     </div>
 
-    <!-- 新建文件夹对话框 -->
-    <el-dialog v-model="createFolderDialogVisible" :title="$t('filesView.newFolderTitle')" width="400">
+    <!-- 新建文件夹抽屉 -->
+    <el-drawer v-model="createFolderDialogVisible" :title="$t('filesView.newFolderTitle')" :size="isMobile ? '100%' : '400px'" :mask-closable="false">
       <el-input
         v-model="newFolderName"
         :placeholder="$t('filesView.folderNamePlaceholder')"
@@ -1350,10 +1353,10 @@ onUnmounted(() => {
         <el-button @click="createFolderDialogVisible = false">{{ $t('filesView.cancel') }}</el-button>
         <el-button type="primary" @click="handleCreateFolder">{{ $t('filesView.create') }}</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
-    <!-- 重命名对话框 -->
-    <el-dialog v-model="renameDialogVisible" :title="$t('filesView.renameTitle')" width="400">
+    <!-- 重命名抽屉 -->
+    <el-drawer v-model="renameDialogVisible" :title="$t('filesView.renameTitle')" :size="isMobile ? '100%' : '400px'" :mask-closable="false">
       <el-input
         v-model="newName"
         :placeholder="$t('filesView.newNamePlaceholder')"
@@ -1364,10 +1367,10 @@ onUnmounted(() => {
         <el-button @click="renameDialogVisible = false">{{ $t('filesView.cancel') }}</el-button>
         <el-button type="primary" @click="handleRename">{{ $t('filesView.ok') }}</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
-    <!-- 搜索对话框 -->
-    <el-dialog v-model="searchDialogVisible" :title="$t('filesView.searchDialogTitle')" width="650" @close="resetSearch">
+    <!-- 搜索抽屉 -->
+    <el-drawer v-model="searchDialogVisible" :title="$t('filesView.searchDialogTitle')" :size="isMobile ? '100%' : '650px'" @close="resetSearch">
       <div class="search-form">
         <el-input
           v-model="searchQuery"
@@ -1426,10 +1429,10 @@ onUnmounted(() => {
         </div>
         <el-empty v-else-if="searchQuery && !searchLoading" :description="$t('filesView.noMatchFound')" />
       </div>
-    </el-dialog>
+    </el-drawer>
 
-    <!-- 回收站对话框 -->
-    <el-dialog v-model="recycleBinDialogVisible" :title="$t('filesView.recycleBinTitle')" width="700">
+    <!-- 回收站抽屉 -->
+    <el-drawer v-model="recycleBinDialogVisible" :title="$t('filesView.recycleBinTitle')" :size="isMobile ? '100%' : '700px'">
       <template #header>
         <div class="recycle-header">
           <span>{{ $t('filesView.recycleBinTitle') }}</span>
@@ -1438,7 +1441,7 @@ onUnmounted(() => {
           </el-button>
         </div>
       </template>
-      <el-table :data="recycleBinItems" v-loading="recycleBinLoading" max-height="400">
+      <el-table :data="recycleBinItems" v-loading="recycleBinLoading" max-height="calc(100vh - 240px)">
         <el-table-column prop="name" :label="$t('filesView.colName')" min-width="200">
           <template #default="{ row }">
             <div class="file-name">
@@ -1457,10 +1460,10 @@ onUnmounted(() => {
         </el-table-column>
       </el-table>
       <el-empty v-if="recycleBinItems.length === 0 && !recycleBinLoading" :description="$t('filesView.recycleBinEmpty')" />
-    </el-dialog>
+    </el-drawer>
 
-    <!-- 上传对话框 -->
-    <el-dialog v-model="uploadDialogVisible" :title="$t('filesView.uploadTitle')" width="500">
+    <!-- 上传抽屉 -->
+    <el-drawer v-model="uploadDialogVisible" :title="$t('filesView.uploadTitle')" :size="isMobile ? '100%' : '500px'" :mask-closable="false">
       <div class="upload-path-info">
         <el-icon><Folder /></el-icon>
         <span>{{ $t('filesView.uploadTo') }} <strong>{{ fileStore.currentPath }}</strong></span>
@@ -1488,14 +1491,14 @@ onUnmounted(() => {
           {{ $t('filesView.startUpload') }}
         </el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
-    <!-- 预览对话框 -->
-    <el-dialog
+    <!-- 预览抽屉：媒体内容要宽屏视野，宽屏 80%、窄屏全宽 -->
+    <el-drawer
       v-model="previewDialogVisible"
       :title="previewItem?.name || $t('filesView.previewFallbackTitle')"
-      width="80%"
-      class="preview-dialog"
+      :size="isMobile ? '100%' : '80%'"
+      class="preview-drawer"
       @closed="revokePreviewUrl"
     >
       <div class="preview-content" v-if="previewItem">
@@ -1520,10 +1523,10 @@ onUnmounted(() => {
         <el-button @click="previewDialogVisible = false">{{ $t('filesView.close') }}</el-button>
         <el-button type="primary" @click="downloadFile(previewItem!)" v-if="previewItem">{{ $t('filesView.downloadTip') }}</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
-    <!-- 分享对话框 -->
-    <el-dialog v-model="shareDialogVisible" :title="$t('filesView.shareDialogTitle')" width="500">
+    <!-- 分享抽屉 -->
+    <el-drawer v-model="shareDialogVisible" :title="$t('filesView.shareDialogTitle')" :size="isMobile ? '100%' : '500px'" :mask-closable="false">
       <div class="share-target" v-if="shareTarget">
         <el-icon :size="24" :color="getFileIconColor(shareTarget)">
           <component :is="getFileIcon(shareTarget)" />
@@ -1645,7 +1648,7 @@ onUnmounted(() => {
           {{ $t('filesView.copyLinkBtn') }}
         </el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
     <!-- 行操作菜单：全局单实例，虚拟滚动下不会为每行各建一个 ElDropdown
          （那样会把 el-popper 泄漏到 body 且 unmount 不清理）。

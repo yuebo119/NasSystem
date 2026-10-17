@@ -80,6 +80,7 @@ export default {
     poolAllocated: 'Allocated',
     poolRemaining: 'Remaining Quota',
     noQuotaSet: 'No quota set',
+    mixedQuotaHint: 'Some pools have no quota set; aggregate usage is not shown',
     // Physical disks (real DriveInfo information)
     physicalDisks: 'Physical Disks',
     driveTotal: 'Total',

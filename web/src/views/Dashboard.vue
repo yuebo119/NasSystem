@@ -8,7 +8,7 @@ import http from '@/api/http'
 import { 
   Files, User, Box, Share,
   Monitor, Timer, Cpu, Connection, Refresh,
-  Picture, VideoPlay, Headset, Document, FolderOpened, Warning
+  Picture, VideoPlay, Headset, Document, FolderOpened, Warning, InfoFilled
 } from '@element-plus/icons-vue'
 import { formatSize, getPoolStatusInfo } from '@/utils/format'
 
@@ -415,6 +415,11 @@ onUnmounted(() => {
                   {{ storageOverview.poolAllocatedBytes > 0 ? formatSize(storageOverview.poolRemainingBytes) : t('dashboard.noQuotaSet') }}
                 </div>
               </div>
+              <!-- 多池混合配置（部分池未设上限）时凑不出诚实的总使用率，说明为何不显示圆环 -->
+              <div v-if="storageOverview.poolCount > 0 && !storageOverview.hasCapacityLimit" class="pool-quota-hint">
+                <el-icon><InfoFilled /></el-icon>
+                <span>{{ t('dashboard.mixedQuotaHint') }}</span>
+              </div>
             </div>
           </div>
         </el-card>
@@ -532,28 +537,27 @@ onUnmounted(() => {
         {{ t('dashboard.drivesEmpty') }}
       </div>
       <div v-else class="disks-list">
+        <!-- 多盘自适应网格：每盘一张紧凑磁贴，盘数多时自动分栏，窄屏退化为单列 -->
         <div v-for="drive in drives" :key="drive.name" class="disk-item">
-          <div class="disk-icon">
-            <el-icon :size="24"><Monitor /></el-icon>
+          <div class="disk-head">
+            <div class="disk-icon">
+              <el-icon :size="20"><Monitor /></el-icon>
+            </div>
+            <span class="disk-letter">{{ drive.name }}</span>
+            <!-- 无卷标时后端 label 回落为驱动类型（如 Fixed），两者相同只显示一个 -->
+            <el-tag size="small" effect="plain">{{ drive.label }}</el-tag>
+            <el-tag v-if="drive.label !== drive.driveType" size="small" effect="plain" type="info">{{ drive.driveType }}</el-tag>
           </div>
-          <div class="disk-info">
-            <div class="disk-name">
-              <span class="disk-letter">{{ drive.name }}</span>
-              <!-- 无卷标时后端 label 回落为驱动类型（如 Fixed），两者相同只显示一个 -->
-              <el-tag size="small" effect="plain">{{ drive.label }}</el-tag>
-              <el-tag v-if="drive.label !== drive.driveType" size="small" effect="plain" type="info">{{ drive.driveType }}</el-tag>
+          <div class="disk-bar">
+            <div class="bar-track">
+              <div
+                class="bar-fill"
+                :style="{ width: driveUsedPercent(drive) + '%', background: driveBarColor(driveUsedPercent(drive)) }"
+              ></div>
             </div>
-            <div class="disk-bar">
-              <div class="bar-track">
-                <div
-                  class="bar-fill"
-                  :style="{ width: driveUsedPercent(drive) + '%', background: driveBarColor(driveUsedPercent(drive)) }"
-                ></div>
-              </div>
-              <span class="disk-percent" :style="{ color: driveBarColor(driveUsedPercent(drive)) }">
-                {{ driveUsedPercent(drive) }}%
-              </span>
-            </div>
+            <span class="disk-percent" :style="{ color: driveBarColor(driveUsedPercent(drive)) }">
+              {{ driveUsedPercent(drive) }}%
+            </span>
           </div>
           <div class="disk-figures">
             <div class="figure">
@@ -584,7 +588,8 @@ onUnmounted(() => {
         </div>
       </template>
       
-      <el-table :data="storagePools" v-loading="loading" style="width: 100%">
+      <!-- 多池时表内滚动，避免池多把页面撑得很长 -->
+      <el-table :data="storagePools" v-loading="loading" style="width: 100%" max-height="400">
         <el-table-column prop="name" :label="t('storage.poolName')" min-width="120">
           <template #default="{ row }">
             <div class="pool-name">
@@ -853,11 +858,23 @@ onUnmounted(() => {
           color: var(--el-text-color-primary);
         }
       }
+
+      .pool-quota-hint {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+        padding-top: 12px;
+        border-top: 1px dashed var(--el-border-color-lighter);
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+      }
     }
   }
 }
 
-// 物理磁盘卡：与存储池卡分开的第二个概念，盘符 + 真实容量/用量
+// 物理磁盘卡：与存储池卡分开的第二个概念。多盘自适应网格，
+// 盘数多时自动分栏（NAS 动辄 4-8 盘），窄屏退化单列
 .disks-card {
   margin-bottom: 16px;
 
@@ -883,82 +900,82 @@ onUnmounted(() => {
     font-size: 13px;
   }
 
+  // auto-fit 而非 auto-fill：盘数少于轨道数时剩余轨道折叠、现有磁贴撑满，
+  // 单盘不会在宽卡片里孤零零占一列；多盘（4-8）自动分栏，窄屏退化单列
   .disks-list {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 16px;
 
     .disk-item {
       display: flex;
-      align-items: center;
-      gap: 16px;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--el-border-color-lighter);
+      border-radius: 12px;
 
-      .disk-icon {
-        width: 44px;
-        height: 44px;
-        border-radius: 10px;
-        background: linear-gradient(135deg, #64748b, #94a3b8);
+      .disk-head {
         display: flex;
         align-items: center;
-        justify-content: center;
-        color: white;
-        flex-shrink: 0;
-      }
-
-      .disk-info {
-        flex: 1;
+        gap: 8px;
         min-width: 0;
 
-        .disk-name {
+        .disk-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 9px;
+          background: linear-gradient(135deg, #64748b, #94a3b8);
           display: flex;
           align-items: center;
-          gap: 8px;
-          margin-bottom: 8px;
+          justify-content: center;
+          color: white;
+          flex-shrink: 0;
+        }
 
-          .disk-letter {
-            font-size: 15px;
-            font-weight: 600;
+        .disk-letter {
+          font-size: 15px;
+          font-weight: 600;
+        }
+      }
+
+      .disk-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        .bar-track {
+          flex: 1;
+          height: 8px;
+          background: var(--el-fill-color);
+          border-radius: 4px;
+          overflow: hidden;
+
+          .bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s;
           }
         }
 
-        .disk-bar {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-
-          .bar-track {
-            flex: 1;
-            height: 8px;
-            background: var(--el-fill-color);
-            border-radius: 4px;
-            overflow: hidden;
-
-            .bar-fill {
-              height: 100%;
-              border-radius: 3px;
-              transition: width 0.3s;
-            }
-          }
-
-          .disk-percent {
-            font-size: 13px;
-            font-weight: 600;
-            min-width: 44px;
-            text-align: right;
-          }
+        .disk-percent {
+          font-size: 13px;
+          font-weight: 600;
+          min-width: 44px;
+          text-align: right;
         }
       }
 
       .disk-figures {
         display: flex;
-        gap: 24px;
-        flex-shrink: 0;
+        flex-wrap: wrap;
+        gap: 8px 16px;
 
         .figure {
           display: flex;
           flex-direction: column;
           gap: 2px;
-          min-width: 88px;
+          min-width: 76px;
 
           .figure-label {
             font-size: 12px;

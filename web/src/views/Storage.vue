@@ -5,6 +5,7 @@ import { Plus, Refresh, Delete, Check, FolderOpened, Box, InfoFilled, Edit, Warn
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storageApi, type StoragePool, type StorageOverview, type DirectoryItem } from '@/api/storage'
 import { formatSize, getPoolStatusInfo } from '@/utils/format'
+import { useIsMobile } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -16,6 +17,8 @@ const pathDialogVisible = ref(false)
 const editingPool = ref<StoragePool | null>(null)
 const creating = ref(false)
 const updating = ref(false)
+// 模态统一右侧抽屉：宽屏保持原定宽，窄屏（手机）取全宽
+const isMobile = useIsMobile()
 
 const poolForm = ref({ name: '', mountPath: '', description: '', maxCapacityGB: 0 })
 
@@ -279,8 +282,8 @@ onMounted(() => loadData())
       </div>
     </div>
 
-    <!-- 新建存储池对话框 -->
-    <el-dialog v-model="createDialogVisible" :title="t('storage.createPool')" width="500px" :close-on-click-modal="false">
+    <!-- 新建存储池抽屉 -->
+    <el-drawer v-model="createDialogVisible" :title="t('storage.createPool')" :size="isMobile ? '100%' : '500px'" :mask-closable="false">
       <el-form :model="poolForm" label-position="top">
         <el-form-item :label="t('storage.poolName')" required>
           <el-input v-model="poolForm.name" :placeholder="t('storage.poolNamePlaceholder')" maxlength="50" show-word-limit />
@@ -304,10 +307,10 @@ onMounted(() => loadData())
         <el-button @click="createDialogVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleCreate" :loading="creating">{{ t('common.create') }}</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
-    <!-- 编辑存储池对话框 -->
-    <el-dialog v-model="editDialogVisible" :title="t('storage.editPool')" width="500px" :close-on-click-modal="false">
+    <!-- 编辑存储池抽屉 -->
+    <el-drawer v-model="editDialogVisible" :title="t('storage.editPool')" :size="isMobile ? '100%' : '500px'" :mask-closable="false">
       <el-form :model="poolForm" label-position="top">
         <el-form-item :label="t('storage.poolName')" required>
           <el-input v-model="poolForm.name" :placeholder="t('storage.poolName')" maxlength="50" show-word-limit />
@@ -328,10 +331,10 @@ onMounted(() => loadData())
         <el-button @click="editDialogVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleUpdate" :loading="updating">{{ t('common.save') }}</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
-    <!-- 目录选择对话框 -->
-    <el-dialog v-model="pathDialogVisible" :title="t('storage.selectPath')" width="600px" :close-on-click-modal="false">
+    <!-- 目录选择抽屉 -->
+    <el-drawer v-model="pathDialogVisible" :title="t('storage.selectPath')" :size="isMobile ? '100%' : '600px'" :mask-closable="false">
       <div class="path-browser">
         <div class="browser-header">
           <el-button :icon="Back" :disabled="!parentPath && !browsingPath" @click="goToParent" size="small">{{ t('storage.goBack') }}</el-button>
@@ -364,7 +367,7 @@ onMounted(() => loadData())
           </div>
         </div>
       </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 
@@ -452,7 +455,8 @@ onMounted(() => loadData())
       span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     }
   }
-  .browser-content { height: 320px; overflow-y: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 8px;
+  // 抽屉是全高拉出的，目录列表跟着撑满剩余空间（原固定 320px 在抽屉里只剩一小条）
+  .browser-content { height: calc(100vh - 280px); min-height: 320px; overflow-y: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 8px;
     .empty-dir { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--el-text-color-secondary);
       p { margin: 12px 0 0; }
     }

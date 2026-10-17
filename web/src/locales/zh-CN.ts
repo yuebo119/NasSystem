@@ -80,6 +80,7 @@ export default {
     poolAllocated: '已分配容量',
     poolRemaining: '剩余配额',
     noQuotaSet: '未设上限',
+    mixedQuotaHint: '部分存储池未设容量上限，汇总使用率不展示',
     // 物理磁盘（DriveInfo 真实盘信息）
     physicalDisks: '物理磁盘',
     driveTotal: '总容量',

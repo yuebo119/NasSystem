@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '@/api/user'
 import type { User as UserType } from '@/types'
 import { formatSize, formatDate } from '@/utils/format'
+import { useIsMobile } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -21,6 +22,8 @@ const editDialogVisible = ref(false)
 const resetPasswordDialogVisible = ref(false)
 const creating = ref(false)
 const updating = ref(false)
+// 模态统一右侧抽屉：宽屏保持原定宽，窄屏（手机）取全宽
+const isMobile = useIsMobile()
 
 // 表单数据
 const newUser = ref({
@@ -342,7 +345,7 @@ onMounted(() => loadData())
     </div>
 
     <!-- 创建用户对话框 -->
-    <el-dialog v-model="createDialogVisible" :title="t('users.createUser')" width="500px" :close-on-click-modal="false">
+    <el-drawer v-model="createDialogVisible" :title="t('users.createUser')" :size="isMobile ? '100%' : '500px'" :mask-closable="false">
       <el-form :model="newUser" label-position="top">
         <el-form-item :label="t('users.username')" required>
           <el-input v-model="newUser.username" :placeholder="t('users.usernamePlaceholder')" maxlength="30" show-word-limit />
@@ -390,10 +393,10 @@ onMounted(() => loadData())
         <el-button @click="createDialogVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleCreateUser" :loading="creating">{{ t('common.create') }}</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
-    <!-- 编辑用户对话框 -->
-    <el-dialog v-model="editDialogVisible" :title="t('users.editUser')" width="500px" :close-on-click-modal="false">
+    <!-- 编辑用户抽屉 -->
+    <el-drawer v-model="editDialogVisible" :title="t('users.editUser')" :size="isMobile ? '100%' : '500px'" :mask-closable="false">
       <el-form :model="editForm" label-position="top">
         <el-form-item :label="t('users.username')">
           <el-input :model-value="editUser?.username" disabled />
@@ -428,10 +431,10 @@ onMounted(() => loadData())
         <el-button @click="editDialogVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleUpdateUser" :loading="updating">{{ t('common.save') }}</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
-    <!-- 重置密码对话框 -->
-    <el-dialog v-model="resetPasswordDialogVisible" :title="t('users.resetPassword')" width="400px" :close-on-click-modal="false">
+    <!-- 重置密码抽屉 -->
+    <el-drawer v-model="resetPasswordDialogVisible" :title="t('users.resetPassword')" :size="isMobile ? '100%' : '400px'" :mask-closable="false">
       <el-form :model="resetPasswordForm" label-position="top">
         <el-form-item :label="t('users.username')">
           <el-input :model-value="resetPasswordForm.username" disabled />
@@ -447,7 +450,7 @@ onMounted(() => loadData())
         <el-button @click="resetPasswordDialogVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleResetPassword">{{ t('common.confirm') }}</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 
