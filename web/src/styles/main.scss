@@ -1,4 +1,9 @@
-// 全局样式
+// =============================================================================
+// 全局样式与 macOS 设计令牌（2026-10-17 全站 mac 化）
+// 令牌集中在：字体栈、强调色（macOS 蓝）、页面底色（Apple 灰）、圆角阶梯、
+// 分层柔和阴影、毛玻璃变量。组件覆盖只引用令牌，页面 scoped 不再各自硬编码
+// =============================================================================
+@use 'sass:color';
 @use 'element-plus/theme-chalk/src/mixins/mixins' as *;
 
 * {
@@ -7,59 +12,111 @@
   box-sizing: border-box;
 }
 
+// macOS 强调色：亮色 #0071e3（Apple 官网蓝），暗色 #0a84ff（macOS dark accent）
+$mac-primary-light: #0071e3;
+$mac-primary-dark: #0a84ff;
+
+// 主色阶梯（Element Plus 的 light-N/dark-2 语义）：用 mix 派生，
+// hover 取 light-3、浅底取 light-9、按下取 dark-2
+@mixin mac-primary-scale($base) {
+  --el-color-primary: #{$base};
+  --el-color-primary-light-3: #{color.mix($base, #fff, 30%)};
+  --el-color-primary-light-5: #{color.mix($base, #fff, 50%)};
+  --el-color-primary-light-7: #{color.mix($base, #fff, 70%)};
+  --el-color-primary-light-8: #{color.mix($base, #fff, 80%)};
+  --el-color-primary-light-9: #{color.mix($base, #fff, 90%)};
+  --el-color-primary-dark-2: #{color.mix($base, #000, 20%)};
+}
+
+// 令牌挂在 :root 而非 html：Element Plus 的主题变量同样定义在 :root，
+// 用 html 会因特异性（0,0,1 低于 :root 的 0,1,0）整块被默认蓝覆盖
+:root {
+  @include mac-primary-scale($mac-primary-light);
+
+  // macOS 圆角阶梯：控件 8、浮层 12、卡片 12、大容器 16
+  --mac-radius-control: 8px;
+  --mac-radius-popover: 12px;
+  --mac-radius-card: 12px;
+
+  // 分层柔和阴影（macOS 风格：大扩散、低透明度、双层叠加）
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
+  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.06), 0 8px 28px rgba(0, 0, 0, 0.1);
+
+  // 毛玻璃（Vibrancy）：半透明底 + 饱和度提升 + 背景模糊
+  --mac-vibrancy-bg: rgba(246, 246, 248, 0.72);
+  --mac-vibrancy-blur: saturate(180%) blur(20px);
+  --mac-hairline: rgba(0, 0, 0, 0.08);
+}
+
+:root.dark {
+  @include mac-primary-scale($mac-primary-dark);
+
+  --el-bg-color-page: #1e1e1e;
+  --el-bg-color: #2a2a2c;
+  --el-bg-color-overlay: rgba(42, 42, 44, 0.72);
+  --el-fill-color-light: rgba(255, 255, 255, 0.06);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.04);
+  --el-border-color-lighter: rgba(255, 255, 255, 0.1);
+  --el-border-color-light: rgba(255, 255, 255, 0.12);
+  --el-border-color: rgba(255, 255, 255, 0.16);
+
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.28);
+  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.24), 0 8px 28px rgba(0, 0, 0, 0.36);
+
+  --mac-vibrancy-bg: rgba(38, 38, 40, 0.72);
+  --mac-hairline: rgba(255, 255, 255, 0.1);
+}
+
+// 亮色页面底：Apple 灰（macOS 窗口外画布观感）
+:root:not(.dark) {
+  --el-bg-color-page: #f5f5f7;
+}
+
 html,
 body {
   width: 100%;
   height: 100%;
-  font-family: 'Inter', 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+  // macOS 字体栈：SF Pro（Mac 原生）优先，Windows 回落 PingFang/雅黑
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display',
+    'Inter', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑',
+    Helvetica, Arial, sans-serif;
   font-size: 14px;
   color: var(--el-text-color-primary);
-  background-color: var(--el-bg-color);
+  background-color: var(--el-bg-color-page);
   transition: background-color 0.3s ease, color 0.3s ease;
+  // mac 风排版：数字与标题微收字距
+  -webkit-font-smoothing: antialiased;
 }
 
-// 暗色模式全局变量
-html.dark {
-  --el-bg-color-page: #0f172a;
-  --el-bg-color: #1e293b;
-  --el-bg-color-overlay: #1e293b;
-  --el-fill-color-light: rgba(255, 255, 255, 0.05);
-  --el-fill-color-lighter: rgba(255, 255, 255, 0.03);
-  --el-border-color-lighter: rgba(255, 255, 255, 0.08);
-  --el-border-color-light: rgba(255, 255, 255, 0.1);
-  --el-border-color: rgba(255, 255, 255, 0.12);
-  
-  // 卡片阴影
-  --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
-  --card-shadow-hover: 0 8px 32px rgba(0, 0, 0, 0.4);
-}
-
-// 亮色模式变量
-html:not(.dark) {
-  --el-bg-color-page: #f5f7fa;
-  --card-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  --card-shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.1);
-}
-
-// 滚动条样式
+// 滚动条：mac overlay 观感（更细、悬停才明显）
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--el-fill-color-light);
-  border-radius: 4px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--el-border-color);
+  background: rgba(0, 0, 0, 0.18);
   border-radius: 4px;
-  transition: background 0.2s ease;
+  border: 2px solid transparent;
+  background-clip: content-box;
 
   &:hover {
-    background: var(--el-border-color-darker);
+    background: rgba(0, 0, 0, 0.32);
+    background-clip: content-box;
+  }
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: content-box;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.36);
+    background-clip: content-box;
   }
 }
 
@@ -86,64 +143,92 @@ html:not(.dark) {
   white-space: nowrap;
 }
 
-// NProgress 自定义样式
+// NProgress：跟随 macOS 强调色
 #nprogress {
   .bar {
-    background: linear-gradient(90deg, #6366f1, #8b5cf6) !important;
+    background: var(--el-color-primary) !important;
     height: 3px !important;
   }
 
   .peg {
-    box-shadow: 0 0 10px #6366f1, 0 0 5px #8b5cf6 !important;
+    box-shadow: 0 0 10px var(--el-color-primary), 0 0 5px var(--el-color-primary) !important;
   }
 }
 
-// Element Plus 组件覆盖样式
+// =============================================================================
+// Element Plus 组件覆盖（全部引用上面的令牌）
+// =============================================================================
 .el-card {
-  border-radius: 16px;
-  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--mac-radius-card);
+  border: 1px solid var(--mac-hairline);
   box-shadow: var(--card-shadow);
-  transition: all 0.3s ease;
-  
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+
   &:hover {
     box-shadow: var(--card-shadow-hover);
   }
-  
+
   .el-card__header {
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--el-border-color-lighter);
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--mac-hairline);
     font-weight: 600;
+    font-size: 14px;
   }
-  
+
   .el-card__body {
     padding: 20px;
   }
 }
 
 .el-button {
-  border-radius: 8px;
+  border-radius: var(--mac-radius-control);
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+
+  // mac 聚焦环
+  &:focus-visible {
+    box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--el-color-primary) 28%, transparent);
+  }
 }
 
 .el-input {
-  --el-input-border-radius: 8px;
+  --el-input-border-radius: var(--mac-radius-control);
+
+  .el-input__wrapper {
+    transition: box-shadow 0.15s ease;
+
+    // mac 聚焦是蓝色光环而非加粗边框
+    &.is-focus {
+      box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--el-color-primary) 25%, transparent);
+    }
+  }
 }
 
 .el-select {
-  --el-select-border-radius: 8px;
+  --el-select-border-radius: var(--mac-radius-control);
 }
 
 .el-tag {
   border-radius: 6px;
 }
 
+// mac 表格：无竖线、行悬停浅底、表头小字浅灰
 .el-table {
-  --el-table-border-color: var(--el-border-color-lighter);
-  
+  --el-table-border-color: var(--mac-hairline);
+
   th.el-table__cell {
     background: var(--el-fill-color-lighter) !important;
     font-weight: 600;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .el-table__cell {
+    border-color: var(--mac-hairline);
+  }
+
+  tbody tr:hover > td.el-table__cell {
+    background: var(--el-fill-color-light);
   }
 }
 
@@ -151,30 +236,35 @@ html:not(.dark) {
 // 视觉语言平移过来：头部下边框、Footer 上边框；内缘（左侧）加圆角。
 // 内边距沿用 el-drawer 自身默认值（--el-drawer-padding-primary），不另设 24px
 .el-drawer {
-  border-radius: 16px 0 0 16px;
+  border-radius: var(--mac-radius-card) 0 0 var(--mac-radius-card);
 
   .el-drawer__header {
-    border-bottom: 1px solid var(--el-border-color-lighter);
+    border-bottom: 1px solid var(--mac-hairline);
     margin-bottom: 0;
     padding-bottom: var(--el-drawer-padding-primary);
   }
 
   .el-drawer__footer {
-    border-top: 1px solid var(--el-border-color-lighter);
+    border-top: 1px solid var(--mac-hairline);
     padding-top: var(--el-drawer-padding-primary);
   }
 }
 
 .el-message-box {
-  border-radius: 16px;
+  border-radius: var(--mac-radius-popover);
+  // mac 弹窗：毛玻璃盖板
+  background: var(--mac-vibrancy-bg);
+  backdrop-filter: var(--mac-vibrancy-blur);
+  -webkit-backdrop-filter: var(--mac-vibrancy-blur);
 }
 
 .el-dropdown-menu {
-  border-radius: 12px;
+  border-radius: var(--mac-radius-popover);
   padding: 6px;
-  
+  border: 1px solid var(--mac-hairline);
+
   .el-dropdown-menu__item {
-    border-radius: 8px;
+    border-radius: var(--mac-radius-control);
     padding: 8px 16px;
   }
 }
@@ -182,14 +272,15 @@ html:not(.dark) {
 // 页面标题通用样式
 .page-header {
   margin-bottom: 24px;
-  
+
   h1 {
     font-size: 24px;
     font-weight: 700;
     margin: 0 0 4px;
     color: var(--el-text-color-primary);
+    letter-spacing: -0.3px;
   }
-  
+
   p {
     margin: 0;
     color: var(--el-text-color-secondary);

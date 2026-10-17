@@ -360,7 +360,7 @@ const roleDisplay = computed(() => {
         <div class="settings-card about-card">
           <div class="about-content">
             <div class="about-logo">
-              <el-icon :size="48" color="#6366f1"><Setting /></el-icon>
+              <el-icon :size="48" color="var(--el-color-primary)"><Setting /></el-icon>
             </div>
             <div class="about-info">
               <h3>NAS System</h3>

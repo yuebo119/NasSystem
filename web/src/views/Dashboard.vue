@@ -1223,10 +1223,11 @@ onUnmounted(() => {
       border: 1px solid transparent;
       
       &:hover {
-        background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
-        border-color: rgba(99, 102, 241, 0.3);
-        transform: translateY(-4px);
-        box-shadow: 0 8px 24px rgba(99, 102, 241, 0.15);
+        // mac 风 hover：浅底 + 主色细边 + 令牌阴影，位移克制
+        background: var(--el-fill-color-light);
+        border-color: color-mix(in srgb, var(--el-color-primary) 30%, transparent);
+        transform: translateY(-2px);
+        box-shadow: var(--card-shadow-hover);
       }
       
       span {

@@ -381,7 +381,7 @@ onMounted(() => loadData())
 .overview-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; margin-bottom: 32px; }
 .overview-main { background: var(--el-bg-color); border-radius: 16px; padding: 24px; border: 1px solid var(--el-border-color-lighter);
   .main-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px;
-    .main-icon { width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(135deg, #6366f1, #8b5cf6); display: flex; align-items: center; justify-content: center; color: white; }
+    .main-icon { width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); display: flex; align-items: center; justify-content: center; color: white; }
     .main-title { flex: 1; h3 { margin: 0; font-size: 18px; font-weight: 600; } p { margin: 4px 0 0; font-size: 13px; color: var(--el-text-color-secondary); } }
     .main-percentage { font-size: 32px; font-weight: 700; }
   }
@@ -412,7 +412,7 @@ onMounted(() => loadData())
 .pools-list { display: flex; flex-direction: column; gap: 12px; }
 .pool-item { background: var(--el-bg-color); border-radius: 12px; padding: 20px 24px; border: 1px solid var(--el-border-color-lighter); display: flex; align-items: center; gap: 24px; transition: all 0.2s;
   &:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
-  &.is-default { border-color: var(--el-color-primary-light-5); background: linear-gradient(135deg, rgba(99,102,241,0.02), rgba(139,92,246,0.02)); }
+  &.is-default { border-color: var(--el-color-primary-light-5); background: color-mix(in srgb, var(--el-color-primary) 3%, transparent); }
   .pool-left { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0;
     .pool-icon { width: 52px; height: 52px; border-radius: 12px; background: linear-gradient(135deg, #fbbf24, #f59e0b); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
     .pool-info { min-width: 0;

@@ -131,13 +131,6 @@ onMounted(() => {
 
 <template>
   <div class="share-page">
-    <!-- 背景装饰 -->
-    <div class="bg-decoration">
-      <div class="circle circle-1"></div>
-      <div class="circle circle-2"></div>
-      <div class="circle circle-3"></div>
-    </div>
-
     <div class="share-wrapper">
       <!-- Logo -->
       <div class="brand">
@@ -358,9 +351,12 @@ onMounted(() => {
 </template>
 
 <style lang="scss" scoped>
+// 对外访客页同样纳入 mac 设计语言：Apple 灰画布 + 居中圆角卡片。
+// 原深色渐变与彩色光斑全部移除，仅保留极淡的径向提亮
 .share-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background: var(--el-bg-color-page);
+  background-image: radial-gradient(ellipse 80% 60% at 50% 30%, var(--el-fill-color-light), transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -369,41 +365,7 @@ onMounted(() => {
   overflow: hidden;
 }
 
-.bg-decoration {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  
-  .circle {
-    position: absolute;
-    border-radius: 50%;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
-    
-    &.circle-1 {
-      width: 600px;
-      height: 600px;
-      top: -200px;
-      right: -200px;
-    }
-    
-    &.circle-2 {
-      width: 400px;
-      height: 400px;
-      bottom: -100px;
-      left: -100px;
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(16, 185, 129, 0.1));
-    }
-    
-    &.circle-3 {
-      width: 200px;
-      height: 200px;
-      top: 50%;
-      left: 10%;
-      background: linear-gradient(135deg, rgba(244, 63, 94, 0.08), rgba(251, 146, 60, 0.08));
-    }
-  }
-}
+// 原背景装饰圆移除：mac 风不做彩色光斑，层次由阴影与毛玻璃承担
 
 .share-wrapper {
   width: 100%;
@@ -418,14 +380,14 @@ onMounted(() => {
   justify-content: center;
   gap: 10px;
   margin-bottom: 24px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--el-text-color-primary);
   font-size: 18px;
   font-weight: 500;
-  
+
   .brand-icon {
     width: 40px;
     height: 40px;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3));
     border-radius: 10px;
     display: flex;
     align-items: center;
@@ -435,9 +397,10 @@ onMounted(() => {
 }
 
 .share-card {
-  background: rgba(255, 255, 255, 0.98);
-  border-radius: 20px;
-  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4);
+  background: var(--el-bg-color);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  border: 1px solid var(--mac-hairline);
   overflow: hidden;
 }
 
@@ -758,7 +721,7 @@ onMounted(() => {
 .footer {
   text-align: center;
   margin-top: 20px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 

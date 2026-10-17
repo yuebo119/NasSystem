@@ -185,21 +185,17 @@ async function handleLogout() {
   overflow: hidden;
 }
 
-// 侧边栏
+// 侧边栏：macOS Vibrancy 毛玻璃（半透明底 + 饱和度提升 + 背景模糊），
+// 内容区滚动时侧边栏保持自身观感。亮暗两套底色由令牌切换
 .sidebar {
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  background: var(--mac-vibrancy-bg);
+  backdrop-filter: var(--mac-vibrancy-blur);
+  -webkit-backdrop-filter: var(--mac-vibrancy-blur);
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
-}
-
-// 暗色模式下的侧边栏
-.dark-mode .sidebar {
-  background: linear-gradient(180deg, #111827 0%, #030712 100%);
-  border-right-color: rgba(255, 255, 255, 0.04);
+  border-right: 1px solid var(--mac-hairline);
 }
 
 // Logo 区域
@@ -208,7 +204,7 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   padding: 0 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--mac-hairline);
 
   .logo-wrapper {
     display: flex;
@@ -221,21 +217,22 @@ async function handleLogout() {
     width: 40px;
     height: 40px;
     border-radius: 12px;
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    // mac 风图标底：强调色渐变（跟随亮暗主色）
+    background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3));
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
     flex-shrink: 0;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--el-color-primary) 32%, transparent);
   }
 
   .logo-text {
     font-size: 18px;
     font-weight: 700;
-    color: #fff;
+    color: var(--el-text-color-primary);
     white-space: nowrap;
-    letter-spacing: -0.5px;
+    letter-spacing: -0.3px;
   }
 }
 
@@ -251,7 +248,7 @@ async function handleLogout() {
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--el-border-color);
     border-radius: 2px;
   }
 }
@@ -261,12 +258,12 @@ async function handleLogout() {
   background: transparent;
 
   :deep(.el-menu-item) {
-    height: 44px;
-    line-height: 44px;
-    margin: 4px 0;
-    border-radius: 10px;
-    color: rgba(255, 255, 255, 0.65);
-    transition: all 0.2s ease;
+    height: 40px;
+    line-height: 40px;
+    margin: 2px 0;
+    border-radius: var(--mac-radius-control);
+    color: var(--el-text-color-regular);
+    transition: background 0.15s ease, color 0.15s ease;
 
     .menu-icon {
       font-size: 18px;
@@ -279,14 +276,15 @@ async function handleLogout() {
     }
 
     &:hover {
-      background: rgba(255, 255, 255, 0.08);
-      color: #fff;
+      background: var(--el-fill-color-light);
+      color: var(--el-text-color-primary);
     }
 
+    // mac 侧边栏选中态：强调色实底圆角块（不是渐变）
     &.is-active {
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      background: var(--el-color-primary);
       color: #fff;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+      box-shadow: 0 2px 8px color-mix(in srgb, var(--el-color-primary) 30%, transparent);
 
       .menu-icon {
         color: #fff;
@@ -310,7 +308,7 @@ async function handleLogout() {
 // 底部操作区
 .sidebar-footer {
   padding: 12px 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--mac-hairline);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -323,14 +321,14 @@ async function handleLogout() {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--mac-radius-control);
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.65);
-  transition: all 0.2s ease;
+  color: var(--el-text-color-regular);
+  transition: background 0.15s ease, color 0.15s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: #fff;
+    background: var(--el-fill-color-light);
+    color: var(--el-text-color-primary);
   }
 
   .toggle-text {
@@ -350,17 +348,17 @@ async function handleLogout() {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--mac-radius-control);
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.85);
-  transition: all 0.2s ease;
+  color: var(--el-text-color-primary);
+  transition: background 0.15s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--el-fill-color-light);
   }
 
   .user-avatar {
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3));
     flex-shrink: 0;
   }
 
@@ -373,7 +371,7 @@ async function handleLogout() {
     .username {
       font-size: 14px;
       font-weight: 600;
-      color: #fff;
+      color: var(--el-text-color-primary);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -381,7 +379,7 @@ async function handleLogout() {
 
     .user-role {
       font-size: 11px;
-      color: rgba(255, 255, 255, 0.5);
+      color: var(--el-text-color-secondary);
       margin-top: 1px;
     }
   }
@@ -393,11 +391,6 @@ async function handleLogout() {
   overflow: auto;
   padding: 24px;
   transition: background-color 0.3s ease;
-}
-
-// 暗色模式主内容区
-.dark-mode .main-content {
-  background: #0f172a;
 }
 
 // 文字淡入淡出动画

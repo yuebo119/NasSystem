@@ -58,10 +58,19 @@ async function handleLogin() {
 <template>
   <div class="login-container">
     <div class="login-card">
+      <!-- macOS 标志性交通灯：纯装饰，尺寸克制 -->
+      <div class="traffic-lights" aria-hidden="true">
+        <span class="light close"></span>
+        <span class="light minimize"></span>
+        <span class="light zoom"></span>
+      </div>
+
       <div class="login-header">
-        <el-icon size="48" color="var(--el-color-primary)">
-          <Box />
-        </el-icon>
+        <div class="login-logo">
+          <el-icon size="32" color="#fff">
+            <Box />
+          </el-icon>
+        </div>
         <h1>NAS System</h1>
         <p>{{ t('login.subtitle') }}</p>
       </div>
@@ -117,13 +126,17 @@ async function handleLogin() {
 </template>
 
 <style lang="scss" scoped>
+// macOS 登录窗：Apple 灰画布 + 居中圆角卡片 + 柔和分层阴影。
+// 装饰性的交通灯是 mac 风识别元素，尺寸与不透明度保持克制
 .login-container {
   width: 100%;
   height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--el-bg-color-page);
+  // 画面中心微弱提亮，模拟 mac 桌面光感，不抢内容
+  background-image: radial-gradient(ellipse 80% 60% at 50% 40%, var(--el-fill-color-light), transparent);
 }
 
 .login-card {
@@ -131,18 +144,59 @@ async function handleLogin() {
   padding: 40px;
   background: var(--el-bg-color);
   border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-  border: 1px solid var(--el-border-color-lighter);
+  box-shadow: var(--card-shadow);
+  border: 1px solid var(--mac-hairline);
+  position: relative;
+}
+
+.traffic-lights {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  gap: 8px;
+
+  .light {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    opacity: 0.9;
+  }
+
+  .close {
+    background: #ff5f57;
+  }
+
+  .minimize {
+    background: #febc2e;
+  }
+
+  .zoom {
+    background: #28c840;
+  }
 }
 
 .login-header {
   text-align: center;
   margin-bottom: 32px;
 
+  .login-logo {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 16px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--el-color-primary) 32%, transparent);
+  }
+
   h1 {
-    margin: 16px 0 8px;
-    font-size: 24px;
+    margin: 0 0 4px;
+    font-size: 22px;
     color: var(--el-text-color-primary);
+    letter-spacing: -0.3px;
   }
 
   p {
