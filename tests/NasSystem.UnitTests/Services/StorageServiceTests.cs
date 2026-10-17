@@ -90,6 +90,55 @@ public class StorageServiceTests
         result.Value.HasCapacityLimit.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task GetOverviewAsync_PoolAccounting_SumsQuotaPoolsOnly()
+    {
+        // 锁定池账目口径：已分配/剩余只累计设了上限的启用池，与物理磁盘剩余
+        // 严格分开（Dashboard 的存储池卡与物理磁盘卡分开展示的数据来源）
+        var pool1 = StoragePool.Create("Pool1", "/mnt/pool1", null, maxCapacityBytes: 1000);
+        var pool2 = StoragePool.Create("Pool2", "/mnt/pool2", null, maxCapacityBytes: 2000);
+
+        _poolRepositoryMock
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StoragePool> { pool1, pool2 });
+
+        _fileItemRepositoryMock
+            .Setup(x => x.CalculateStoragePoolUsedSpaceAsync(pool1.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(400L);
+        _fileItemRepositoryMock
+            .Setup(x => x.CalculateStoragePoolUsedSpaceAsync(pool2.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(600L);
+
+        var result = await _sut.GetOverviewAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PoolAllocatedBytes.Should().Be(3000L);
+        result.Value.PoolRemainingBytes.Should().Be(2000L);
+        result.Value.HasCapacityLimit.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_WhenNoPoolHasQuota_PoolAccountingIsZero()
+    {
+        // 无配额的池没有"分配"概念：已分配与剩余都为 0，展示层据此显示未设上限
+        var pool = StoragePool.Create("Pool1", "/mnt/pool1");
+
+        _poolRepositoryMock
+            .Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StoragePool> { pool });
+
+        _fileItemRepositoryMock
+            .Setup(x => x.CalculateStoragePoolUsedSpaceAsync(pool.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(500L);
+
+        var result = await _sut.GetOverviewAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PoolAllocatedBytes.Should().Be(0L);
+        result.Value.PoolRemainingBytes.Should().Be(0L);
+        result.Value.HasCapacityLimit.Should().BeFalse();
+    }
+
     #endregion
 
     #region GetPoolsAsync Tests

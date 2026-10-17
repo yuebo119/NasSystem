@@ -8,24 +8,31 @@ import http from '@/api/http'
 import { 
   Files, User, Box, Share,
   Monitor, Timer, Cpu, Connection, Refresh,
-  Picture, VideoPlay, Headset, Document, FolderOpened
+  Picture, VideoPlay, Headset, Document, FolderOpened, Warning
 } from '@element-plus/icons-vue'
 import { formatSize, getPoolStatusInfo } from '@/utils/format'
 
 const { t } = useI18n()
 const userStore = useUserStore()
 
-// 存储概览
+// 存储概览（池账目口径：已分配/剩余只累计设了上限的启用池，
+// 物理磁盘信息不在这里，见 loadDrives 的物理磁盘卡）
 const storageOverview = ref({
   folderSizeBytes: 0,
   usedBytes: 0,
   availableBytes: 0,
   usagePercentage: 0,
   hasCapacityLimit: false,
+  poolAllocatedBytes: 0,
+  poolRemainingBytes: 0,
   poolCount: 0,
   diskCount: 0,
   healthStatus: ''
 })
+
+// 物理磁盘列表（/system/drives 真实盘信息，与存储池是两个概念）
+const drives = ref<any[]>([])
+const drivesError = ref('')
 
 // 存储池列表
 const storagePools = ref<any[]>([])
@@ -108,6 +115,37 @@ const loadStoragePools = async () => {
   }
 }
 
+// 加载物理磁盘列表。与存储池概览分开：这里是 DriveInfo 的真实盘信息
+// （总容量/剩余/用量），池的"已分配/已用"是库内账目，两者不可互相推导。
+// 该端点要求管理员权限，非管理员拿到 403 时展示权限提示而不是静默空白
+const loadDrives = async () => {
+  drivesError.value = ''
+  try {
+    const response = await storageApi.getDrives() as any
+    if (response.success && response.data) {
+      drives.value = response.data
+    }
+  } catch (e: any) {
+    drives.value = []
+    drivesError.value = e?.response?.status === 403
+      ? t('dashboard.drivesNoPermission')
+      : t('dashboard.drivesLoadFailed')
+  }
+}
+
+// 磁盘用量比例（0-100）：已用 = 总容量 − 可用
+const driveUsedPercent = (drive: any): number => {
+  if (!drive.totalSize) return 0
+  return Math.round(((drive.totalSize - drive.availableSpace) / drive.totalSize) * 1000) / 10
+}
+
+// 磁盘进度条配色：与存储池同一组阈值口径
+const driveBarColor = (percent: number): string => {
+  if (percent >= 90) return '#ef4444'
+  if (percent >= 70) return '#f59e0b'
+  return '#10b981'
+}
+
 // 加载文件统计
 const loadFileStats = async () => {
   try {
@@ -151,6 +189,7 @@ const loadAllData = async () => {
     await Promise.all([
       loadStorageOverview(),
       loadStoragePools(),
+      loadDrives(),
       loadFileStats(),
       loadSystemStatus(),
       loadSystemInfo()
@@ -185,6 +224,8 @@ const startAutoRefresh = () => {
   const tick = () => {
     if (document.visibilityState === 'hidden') return
     loadStorageOverview()
+    loadStoragePools()
+    loadDrives()
     loadFileStats()
     loadSystemStatus()
     lastUpdateTime.value = new Date()
@@ -306,13 +347,13 @@ onUnmounted(() => {
       </el-col>
     </el-row>
 
-    <!-- 存储概览 -->
+    <!-- 存储池（账目口径：分配与使用，物理磁盘见下方独立卡片） -->
     <el-row :gutter="16">
       <el-col :xs="24" :md="12">
         <el-card class="storage-overview-card">
           <template #header>
             <div class="card-header">
-              <span><el-icon><Box /></el-icon> {{ t('storage.overview') }}</span>
+              <span><el-icon><Box /></el-icon> {{ t('storage.pools') }}</span>
               <el-tag v-if="storageOverview.hasCapacityLimit" :type="storageOverview.usagePercentage > 90 ? 'danger' : storageOverview.usagePercentage > 70 ? 'warning' : 'success'">
                 {{ t('storage.usagePercent') }} {{ storageOverview.usagePercentage.toFixed(1) }}%
               </el-tag>
@@ -345,9 +386,18 @@ onUnmounted(() => {
               <div class="detail-item">
                 <div class="detail-label">
                   <span class="dot" style="background: #409EFF"></span>
-                  {{ t('storage.totalCapacity') }}
+                  {{ t('storage.poolCount') }}
                 </div>
-                <div class="detail-value">{{ formatSize(storageOverview.folderSizeBytes) }}</div>
+                <div class="detail-value">{{ storageOverview.poolCount }}</div>
+              </div>
+              <div class="detail-item">
+                <div class="detail-label">
+                  <span class="dot" style="background: #E6A23C"></span>
+                  {{ t('dashboard.poolAllocated') }}
+                </div>
+                <div class="detail-value">
+                  {{ storageOverview.poolAllocatedBytes > 0 ? formatSize(storageOverview.poolAllocatedBytes) : t('dashboard.noQuotaSet') }}
+                </div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">
@@ -359,18 +409,11 @@ onUnmounted(() => {
               <div class="detail-item">
                 <div class="detail-label">
                   <span class="dot" style="background: #67C23A"></span>
-                  {{ t('storage.availableSpace') }}
+                  {{ t('dashboard.poolRemaining') }}
                 </div>
-                <div class="detail-value">{{ formatSize(storageOverview.availableBytes) }}</div>
-              </div>
-              <el-divider />
-              <div class="detail-item">
-                <div class="detail-label">{{ t('storage.poolCount') }}</div>
-                <div class="detail-value">{{ storageOverview.poolCount }} {{ t('dashboard.pools') }}</div>
-              </div>
-              <div class="detail-item">
-                <div class="detail-label">{{ t('dashboard.diskCount') }}</div>
-                <div class="detail-value">{{ storageOverview.diskCount }} {{ t('dashboard.disks') }}</div>
+                <div class="detail-value">
+                  {{ storageOverview.poolAllocatedBytes > 0 ? formatSize(storageOverview.poolRemainingBytes) : t('dashboard.noQuotaSet') }}
+                </div>
               </div>
             </div>
           </div>
@@ -472,6 +515,64 @@ onUnmounted(() => {
       </el-col>
     </el-row>
 
+    <!-- 物理磁盘：DriveInfo 真实盘信息，与上方存储池账目是两个概念，分开展示 -->
+    <el-card class="disks-card">
+      <template #header>
+        <div class="card-header">
+          <span><el-icon><Monitor /></el-icon> {{ t('dashboard.physicalDisks') }}</span>
+          <el-tag type="info">{{ drives.length }}</el-tag>
+        </div>
+      </template>
+
+      <div v-if="drivesError" class="disks-error">
+        <el-icon><Warning /></el-icon>
+        <span>{{ drivesError }}</span>
+      </div>
+      <div v-else-if="drives.length === 0 && !loading" class="disks-empty">
+        {{ t('dashboard.drivesEmpty') }}
+      </div>
+      <div v-else class="disks-list">
+        <div v-for="drive in drives" :key="drive.name" class="disk-item">
+          <div class="disk-icon">
+            <el-icon :size="24"><Monitor /></el-icon>
+          </div>
+          <div class="disk-info">
+            <div class="disk-name">
+              <span class="disk-letter">{{ drive.name }}</span>
+              <!-- 无卷标时后端 label 回落为驱动类型（如 Fixed），两者相同只显示一个 -->
+              <el-tag size="small" effect="plain">{{ drive.label }}</el-tag>
+              <el-tag v-if="drive.label !== drive.driveType" size="small" effect="plain" type="info">{{ drive.driveType }}</el-tag>
+            </div>
+            <div class="disk-bar">
+              <div class="bar-track">
+                <div
+                  class="bar-fill"
+                  :style="{ width: driveUsedPercent(drive) + '%', background: driveBarColor(driveUsedPercent(drive)) }"
+                ></div>
+              </div>
+              <span class="disk-percent" :style="{ color: driveBarColor(driveUsedPercent(drive)) }">
+                {{ driveUsedPercent(drive) }}%
+              </span>
+            </div>
+          </div>
+          <div class="disk-figures">
+            <div class="figure">
+              <span class="figure-label">{{ t('dashboard.driveTotal') }}</span>
+              <span class="figure-value">{{ formatSize(drive.totalSize) }}</span>
+            </div>
+            <div class="figure">
+              <span class="figure-label">{{ t('dashboard.driveUsed') }}</span>
+              <span class="figure-value">{{ formatSize(drive.totalSize - drive.availableSpace) }}</span>
+            </div>
+            <div class="figure">
+              <span class="figure-label">{{ t('dashboard.driveFree') }}</span>
+              <span class="figure-value success">{{ formatSize(drive.availableSpace) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 存储池列表 -->
     <el-card class="pools-card">
       <template #header>
@@ -503,7 +604,9 @@ onUnmounted(() => {
           <template #default="{ row }">
             <div class="capacity-cell">
               <div class="capacity-text">
-                {{ formatSize(row.usedBytes) }} / {{ formatSize(row.folderSizeBytes) }}
+                {{ formatSize(row.usedBytes) }}
+                <span v-if="row.maxCapacityBytes"> / {{ formatSize(row.maxCapacityBytes) }}</span>
+                <span v-else class="no-quota">{{ t('dashboard.noQuotaSet') }}</span>
               </div>
               <el-progress
                 v-if="row.maxCapacityBytes"
@@ -754,6 +857,128 @@ onUnmounted(() => {
   }
 }
 
+// 物理磁盘卡：与存储池卡分开的第二个概念，盘符 + 真实容量/用量
+.disks-card {
+  margin-bottom: 16px;
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .disks-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+
+  .disks-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+
+  .disks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+
+    .disk-item {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+
+      .disk-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #64748b, #94a3b8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        flex-shrink: 0;
+      }
+
+      .disk-info {
+        flex: 1;
+        min-width: 0;
+
+        .disk-name {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 8px;
+
+          .disk-letter {
+            font-size: 15px;
+            font-weight: 600;
+          }
+        }
+
+        .disk-bar {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+
+          .bar-track {
+            flex: 1;
+            height: 8px;
+            background: var(--el-fill-color);
+            border-radius: 4px;
+            overflow: hidden;
+
+            .bar-fill {
+              height: 100%;
+              border-radius: 3px;
+              transition: width 0.3s;
+            }
+          }
+
+          .disk-percent {
+            font-size: 13px;
+            font-weight: 600;
+            min-width: 44px;
+            text-align: right;
+          }
+        }
+      }
+
+      .disk-figures {
+        display: flex;
+        gap: 24px;
+        flex-shrink: 0;
+
+        .figure {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          min-width: 88px;
+
+          .figure-label {
+            font-size: 12px;
+            color: var(--el-text-color-secondary);
+          }
+
+          .figure-value {
+            font-size: 14px;
+            font-weight: 600;
+
+            &.success {
+              color: #10b981;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 .file-stats-card {
   margin-bottom: 16px;
   
@@ -762,7 +987,6 @@ onUnmounted(() => {
     justify-content: space-between;
     align-items: center;
   }
-  
   .file-stats-main {
     .file-stats-summary {
       display: flex;
@@ -925,6 +1149,10 @@ onUnmounted(() => {
     .capacity-text {
       font-size: 12px;
       margin-bottom: 4px;
+
+      .no-quota {
+        color: var(--el-text-color-secondary);
+      }
     }
   }
 }

@@ -68,8 +68,6 @@ export default {
     poolStatus: 'Storage Pool Status',
     viewAll: 'View All',
     capacity: 'Capacity',
-    pools: '',
-    disks: '',
     diskCount: 'Total Disks',
     cores: 'cores',
     days: 'd',
@@ -77,7 +75,19 @@ export default {
     critical: 'Critical',
     rebuilding: 'Rebuilding',
     offline: 'Offline',
-    unknown: 'Unknown'
+    unknown: 'Unknown',
+    // Storage pool accounting (a separate concept from physical disks)
+    poolAllocated: 'Allocated',
+    poolRemaining: 'Remaining Quota',
+    noQuotaSet: 'No quota set',
+    // Physical disks (real DriveInfo information)
+    physicalDisks: 'Physical Disks',
+    driveTotal: 'Total',
+    driveUsed: 'Used',
+    driveFree: 'Free',
+    drivesEmpty: 'No disk information',
+    drivesNoPermission: 'Admin permission required to view physical disks',
+    drivesLoadFailed: 'Failed to load disk information'
   },
 
   // File type words only (legacy files section replaced by filesView; these are still used by Dashboard/Shares)

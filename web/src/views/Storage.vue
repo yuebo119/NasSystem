@@ -223,7 +223,7 @@ onMounted(() => loadData())
     </div>
 
     <div class="pools-section">
-      <div class="section-header"><h2>{{ t('storage.pools') }}</h2><span class="count">{{ pools.length }} {{ t('dashboard.pools') }}</span></div>
+      <div class="section-header"><h2>{{ t('storage.pools') }}</h2><span class="count">{{ pools.length }}</span></div>
       
       <div class="pools-list" v-loading="loading">
         <div v-for="pool in pools" :key="pool.id" class="pool-item" :class="{ 'is-default': pool.isDefault }">

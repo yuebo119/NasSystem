@@ -68,8 +68,6 @@ export default {
     poolStatus: '存储池状态',
     viewAll: '查看全部',
     capacity: '容量',
-    pools: '个',
-    disks: '块',
     diskCount: '磁盘总数',
     cores: '核',
     days: '天',
@@ -77,7 +75,19 @@ export default {
     critical: '危险',
     rebuilding: '重建中',
     offline: '离线',
-    unknown: '未知'
+    unknown: '未知',
+    // 存储池账目（与物理磁盘分开的两个概念）
+    poolAllocated: '已分配容量',
+    poolRemaining: '剩余配额',
+    noQuotaSet: '未设上限',
+    // 物理磁盘（DriveInfo 真实盘信息）
+    physicalDisks: '物理磁盘',
+    driveTotal: '总容量',
+    driveUsed: '已用',
+    driveFree: '可用',
+    drivesEmpty: '暂无磁盘信息',
+    drivesNoPermission: '需要管理员权限查看物理磁盘信息',
+    drivesLoadFailed: '磁盘信息加载失败'
   },
 
   // 文件类型（旧文件管理页区段已由 filesView 取代，仅保留 Dashboard/Shares 仍在用的类型词）

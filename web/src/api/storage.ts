@@ -32,6 +32,8 @@ export interface StorageOverview {
   availableBytes: number
   usagePercentage: number
   hasCapacityLimit: boolean
+  poolAllocatedBytes: number
+  poolRemainingBytes: number
   poolCount: number
   diskCount: number
   healthStatus: string

@@ -71,6 +71,13 @@ public sealed class StorageService(
             ? (double)enabled.Sum(p => p.UsedBytes) / enabled.Sum(p => p.MaxCapacityBytes!.Value) * 100
             : 0;
 
+        // 池账目口径：只累计设了上限的启用池，未设上限的池不进"已分配"。
+        // 与物理磁盘容量严格分开，后者由 /system/drives 单独提供
+        var quotaPools = enabled.Where(p => p.MaxCapacityBytes > 0).ToList();
+        long poolAllocatedBytes = quotaPools.Sum(p => p.MaxCapacityBytes!.Value);
+        long poolRemainingBytes = quotaPools.Sum(p =>
+            Math.Max(0, p.MaxCapacityBytes!.Value - p.UsedBytes));
+
         return Result<StorageOverviewDto>.Success(new StorageOverviewDto
         {
             FolderSizeBytes = folderSizeBytes,
@@ -78,6 +85,8 @@ public sealed class StorageService(
             AvailableBytes = availableBytes,
             UsagePercentage = Math.Round(usagePercentage, 2),
             HasCapacityLimit = hasCapacityLimit,
+            PoolAllocatedBytes = poolAllocatedBytes,
+            PoolRemainingBytes = poolRemainingBytes,
             FolderSizeDisplay = FormatSize(folderSizeBytes),
             UsedDisplay = FormatSize(usedBytes),
             AvailableDisplay = FormatSize(availableBytes),

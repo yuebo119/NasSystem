@@ -60,6 +60,17 @@ public sealed record StorageOverviewDto
     /// 是否全部启用池都设置了容量上限。只有为 true 时使用率才有意义
     /// </summary>
     public required bool HasCapacityLimit { get; init; }
+    /// <summary>
+    /// 存储池已分配容量之和：只累计设置了容量上限的启用池。
+    /// 池的"分配"是用户给文件夹划的账目上限，与物理磁盘容量是两个概念，
+    /// 前端 Dashboard 的存储池卡与物理磁盘卡据此分开展示
+    /// </summary>
+    public required long PoolAllocatedBytes { get; init; }
+    /// <summary>
+    /// 存储池剩余配额之和：各设置了上限的启用池的 上限 − 已用（不为负）累计。
+    /// 与 <see cref="PoolAllocatedBytes"/> 同口径，同样不掺物理磁盘剩余
+    /// </summary>
+    public required long PoolRemainingBytes { get; init; }
     public string? FolderSizeDisplay { get; init; }
     public string? UsedDisplay { get; init; }
     public string? AvailableDisplay { get; init; }
