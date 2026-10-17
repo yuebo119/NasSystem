@@ -9,7 +9,11 @@
          但链路里还有 DomainEventDispatcher 的反射派发与 Serilog 配置面待处理，
          未做全链路验证前不自声称兼容（ITM-N8 的教训） -->
     <PublishAot>false</PublishAot>
-    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- InvariantGlobalization：后端无文化相关格式化（字节格式化不变量、
+    时间一律显式格式或 O 往返格式、中文展示全在前端），开 invariant 省掉
+    ICU 数据的加载与内存（容器镜像里约几十 MB 常驻）。2026-10-17 切换后
+    全套测试（单元 156 + 集成 99）通过 -->
+    <InvariantGlobalization>true</InvariantGlobalization>
     
     <!-- 启用 HTTP/2 和压缩 -->
     <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
