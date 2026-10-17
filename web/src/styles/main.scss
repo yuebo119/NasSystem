@@ -158,7 +158,11 @@ html.dark ::-webkit-scrollbar-thumb {
 // =============================================================================
 // Element Plus 组件覆盖（全部引用上面的令牌）
 // =============================================================================
-.el-card {
+// 特异性说明：EP 自己的 .el-card 规则与这里特异性相同（0,1,0），但其样式由
+// resolver 在运行时后注入，同特异性下后来者胜——曾导致 12px 卡片圆角从未
+// 生效（实测一直是 EP 的 4px）。用双类名把特异性提到 (0,2,0) 与注入顺序
+// 解耦，比 !important 干净，行为确定
+.el-card.el-card {
   border-radius: var(--mac-radius-card);
   border: 1px solid var(--mac-hairline);
   box-shadow: var(--card-shadow);
@@ -177,6 +181,35 @@ html.dark ::-webkit-scrollbar-thumb {
 
   .el-card__body {
     padding: 20px;
+  }
+}
+
+// 图标徽章阶梯（全站统一的图标容器语言）：大号给统计卡，中号给卡片内嵌图标。
+// 尺寸与圆角按 1/4 比例配对，颜色由使用方给（语义色/文件类型色），
+// 容器本身只负责形状，避免各页各自写宽高和圆角导致漂移
+.icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+
+  &--lg {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+  }
+
+  &--md {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+  }
+
+  &--sm {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
   }
 }
 

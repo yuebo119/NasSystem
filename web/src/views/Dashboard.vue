@@ -446,7 +446,7 @@ onUnmounted(() => {
       <el-col :xs="12" :sm="12" :md="12" :lg="6">
         <el-card shadow="hover" class="stat-card status-card">
           <div class="stat-content">
-            <div class="stat-icon" style="background: linear-gradient(135deg, #67C23A, #85ce61)">
+            <div class="stat-icon icon-badge icon-badge--lg tone-status">
               <el-icon :size="28"><Monitor /></el-icon>
             </div>
             <div class="stat-info">
@@ -459,7 +459,7 @@ onUnmounted(() => {
       <el-col :xs="12" :sm="12" :md="12" :lg="6">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-content">
-            <div class="stat-icon" style="background: linear-gradient(135deg, #409EFF, #66b1ff)">
+            <div class="stat-icon icon-badge icon-badge--lg tone-uptime">
               <el-icon :size="28"><Timer /></el-icon>
             </div>
             <div class="stat-info">
@@ -472,7 +472,7 @@ onUnmounted(() => {
       <el-col :xs="12" :sm="12" :md="12" :lg="6">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-content">
-            <div class="stat-icon" style="background: linear-gradient(135deg, #E6A23C, #ebb563)">
+            <div class="stat-icon icon-badge icon-badge--lg tone-memory">
               <el-icon :size="28"><Cpu /></el-icon>
             </div>
             <div class="stat-info">
@@ -485,7 +485,7 @@ onUnmounted(() => {
       <el-col :xs="12" :sm="12" :md="12" :lg="6">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-content">
-            <div class="stat-icon" style="background: linear-gradient(135deg, #909399, #a6a9ad)">
+            <div class="stat-icon icon-badge icon-badge--lg tone-threads">
               <el-icon :size="28"><Connection /></el-icon>
             </div>
             <div class="stat-info">
@@ -522,9 +522,9 @@ onUnmounted(() => {
                 :width="160"
                 :stroke-width="12"
                 :color="[
-                  { color: '#67C23A', percentage: 60 },
-                  { color: '#E6A23C', percentage: 80 },
-                  { color: '#F56C6C', percentage: 100 }
+                  { color: '#10b981', percentage: 60 },
+                  { color: '#f59e0b', percentage: 80 },
+                  { color: '#ef4444', percentage: 100 }
                 ]"
               >
                 <template #default="{ percentage }">
@@ -539,14 +539,14 @@ onUnmounted(() => {
             <div class="storage-details">
               <div class="detail-item">
                 <div class="detail-label">
-                  <span class="dot" style="background: #409EFF"></span>
+                  <span class="dot" style="background: #3b82f6"></span>
                   {{ t('storage.poolCount') }}
                 </div>
                 <div class="detail-value">{{ storageOverview.poolCount }}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">
-                  <span class="dot" style="background: #E6A23C"></span>
+                  <span class="dot" style="background: #f59e0b"></span>
                   {{ t('dashboard.poolAllocated') }}
                 </div>
                 <div class="detail-value">
@@ -555,14 +555,14 @@ onUnmounted(() => {
               </div>
               <div class="detail-item">
                 <div class="detail-label">
-                  <span class="dot" style="background: #F56C6C"></span>
+                  <span class="dot" style="background: #ef4444"></span>
                   {{ t('storage.usedSpace') }}
                 </div>
                 <div class="detail-value">{{ formatSize(storageOverview.usedBytes) }}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">
-                  <span class="dot" style="background: #67C23A"></span>
+                  <span class="dot" style="background: #10b981"></span>
                   {{ t('dashboard.poolRemaining') }}
                 </div>
                 <div class="detail-value">
@@ -600,7 +600,7 @@ onUnmounted(() => {
             <!-- 多盘自适应网格：每盘一张紧凑磁贴，盘数多时自动分栏，窄屏退化为单列 -->
             <div v-for="drive in drives" :key="drive.name" class="disk-item">
               <div class="disk-head">
-                <div class="disk-icon">
+                <div class="disk-icon icon-badge icon-badge--md">
                   <el-icon :size="20"><Monitor /></el-icon>
                 </div>
                 <span class="disk-letter">{{ drive.name }}</span>
@@ -655,21 +655,21 @@ onUnmounted(() => {
           <div class="file-stats-main">
             <div class="file-stats-summary">
               <div class="summary-item">
-                <el-icon :size="24" color="#409EFF"><FolderOpened /></el-icon>
+                <el-icon :size="24" color="#3b82f6"><FolderOpened /></el-icon>
                 <div class="summary-info">
                   <span class="count">{{ fileStats.totalFolders }}</span>
                   <span class="label">{{ t('files.folder') }}</span>
                 </div>
               </div>
               <div class="summary-item">
-                <el-icon :size="24" color="#67C23A"><Document /></el-icon>
+                <el-icon :size="24" color="#10b981"><Document /></el-icon>
                 <div class="summary-info">
                   <span class="count">{{ fileStats.totalFiles }}</span>
                   <span class="label">{{ t('files.file') }}</span>
                 </div>
               </div>
               <div class="summary-item">
-                <el-icon :size="24" color="#E6A23C"><Timer /></el-icon>
+                <el-icon :size="24" color="#f59e0b"><Timer /></el-icon>
                 <div class="summary-info">
                   <span class="count">{{ fileStats.recentFilesCount }}</span>
                   <span class="label">{{ t('dashboard.recentAdded') }}</span>
@@ -681,7 +681,7 @@ onUnmounted(() => {
             
             <div class="file-type-stats">
               <div class="type-item">
-                <div class="type-icon" style="background: #67C23A">
+                <div class="type-icon" style="background: #10b981">
                   <el-icon><Picture /></el-icon>
                 </div>
                 <div class="type-info">
@@ -690,7 +690,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="type-item">
-                <div class="type-icon" style="background: #409EFF">
+                <div class="type-icon" style="background: #3b82f6">
                   <el-icon><VideoPlay /></el-icon>
                 </div>
                 <div class="type-info">
@@ -699,7 +699,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="type-item">
-                <div class="type-icon" style="background: #E6A23C">
+                <div class="type-icon" style="background: #f59e0b">
                   <el-icon><Headset /></el-icon>
                 </div>
                 <div class="type-info">
@@ -708,7 +708,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="type-item">
-                <div class="type-icon" style="background: #909399">
+                <div class="type-icon" style="background: #64748b">
                   <el-icon><Document /></el-icon>
                 </div>
                 <div class="type-info">
@@ -792,7 +792,7 @@ onUnmounted(() => {
           </template>
           <div class="recent-list" v-loading="loading">
             <div v-for="item in recentFiles" :key="item.id" class="recent-item" @click="$router.push('/files')">
-              <div class="file-icon" :style="{ background: getFileIconColor(item) + '20', color: getFileIconColor(item) }">
+              <div class="file-icon icon-badge icon-badge--md" :style="{ background: `linear-gradient(135deg, ${getFileIconColor(item)}, color-mix(in srgb, ${getFileIconColor(item)} 62%, #fff))` }">
                 <el-icon :size="18"><component :is="getFileIcon(item)" /></el-icon>
               </div>
               <div class="recent-info">
@@ -875,14 +875,14 @@ onUnmounted(() => {
                 :percentage="row.usagePercentage"
                 :stroke-width="6"
                 :show-text="false"
-                :color="row.usagePercentage > 90 ? '#F56C6C' : row.usagePercentage > 70 ? '#E6A23C' : '#67C23A'"
+                :color="row.usagePercentage > 90 ? '#ef4444' : row.usagePercentage > 70 ? '#f59e0b' : '#10b981'"
               />
             </div>
           </template>
         </el-table-column>
         <el-table-column prop="usagePercentage" :label="t('storage.usagePercent')" :width="isMobile ? 70 : 100">
           <template #default="{ row }">
-            <span v-if="row.maxCapacityBytes" :style="{ color: row.usagePercentage > 90 ? '#F56C6C' : row.usagePercentage > 70 ? '#E6A23C' : '#67C23A' }">
+            <span v-if="row.maxCapacityBytes" :style="{ color: row.usagePercentage > 90 ? '#ef4444' : row.usagePercentage > 70 ? '#f59e0b' : '#10b981' }">
               {{ row.usagePercentage.toFixed(1) }}%
             </span>
             <span v-else>-</span>
@@ -904,63 +904,63 @@ onUnmounted(() => {
       </template>
       <div class="quick-actions">
         <router-link to="/files" class="action-item">
-          <div class="action-icon files"><el-icon :size="22"><Files /></el-icon></div>
+          <div class="action-icon icon-badge icon-badge--md files"><el-icon :size="22"><Files /></el-icon></div>
           <div class="action-text">
             <span class="action-name">{{ t('nav.files') }}</span>
             <span class="action-desc">{{ t('dashboard.actionFilesDesc') }}</span>
           </div>
         </router-link>
         <router-link to="/files?upload=1" class="action-item">
-          <div class="action-icon upload"><el-icon :size="22"><Upload /></el-icon></div>
+          <div class="action-icon icon-badge icon-badge--md upload"><el-icon :size="22"><Upload /></el-icon></div>
           <div class="action-text">
             <span class="action-name">{{ t('dashboard.actionUpload') }}</span>
             <span class="action-desc">{{ t('dashboard.actionUploadDesc') }}</span>
           </div>
         </router-link>
         <router-link to="/files?newFolder=1" class="action-item">
-          <div class="action-icon folder"><el-icon :size="22"><FolderAdd /></el-icon></div>
+          <div class="action-icon icon-badge icon-badge--md folder"><el-icon :size="22"><FolderAdd /></el-icon></div>
           <div class="action-text">
             <span class="action-name">{{ t('dashboard.actionNewFolder') }}</span>
             <span class="action-desc">{{ t('dashboard.actionNewFolderDesc') }}</span>
           </div>
         </router-link>
         <router-link to="/shares" class="action-item">
-          <div class="action-icon share"><el-icon :size="22"><Share /></el-icon></div>
+          <div class="action-icon icon-badge icon-badge--md share"><el-icon :size="22"><Share /></el-icon></div>
           <div class="action-text">
             <span class="action-name">{{ t('nav.shares') }}</span>
             <span class="action-desc">{{ t('dashboard.actionSharesDesc') }}</span>
           </div>
         </router-link>
         <router-link to="/storage" class="action-item">
-          <div class="action-icon storage"><el-icon :size="22"><Box /></el-icon></div>
+          <div class="action-icon icon-badge icon-badge--md storage"><el-icon :size="22"><Box /></el-icon></div>
           <div class="action-text">
             <span class="action-name">{{ t('nav.storage') }}</span>
             <span class="action-desc">{{ t('dashboard.actionStorageDesc') }}</span>
           </div>
         </router-link>
         <router-link to="/users" class="action-item" v-if="userStore.isAdmin">
-          <div class="action-icon users"><el-icon :size="22"><User /></el-icon></div>
+          <div class="action-icon icon-badge icon-badge--md users"><el-icon :size="22"><User /></el-icon></div>
           <div class="action-text">
             <span class="action-name">{{ t('nav.users') }}</span>
             <span class="action-desc">{{ t('dashboard.actionUsersDesc') }}</span>
           </div>
         </router-link>
         <div class="action-item clickable" @click="handleRefreshCapacity">
-          <div class="action-icon refresh"><el-icon :size="22" :class="{ spinning: refreshingCapacity }"><Refresh /></el-icon></div>
+          <div class="action-icon icon-badge icon-badge--md refresh"><el-icon :size="22" :class="{ spinning: refreshingCapacity }"><Refresh /></el-icon></div>
           <div class="action-text">
             <span class="action-name">{{ t('dashboard.actionRefreshCapacity') }}</span>
             <span class="action-desc">{{ t('dashboard.actionRefreshCapacityDesc') }}</span>
           </div>
         </div>
         <div class="action-item clickable" @click="handleScanSync">
-          <div class="action-icon scan"><el-icon :size="22" :class="{ spinning: scanning }"><Search /></el-icon></div>
+          <div class="action-icon icon-badge icon-badge--md scan"><el-icon :size="22" :class="{ spinning: scanning }"><Search /></el-icon></div>
           <div class="action-text">
             <span class="action-name">{{ t('dashboard.actionScanSync') }}</span>
             <span class="action-desc">{{ t('dashboard.actionScanSyncDesc') }}</span>
           </div>
         </div>
         <router-link to="/files?recycle=1" class="action-item">
-          <div class="action-icon recycle"><el-icon :size="22"><Delete /></el-icon></div>
+          <div class="action-icon icon-badge icon-badge--md recycle"><el-icon :size="22"><Delete /></el-icon></div>
           <div class="action-text">
             <span class="action-name">{{ t('dashboard.actionRecycle') }}</span>
             <span class="action-desc">{{ t('dashboard.actionRecycleDesc') }}</span>
@@ -1116,15 +1116,14 @@ onUnmounted(() => {
     gap: 16px;
   }
   
+  // 统计卡图标：尺寸与圆角走全局 .icon-badge--lg 阶梯（main.scss），
+  // 这里只定语义色。纯色替代原渐变 + 旧 Element Plus 色板
+  //（#67C23A/#3b82f6/#E6A23C/#64748b），与快捷操作等处的现代色系统一
   .stat-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    &.tone-status { background: linear-gradient(135deg, #10b981, #34d399); }
+    &.tone-uptime { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
+    &.tone-memory { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+    &.tone-threads { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
   }
   
   .stat-info {
@@ -1148,21 +1147,16 @@ onUnmounted(() => {
     }
   }
 
-  // 768~1199px：两列布局，图标与字号收一档，保证运行时间这类长值不截断
+  // 768~1199px：两列布局，间距与字号收一档，保证运行时间这类长值不截断。
+  // 图标尺寸不动——徽章阶梯（48px）在这个宽度下放得下
   @media (max-width: 1199px) {
     .stat-content { gap: 12px; }
-
-    .stat-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-    }
 
     .stat-info .stat-value { font-size: 20px; }
   }
 
   // <768px：改上下布局（图标在上、文字在下通栏），窄卡也能容纳
-  // "1天 03:20:37" 这类长值；图标再缩一档
+  // "1天 03:20:37" 这类长值；内边距收一档
   @media (max-width: 767px) {
     :deep(.el-card__body) { padding: 16px; }
 
@@ -1170,13 +1164,6 @@ onUnmounted(() => {
       flex-direction: column;
       align-items: flex-start;
       gap: 10px;
-    }
-
-    .stat-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
     }
 
     .stat-info .stat-value { font-size: 18px; }
@@ -1337,16 +1324,9 @@ onUnmounted(() => {
         gap: 8px;
         min-width: 0;
 
+        // 尺寸与圆角走全局 .icon-badge--md 阶梯；纯色替代原灰渐变
         .disk-icon {
-          width: 36px;
-          height: 36px;
-          border-radius: 9px;
           background: linear-gradient(135deg, #64748b, #94a3b8);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          flex-shrink: 0;
         }
 
         .disk-letter {
@@ -1517,15 +1497,15 @@ onUnmounted(() => {
       gap: 8px;
       
       &.healthy {
-        color: #67C23A;
+        color: #10b981;
       }
       
       &.warning {
-        color: #E6A23C;
+        color: #f59e0b;
       }
       
       &.critical {
-        color: #F56C6C;
+        color: #ef4444;
       }
       
       .health-info {
@@ -1612,25 +1592,17 @@ onUnmounted(() => {
         box-shadow: var(--card-shadow-hover);
       }
 
+      // 尺寸与圆角走全局 .icon-badge--md 阶梯，这里只定语义色
       .action-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #fff;
-        flex-shrink: 0;
-
-        &.files { background: #3b82f6; }
-        &.upload { background: #10b981; }
-        &.folder { background: #f59e0b; }
-        &.share { background: #8b5cf6; }
-        &.storage { background: #64748b; }
-        &.users { background: #ef4444; }
-        &.refresh { background: #0ea5e9; }
-        &.scan { background: #14b8a6; }
-        &.recycle { background: #94a3b8; }
+        &.files { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
+        &.upload { background: linear-gradient(135deg, #10b981, #34d399); }
+        &.folder { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+        &.share { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+        &.storage { background: linear-gradient(135deg, #64748b, #94a3b8); }
+        &.users { background: linear-gradient(135deg, #ef4444, #f87171); }
+        &.refresh { background: linear-gradient(135deg, #0ea5e9, #38bdf8); }
+        &.scan { background: linear-gradient(135deg, #14b8a6, #2dd4bf); }
+        &.recycle { background: linear-gradient(135deg, #94a3b8, #cbd5e1); }
 
         .spinning {
           animation: spin 1s linear infinite;
@@ -1816,13 +1788,9 @@ onUnmounted(() => {
         background: var(--el-fill-color-light);
       }
 
+      // 尺寸与圆角走全局 .icon-badge--md 阶梯；底色由模板按文件类型内联给
+      //（getFileIconColor），白色 glyph 由徽章类统一提供
       .file-icon {
-        width: 34px;
-        height: 34px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         flex-shrink: 0;
       }
 

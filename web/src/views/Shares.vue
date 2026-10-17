@@ -381,7 +381,7 @@ onMounted(() => loadData())
         <el-table-column :label="t('filesView.colName')" min-width="240">
           <template #default="{ row }">
             <div class="cell-file">
-              <div class="file-icon" :style="{ background: getFileIconStyle(asShare(row)).bg }">
+              <div class="file-icon" :style="{ background: `linear-gradient(135deg, ${getFileIconStyle(asShare(row)).bg}, color-mix(in srgb, ${getFileIconStyle(asShare(row)).bg} 62%, #fff))` }">
                 <el-icon :size="18" :color="getFileIconStyle(asShare(row)).color"><component :is="getFileIcon(asShare(row))" /></el-icon>
               </div>
               <div class="file-info">
@@ -439,7 +439,7 @@ onMounted(() => loadData())
     <div v-else class="grid-view" v-loading="loading">
       <div v-for="share in sortedShares" :key="share.id" class="share-card mac-card" :class="{ disabled: !share.isEnabled }">
         <div class="card-top">
-          <div class="file-icon" :style="{ background: getFileIconStyle(share).bg }">
+          <div class="file-icon" :style="{ background: `linear-gradient(135deg, ${getFileIconStyle(share).bg}, color-mix(in srgb, ${getFileIconStyle(share).bg} 62%, #fff))` }">
             <el-icon :size="22" :color="getFileIconStyle(share).color"><component :is="getFileIcon(share)" /></el-icon>
           </div>
           <div class="file-info">
@@ -559,12 +559,12 @@ onMounted(() => loadData())
 // 统计卡与 mac 卡片同基底：不共用 class 是因为 @extend 在 scoped 下会产出
 // 带 data-v 的组合选择器，行为不稳定；属性重复一遍更直白
 .stat-card { background: var(--el-bg-color); border: 1px solid var(--mac-hairline); border-radius: var(--mac-radius-card); box-shadow: var(--card-shadow); padding: 16px 20px; display: flex; align-items: center; gap: 14px;
-  .stat-icon { width: 44px; height: 44px; border-radius: 11px; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;
+  .stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;
     // 总数卡跟随全站主色（原 indigo chrome 色），其余为语义色
     &.total { background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
-    &.active { background: #10b981; }
-    &.expired { background: #ef4444; }
-    &.downloads { background: #3b82f6; }
+    &.active { background: linear-gradient(135deg, #10b981, #34d399); }
+    &.expired { background: linear-gradient(135deg, #ef4444, #f87171); }
+    &.downloads { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
   }
   .stat-info { .stat-value { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; } .stat-label { font-size: 13px; color: var(--el-text-color-secondary); } }
 }
