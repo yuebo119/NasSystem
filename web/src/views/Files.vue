@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, watch, computed, nextTick, onMounted, onUnmounted, h } from 'vue'
 import { subscribeDirectory } from '@/utils/signalr'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -7,11 +7,12 @@ import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api/file'
 import { fileShareApi, ShareAccessType, PermissionLevel, type FileShareDto, type CreateFileShareRequest } from '@/api/fileShare'
 import { storageApi } from '@/api/storage'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElCheckbox } from 'element-plus'
+import { ElTableV2, ElAutoResizer, TableV2SortOrder, TableV2FixedDir, type Column, type ColumnSortParams, type RowEventHandlers, type TableV2Instance } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import { 
   Refresh, Upload, Delete, Download, 
-  CopyDocument, Rank, MoreFilled, FolderAdd, Search,
+  CopyDocument, Rank, FolderAdd, Search,
   Grid, List, View, Hide, DeleteFilled, Back,
   Document, Folder, HomeFilled, Share, Link
 } from '@element-plus/icons-vue'
@@ -79,8 +80,9 @@ const shareLoading = ref(false)
 const expiresOption = ref('never') // never, 1d, 7d, 30d, custom
 const maxDownloadsOption = ref('unlimited') // unlimited, 1, 10, 100, custom
 
-// 表格引用
-const fileTableRef = ref<any>(null)
+// 表格引用。类型取 TableV2Instance：scrollToRow 等方法只在这个接口上，
+// InstanceType<typeof ElTableV2> 是组件公开实例类型，不含它们
+const fileTableRef = ref<TableV2Instance | null>(null)
 
 // 监听路由变化加载目录
 watch(
@@ -112,49 +114,21 @@ watch(
 // 聚焦特定文件的方法
 async function focusFileItem(itemId: string) {
   await nextTick()
-  await nextTick() // 等待 DOM 更新
-  
-  // 等待一小段时间确保表格渲染完成
-  await new Promise(resolve => setTimeout(resolve, 150))
-  
-  const item = fileStore.sortedFiles.find(f => f.id === itemId)
-  if (item) {
-    // 清除之前的选择
-    fileStore.clearSelection()
-    fileStore.selectItem(item)
-    
-    // 使用 el-table 的方法选中行
-    if (fileTableRef.value) {
-      // 先清除所有选择
-      fileTableRef.value.clearSelection()
-      // 选中目标行
-      fileTableRef.value.toggleRowSelection(item, true)
-      fileTableRef.value.setCurrentRow(item)
-      
-      // 滚动到该行
-      const index = fileStore.sortedFiles.findIndex(f => f.id === item.id)
-      if (index >= 0) {
-        await nextTick()
-        // 尝试多种方式滚动到目标行
-        const tableEl = fileTableRef.value.$el
-        if (tableEl) {
-          // 方法1: 使用 scrollIntoView
-          const rows = tableEl.querySelectorAll('.el-table__body-wrapper tbody tr')
-          if (rows[index]) {
-            rows[index].scrollIntoView({ behavior: 'smooth', block: 'center' })
-          } else {
-            // 方法2: 手动计算滚动位置
-            const tableBody = tableEl.querySelector('.el-table__body-wrapper')
-            if (tableBody) {
-              const rowHeight = 48
-              const targetScroll = index * rowHeight - tableBody.clientHeight / 2 + rowHeight / 2
-              tableBody.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' })
-            }
-          }
-        }
-      }
-    }
+
+  const index = fileStore.sortedFiles.findIndex(f => f.id === itemId)
+  if (index < 0) {
+    fileStore.setFocusItem(null)
+    return
   }
+
+  const item = fileStore.sortedFiles[index]
+  fileStore.clearSelection()
+  fileStore.selectItem(item)
+
+  // el-table-v2 提供按行号滚动，不用再手工算 scrollTop（原实现里那套
+  // querySelectorAll + 手动计算只对 el-table 有效，换表后整段失效）
+  fileTableRef.value?.scrollToRow(index, 'center')
+
   fileStore.setFocusItem(null)
 }
 
@@ -686,60 +660,212 @@ function toggleShowHidden() {
 // 选中项 id 集合：表格/网格每行选中判定从 O(行数×选中数) 降为 O(1)
 const selectedIds = computed(() => new Set(fileStore.selectedItems.map(i => i.id)))
 
-// 获取行样式类名
-function getRowClassName({ row }: { row: FileItem }): string {
-  return selectedIds.value.has(row.id) ? 'selected-row' : ''
+// ─── el-table-v2 列配置 ───
+// 虚拟滚动只渲染视口内的行，3000 项的目录也只建 20 行左右 DOM。
+// 原实现用 slice + renderLimit 做渐进渲染，但 slice 每次返回新数组引用，
+// el-table 的 data watch 是引用比较，于是每次追加都触发全量表体重建：
+// 实测追加 200 行耗时 1888ms → 2765ms → 4119ms，超线性，主线程被 long task 占满。
+const ROW_HEIGHT = 44
+
+// 表格容器尺寸。el-table-v2 的 width/height 是必填数字，用 el-auto-resizer 观测。
+// height 初值 0 时先不挂表，避免首帧拿到 0 高度算出 0 行
+const tableSize = ref({ width: 0, height: 0 })
+
+// 行高亮类名：选中行加背景。el-table-v2 的 row-class 收行数据返回类名
+function rowClass({ rowData }: { rowData: FileItem }): string {
+  return selectedIds.value.has(rowData.id) ? 'selected-row' : ''
 }
 
-// 处理行点击
-function handleRowClick(row: FileItem, column: any, event: Event) {
-  // 如果点击的是操作列，不处理
-  if (column?.property === 'actions') return
-  // 按住 Ctrl 多选
-  const isCtrl = (event as MouseEvent).ctrlKey || (event as MouseEvent).metaKey
-  fileStore.selectItem(row, isCtrl)
+// KeyType 是 string|number|symbol 联合，作索引前先归一成字符串
+const sortFieldByColumn: Record<string, 'name' | 'size' | 'createdAt' | 'type'> = {
+  name: 'name',
+  sizeBytes: 'size',
+  extension: 'type',
+  updatedAt: 'createdAt'
 }
 
-// 处理行双击
-function handleRowDblClick(row: FileItem) {
-  navigateToFolder(row)
-}
+// CheckboxValueType 是 string|number|boolean 的联合，官方 modelValue 就是这个类型，
+// 判真不能直接 === true（number 1 也是真值）
+type CheckboxValue = string | number | boolean
+const isChecked = (val: CheckboxValue) => val === true || val === 'true' || val === 1
 
-// 处理表格选择变化
-function handleSelectionChange(selection: FileItem[]) {
-  fileStore.selectedItems = selection
-}
-
-// 处理表格排序变化（element-plus 2.14 收紧 sort-change 载荷类型：prop 可为 null）
-function handleSortChange({ prop, order }: { prop: string | null; order: string | null }) {
-  if (!order || !prop) {
-    // 取消排序，恢复默认按名称排序
-    fileStore.setSort('name')
-    return
+const columns = computed<Column<FileItem>[]>(() => {
+  const selectionColumn: Column<FileItem> = {
+    key: 'selection',
+    width: 50,
+    // 表头是全选/全不选，单元格是行选中
+    headerCellRenderer: () => h(ElCheckbox, {
+      modelValue: isAllSelected.value,
+      indeterminate: isPartiallySelected.value,
+      'onUpdate:modelValue': (val: CheckboxValue) => toggleSelectAll(isChecked(val)),
+      size: 'small'
+    }),
+    cellRenderer: ({ rowData }) => h(ElCheckbox, {
+      modelValue: selectedIds.value.has(rowData.id),
+      'onUpdate:modelValue': (val: CheckboxValue) => fileStore.selectItem(rowData, isChecked(val)),
+      size: 'small'
+    })
   }
-  
-  // 映射列属性到排序字段
-  const sortFieldMap: Record<string, 'name' | 'size' | 'createdAt' | 'type'> = {
-    name: 'name',
-    sizeBytes: 'size',
-    extension: 'type',
-    createdAt: 'createdAt'
+
+  const nameColumn: Column<FileItem> = {
+    key: 'name',
+    title: t('filesView.colName'),
+    dataKey: 'name',
+    width: 300,
+    minWidth: 300,
+    flexGrow: 1,
+    sortable: true,
+    cellRenderer: ({ rowData }) => h('div', { class: 'file-name' }, [
+      h('span', { style: { color: getFileIconColor(rowData), display: 'inline-flex' } },
+        h(getFileIcon(rowData))),
+      h('span', rowData.name),
+      rowData.isHidden ? h('span', { class: 'hidden-tag' }, t('filesView.hiddenTag')) : null
+    ])
   }
-  
-  const sortField = sortFieldMap[prop] || 'name'
-  const isDesc = order === 'descending'
-  
-  // 如果当前排序字段相同，只切换方向
-  if (fileStore.sortBy === sortField) {
-    if (fileStore.sortDesc !== isDesc) {
-      fileStore.setSort(sortField) // 这会切换方向
-    }
+
+  // cellRenderer 的返回类型是 VNode 而非 string，纯文本单元格要包一层 h()
+  const sizeColumn: Column<FileItem> = {
+    key: 'sizeBytes',
+    title: t('filesView.colSize'),
+    dataKey: 'sizeBytes',
+    width: 120,
+    sortable: true,
+    cellRenderer: ({ rowData }) => h('span', rowData.isFolder ? '-' : formatSize(rowData.sizeBytes))
+  }
+
+  const typeColumn: Column<FileItem> = {
+    key: 'extension',
+    title: t('filesView.colType'),
+    dataKey: 'extension',
+    width: 100,
+    sortable: true,
+    cellRenderer: ({ rowData }) => h('span', rowData.isFolder ? t('filesView.typeFolder') : (rowData.extension || '-'))
+  }
+
+  const modifiedColumn: Column<FileItem> = {
+    key: 'updatedAt',
+    title: t('filesView.colModified'),
+    dataKey: 'updatedAt',
+    width: 180,
+    sortable: true,
+    cellRenderer: ({ rowData }) => h('span', formatDate(rowData.updatedAt || rowData.createdAt))
+  }
+
+  const actionsColumn: Column<FileItem> = {
+    key: 'actions',
+    title: t('filesView.colActions'),
+    width: 120,
+    fixed: TableV2FixedDir.RIGHT,
+    // 只渲染一个按钮，不在这里建 ElDropdown：cellRenderer 为每个可见行各建一个
+    // dropdown，而 el-popper 会挂到 body 且 unmount 时不清理，实测点一次操作按钮
+    // 就在 DOM 里留下 13 个残留菜单，越滚越多。改为受控单实例，见模板里的 rowActionsDropdown
+    cellRenderer: ({ rowData }) => h('button', {
+      class: 'row-action-btn',
+      onClick: (e: MouseEvent) => openRowActions(e, rowData)
+    }, '···')
+  }
+
+  return [selectionColumn, nameColumn, sizeColumn, typeColumn, modifiedColumn, actionsColumn]
+})
+
+// ─── 行操作菜单（受控单实例）───
+// el-table-v2 没有"行内下拉"的插槽，而每行各建一个 ElDropdown 会泄漏 popper 到 body
+// （实测点一次操作按钮就留下 13 个残留菜单，关闭后不销毁，越滚越多）。
+// el-dropdown 的 virtual-triggering 模式在本项目里 ref 绑不上、handleOpen 调不动，
+// 故改用最直接的原生定位菜单：一个 div，位置取自行按钮的 getBoundingClientRect，
+// 全局只有一个实例，不存在泄漏面。
+const rowActionsTarget = ref<FileItem | null>(null)
+const rowActionsPos = ref<{ top: number; left: number } | null>(null)
+
+function openRowActions(event: MouseEvent, item: FileItem) {
+  const el = event.currentTarget as HTMLElement
+  const rect = el.getBoundingClientRect()
+  rowActionsTarget.value = item
+  // 菜单出现在按钮下方，右对齐按钮
+  rowActionsPos.value = { top: rect.bottom + 6, left: Math.max(8, rect.right - 140) }
+}
+
+function closeRowActions() {
+  rowActionsPos.value = null
+  rowActionsTarget.value = null
+}
+
+function runRowAction(command: string) {
+  const target = rowActionsTarget.value
+  closeRowActions()
+  if (target) handleCommand(command, target)
+}
+
+// 点击菜单外侧或按 Esc 关闭。监听挂在 document 上，关闭时移除
+watch(rowActionsPos, (pos) => {
+  if (!pos) return
+  const onDocClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null
+    if (target?.closest('.row-actions-menu') || target?.closest('.row-action-btn')) return
+    closeRowActions()
+  }
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRowActions() }
+  // 延后挂载：否则本次点击本身会被当成"外侧点击"立刻关掉
+  const timer = setTimeout(() => {
+    document.addEventListener('click', onDocClick)
+    document.addEventListener('keydown', onKey)
+  }, 0)
+  return () => {
+    clearTimeout(timer)
+    document.removeEventListener('click', onDocClick)
+    document.removeEventListener('keydown', onKey)
+  }
+})
+
+// 全选/部分选：作用于当前已加载的全部条目（虚拟滚动下"全部"就是 store 里的全部）
+const isAllSelected = computed(() =>
+  fileStore.sortedFiles.length > 0 && selectedIds.value.size === fileStore.sortedFiles.length)
+const isPartiallySelected = computed(() =>
+  selectedIds.value.size > 0 && selectedIds.value.size < fileStore.sortedFiles.length)
+
+function toggleSelectAll(checked: boolean) {
+  if (checked) {
+    fileStore.selectedItems = [...fileStore.sortedFiles]
   } else {
-    // 设置新的排序字段
-    fileStore.sortBy = sortField
-    fileStore.sortDesc = isDesc
+    fileStore.clearSelection()
   }
 }
+
+// 表格排序：受控，交给 store 的 setSort（内部会切换同字段的方向）
+const tableSortBy = computed(() => ({
+  key: fileStore.sortBy === 'size' ? 'sizeBytes'
+    : fileStore.sortBy === 'type' ? 'extension'
+    : fileStore.sortBy === 'createdAt' ? 'updatedAt'
+    : 'name',
+  order: fileStore.sortDesc ? TableV2SortOrder.DESC : TableV2SortOrder.ASC
+}))
+
+function handleColumnSort({ key, order }: ColumnSortParams<FileItem>) {
+  const field = sortFieldByColumn[String(key)] ?? 'name'
+  if (fileStore.sortBy === field) {
+    // 同字段：store 的 setSort 会切换方向，仅在方向确实不同时调用
+    const currentDesc = fileStore.sortDesc
+    const wantDesc = order === TableV2SortOrder.DESC
+    if (currentDesc !== wantDesc) fileStore.setSort(field)
+  } else {
+    fileStore.sortBy = field
+    fileStore.sortDesc = order === TableV2SortOrder.DESC
+  }
+}
+
+// 行事件：table-v2 的行事件是统一入口，没有"操作列不响应点击"的列概念，
+// 因此改为在单元格渲染侧不挂事件、只在行级判断点击来源
+const rowEventHandlers = computed<RowEventHandlers>(() => ({
+  onClick: ({ rowData, event }) => {
+    const target = (event as MouseEvent).target as HTMLElement | null
+    // 操作列与复选框内的点击不触发行选中
+    if (target?.closest('.row-action-btn') || target?.closest('.el-checkbox')) return
+    const isCtrl = (event as MouseEvent).ctrlKey || (event as MouseEvent).metaKey
+    fileStore.selectItem(rowData as FileItem, isCtrl)
+  },
+  onDblclick: ({ rowData }) => navigateToFolder(rowData as FileItem),
+  onContextmenu: ({ rowData }) => fileStore.selectItem(rowData as FileItem)
+}))
 
 // 预览资源 objectURL 缓存（ITM-N19/G19：token 走 Header，blob 经 createObjectURL 提供给媒体标签）
 const previewUrls = ref<Record<string, string>>({})
@@ -889,39 +1015,15 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
   fileStore.selectItem(item)
 }
 
-// ═══ 大目录渐进渲染（ITM-N5 前端专项：万级目录首屏只渲染 RENDER_BATCH 条，
-// 滚动到底部自动追加——保持 el-table/网格现有交互不变的低侵入方案）═══
-const RENDER_BATCH = 200
-const renderLimit = ref(RENDER_BATCH)
-const visibleFiles = computed(() => fileStore.sortedFiles.slice(0, renderLimit.value))
-const hasMoreToRender = computed(() => fileStore.sortedFiles.length > renderLimit.value)
+// ═══ 大目录渲染 ═══
+// 原实现的渐进渲染（slice + renderLimit + 滚动追加）已整体移除：
+// slice 每次返回新数组引用，el-table 的 data watch 是引用比较，
+// 于是每次追加都触发全量表体重建，实测追加 200 行耗时
+// 1888ms → 2765ms → 4119ms（超线性），主线程被 long task 占满。
+// 改用 el-table-v2 虚拟滚动后，无论目录多大都只渲染视口内的行，
+// 不再需要分批逻辑。
 
-function loadMoreOnScroll(event: Event) {
-  const el = event.target as HTMLElement
-  if (!hasMoreToRender.value) return
-  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
-    renderLimit.value += RENDER_BATCH
-  }
-}
-
-// el-table 的 scroll 载荷是 { scrollLeft, scrollTop }（element-plus 2.14 收紧类型后
-// 不再是 DOM Event）；滚动高度/视口高度取自表格内部滚动包裹元素
-function handleTableScroll({ scrollTop }: { scrollLeft: number; scrollTop: number }) {
-  if (!hasMoreToRender.value) return
-  const wrap = (fileTableRef.value?.$el as HTMLElement | undefined)
-    ?.querySelector<HTMLElement>('.el-table__body-wrapper .el-scrollbar__wrap')
-  const scrollHeight = wrap?.scrollHeight ?? 0
-  const clientHeight = wrap?.clientHeight ?? 0
-  if (scrollTop + clientHeight >= scrollHeight - 120) {
-    renderLimit.value += RENDER_BATCH
-  }
-}
-
-watch(() => fileStore.currentPath, () => {
-  renderLimit.value = RENDER_BATCH
-})
-
-// ═══ 实时刷新（ITM-N5 收尾// ═══ 实时刷新（ITM-N5 收尾：SignalR 目录订阅，多标签页/多用户变更自动同步）═══
+// ═══ 实时刷新（SignalR 目录订阅，多标签页/多用户变更自动同步）═══
 let unsubscribe: (() => void) | null = null
 
 async function resubscribe(path: string) {
@@ -1061,94 +1163,31 @@ onUnmounted(() => void unsubscribe?.())
       </el-breadcrumb-item>
     </el-breadcrumb>
 
-    <!-- 列表视图 -->
-    <el-table
-      v-if="fileStore.viewMode === 'list'"
-      v-loading="fileStore.isLoading"
-      :data="visibleFiles"
-      height="calc(100vh - 260px)"
-      @scroll="handleTableScroll"
-      style="width: 100%"
-      row-key="id"
-      @row-click="handleRowClick"
-      @row-dblclick="handleRowDblClick"
-      @selection-change="handleSelectionChange"
-      @sort-change="handleSortChange"
-      :row-class-name="getRowClassName"
-      :default-sort="{ prop: fileStore.sortBy === 'type' ? 'extension' : (fileStore.sortBy === 'size' ? 'sizeBytes' : fileStore.sortBy), order: fileStore.sortDesc ? 'descending' : 'ascending' }"
-      ref="fileTableRef"
-    >
-      <el-table-column type="selection" width="50" />
-      
-      <el-table-column prop="name" :label="$t('filesView.colName')" min-width="300" sortable="custom">
-        <template #default="{ row }">
-          <div class="file-name">
-            <el-icon :size="20" :color="getFileIconColor(row as FileItem)">
-              <component :is="getFileIcon(row as FileItem)" />
-            </el-icon>
-            <span>{{ row.name }}</span>
-            <el-tag v-if="row.isHidden" size="small" type="info">{{ $t('filesView.hiddenTag') }}</el-tag>
-          </div>
+    <!-- 列表视图：el-table-v2 虚拟滚动，只渲染视口内的行 -->
+    <div v-if="fileStore.viewMode === 'list'" v-loading="fileStore.isLoading" class="table-v2-wrap">
+      <el-auto-resizer @resize="({ height, width }) => { tableSize = { height, width } }">
+        <template #default="{ height, width }">
+          <el-table-v2
+            :columns="columns"
+            :data="fileStore.sortedFiles"
+            :width="width"
+            :height="height"
+            :row-height="ROW_HEIGHT"
+            :sort-by="tableSortBy"
+            :row-class="rowClass"
+            :row-event-handlers="rowEventHandlers"
+            row-key="id"
+            ref="fileTableRef"
+            @column-sort="handleColumnSort"
+          />
         </template>
-      </el-table-column>
-      
-      <el-table-column prop="sizeBytes" :label="$t('filesView.colSize')" width="120" sortable="custom">
-        <template #default="{ row }">
-          {{ row.isFolder ? '-' : formatSize(row.sizeBytes) }}
-        </template>
-      </el-table-column>
-      
-      <el-table-column prop="extension" :label="$t('filesView.colType')" width="100" sortable="custom">
-        <template #default="{ row }">
-          {{ row.isFolder ? $t('filesView.typeFolder') : (row.extension || '-') }}
-        </template>
-      </el-table-column>
-      
-      <el-table-column prop="createdAt" :label="$t('filesView.colModified')" width="180" sortable="custom">
-        <template #default="{ row }">
-          {{ formatDate(row.updatedAt || row.createdAt) }}
-        </template>
-      </el-table-column>
-      
-      <el-table-column :label="$t('filesView.colActions')" width="120" fixed="right" property="actions">
-        <template #default="{ row }">
-          <el-dropdown trigger="click" @command="(cmd: string) => handleCommand(cmd, row as FileItem)">
-            <el-button :icon="MoreFilled" circle size="small" />
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item v-if="!(row as FileItem).isFolder" command="download">
-                  {{ $t('filesView.downloadTip') }}
-                </el-dropdown-item>
-                <el-dropdown-item v-if="canPreview(row as FileItem)" command="preview">
-                  {{ $t('filesView.actPreview') }}
-                </el-dropdown-item>
-                <el-dropdown-item command="share">
-                  {{ $t('filesView.shareTip') }}
-                </el-dropdown-item>
-                <el-dropdown-item command="rename">
-                  {{ $t('filesView.actRename') }}
-                </el-dropdown-item>
-                <el-dropdown-item command="copy">
-                  {{ $t('filesView.copyTip') }}
-                </el-dropdown-item>
-                <el-dropdown-item command="cut">
-                  {{ $t('filesView.cutTip') }}
-                </el-dropdown-item>
-                <el-dropdown-item divided command="delete">
-                  <el-icon color="var(--el-color-danger)"><Delete /></el-icon>
-                  <span style="color: var(--el-color-danger)">{{ $t('filesView.delete') }}</span>
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </template>
-      </el-table-column>
-    </el-table>
+      </el-auto-resizer>
+    </div>
 
     <!-- 网格视图 -->
-    <div v-else class="grid-view" v-loading="fileStore.isLoading" @scroll="loadMoreOnScroll">
+    <div v-else class="grid-view" v-loading="fileStore.isLoading">
       <div
-        v-for="item in visibleFiles"
+        v-for="item in fileStore.sortedFiles"
         :key="item.id"
         class="grid-item"
         :class="{ selected: selectedIds.has(item.id) }"
@@ -1488,6 +1527,27 @@ onUnmounted(() => void unsubscribe?.())
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 行操作菜单：全局单实例，虚拟滚动下不会为每行各建一个 ElDropdown
+         （那样会把 el-popper 泄漏到 body 且 unmount 不清理）。
+         位置由行按钮的 getBoundingClientRect 算出，点击外侧或 Esc 关闭 -->
+    <div
+      v-if="rowActionsPos && rowActionsTarget"
+      class="row-actions-menu"
+      :style="{ top: rowActionsPos.top + 'px', left: rowActionsPos.left + 'px' }"
+    >
+      <button v-if="!rowActionsTarget.isFolder" class="row-actions-item" @click="runRowAction('download')">
+        {{ $t('filesView.downloadTip') }}
+      </button>
+      <button v-if="canPreview(rowActionsTarget)" class="row-actions-item" @click="runRowAction('preview')">
+        {{ $t('filesView.actPreview') }}
+      </button>
+      <button class="row-actions-item" @click="runRowAction('share')">{{ $t('filesView.shareTip') }}</button>
+      <button class="row-actions-item" @click="runRowAction('rename')">{{ $t('filesView.actRename') }}</button>
+      <button class="row-actions-item" @click="runRowAction('copy')">{{ $t('filesView.copyTip') }}</button>
+      <button class="row-actions-item" @click="runRowAction('cut')">{{ $t('filesView.cutTip') }}</button>
+      <button class="row-actions-item danger" @click="runRowAction('delete')">{{ $t('filesView.delete') }}</button>
+    </div>
   </div>
 </template>
 
@@ -1543,10 +1603,88 @@ onUnmounted(() => void unsubscribe?.())
   display: flex;
   align-items: center;
   gap: 8px;
+
+  .hidden-tag {
+    font-size: 11px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--el-fill-color);
+    color: var(--el-text-color-secondary);
+  }
 }
 
-:deep(.selected-row) {
+// el-table-v2 的容器必须有确定高度，auto-resizer 才能测出可用空间
+.table-v2-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+// el-table-v2 渲染在组件内部，scoped 样式要用 :deep 才能穿透
+:deep(.el-table-v2__row.selected-row) {
   background-color: var(--el-color-primary-light-9) !important;
+}
+
+:deep(.el-table-v2__header-cell) {
+  background: var(--el-fill-color-lighter);
+}
+
+// 行操作按钮：el-table-v2 的 cellRenderer 里渲染的按钮，需要明确的尺寸与可点区域
+.row-action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+
+  &:hover {
+    background: var(--el-fill-color);
+    color: var(--el-color-primary);
+  }
+}
+
+// 行操作菜单：position fixed 跟随视口，避开 el-table-v2 内部的 overflow 裁剪
+.row-actions-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 140px;
+  padding: 4px 0;
+  background: var(--el-bg-color-overlay);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  box-shadow: var(--el-box-shadow-light);
+
+  .row-actions-item {
+    display: block;
+    width: 100%;
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: var(--el-text-color-regular);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover {
+      background: var(--el-color-primary-light-9);
+      color: var(--el-color-primary);
+    }
+
+    &.danger {
+      color: var(--el-color-danger);
+
+      &:hover {
+        background: var(--el-color-danger-light-9);
+        color: var(--el-color-danger);
+      }
+    }
+  }
 }
 
 :deep(.el-table) {

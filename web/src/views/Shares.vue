@@ -46,51 +46,85 @@ const getAccessTypeInfo = (type: ShareAccessType) => {
   return map[type] || { icon: Share, color: '#6b7280', bg: '#f3f4f6' }
 }
 
+// 扩展名 → 渐变配色。原实现是 11 个分支的数组 includes 顺序判断，每渲染一行就要
+// 把整条链走一遍（平均 6 次数组查找）。改成查表后一次哈希命中。
+// 表在模块级构建一次，渲染期零分配。
+const ICON_STYLE_FALLBACK = { bg: 'linear-gradient(135deg, #6b7280, #9ca3ad)', color: '#fff' }
+
+const ICON_STYLES_BY_EXT: Record<string, { bg: string; color: string }> = {
+  '.pdf': { bg: 'linear-gradient(135deg, #ef4444, #f87171)', color: '#fff' },
+  '.doc': { bg: 'linear-gradient(135deg, #3b82f6, #60a5fa)', color: '#fff' },
+  '.docx': { bg: 'linear-gradient(135deg, #3b82f6, #60a5fa)', color: '#fff' },
+  '.xls': { bg: 'linear-gradient(135deg, #10b981, #34d399)', color: '#fff' },
+  '.xlsx': { bg: 'linear-gradient(135deg, #10b981, #34d399)', color: '#fff' },
+  '.csv': { bg: 'linear-gradient(135deg, #10b981, #34d399)', color: '#fff' },
+  '.ppt': { bg: 'linear-gradient(135deg, #f97316, #fb923c)', color: '#fff' },
+  '.pptx': { bg: 'linear-gradient(135deg, #f97316, #fb923f)', color: '#fff' },
+  '.txt': { bg: 'linear-gradient(135deg, #6b7280, #9ca3af)', color: '#fff' },
+  '.md': { bg: 'linear-gradient(135deg, #6b7280, #9ca3af)', color: '#fff' },
+  '.rtf': { bg: 'linear-gradient(135deg, #6b7280, #9ca3af)', color: '#fff' },
+  '.jpg': { bg: 'linear-gradient(135deg, #14b8a6, #2dd4bf)', color: '#fff' },
+  '.jpeg': { bg: 'linear-gradient(135deg, #14b8a6, #2dd4bf)', color: '#fff' },
+  '.png': { bg: 'linear-gradient(135deg, #14b8a6, #2dd4bf)', color: '#fff' },
+  '.gif': { bg: 'linear-gradient(135deg, #14b8a6, #2dd4bf)', color: '#fff' },
+  '.webp': { bg: 'linear-gradient(135deg, #14b8a6, #2dd4bf)', color: '#fff' },
+  '.bmp': { bg: 'linear-gradient(135deg, #14b8a6, #2dd4bf)', color: '#fff' },
+  '.svg': { bg: 'linear-gradient(135deg, #14b8a6, #2dd4bf)', color: '#fff' },
+  '.ico': { bg: 'linear-gradient(135deg, #14b8a6, #2dd4bf)', color: '#fff' },
+  '.mp4': { bg: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', color: '#fff' },
+  '.avi': { bg: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', color: '#fff' },
+  '.mkv': { bg: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', color: '#fff' },
+  '.mov': { bg: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', color: '#fff' },
+  '.wmv': { bg: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', color: '#fff' },
+  '.flv': { bg: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', color: '#fff' },
+  '.webm': { bg: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', color: '#fff' },
+  '.m4v': { bg: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', color: '#fff' },
+  '.mp3': { bg: 'linear-gradient(135deg, #ec4899, #f472b6)', color: '#fff' },
+  '.wav': { bg: 'linear-gradient(135deg, #ec4899, #f472b6)', color: '#fff' },
+  '.flac': { bg: 'linear-gradient(135deg, #ec4899, #f472b6)', color: '#fff' },
+  '.aac': { bg: 'linear-gradient(135deg, #ec4899, #f472b6)', color: '#fff' },
+  '.ogg': { bg: 'linear-gradient(135deg, #ec4899, #f472b6)', color: '#fff' },
+  '.wma': { bg: 'linear-gradient(135deg, #ec4899, #f472b6)', color: '#fff' },
+  '.m4a': { bg: 'linear-gradient(135deg, #ec4899, #f472b6)', color: '#fff' },
+  '.zip': { bg: 'linear-gradient(135deg, #a16207, #ca8a04)', color: '#fff' },
+  '.rar': { bg: 'linear-gradient(135deg, #a16207, #ca8a04)', color: '#fff' },
+  '.7z': { bg: 'linear-gradient(135deg, #a16207, #ca8a04)', color: '#fff' },
+  '.tar': { bg: 'linear-gradient(135deg, #a16207, #ca8a04)', color: '#fff' },
+  '.gz': { bg: 'linear-gradient(135deg, #a16207, #ca8a04)', color: '#fff' },
+  '.bz2': { bg: 'linear-gradient(135deg, #a16207, #ca8a04)', color: '#fff' },
+  '.js': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.ts': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.jsx': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.tsx': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.vue': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.py': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.java': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.c': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.cpp': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.h': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.cs': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.go': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.rs': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.php': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.rb': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.swift': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.kt': { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' },
+  '.json': { bg: 'linear-gradient(135deg, #475569, #64748b)', color: '#fff' },
+  '.xml': { bg: 'linear-gradient(135deg, #475569, #64748b)', color: '#fff' },
+  '.yaml': { bg: 'linear-gradient(135deg, #475569, #64748b)', color: '#fff' },
+  '.yml': { bg: 'linear-gradient(135deg, #475569, #64748b)', color: '#fff' },
+  '.ini': { bg: 'linear-gradient(135deg, #475569, #64748b)', color: '#fff' },
+  '.conf': { bg: 'linear-gradient(135deg, #475569, #64748b)', color: '#fff' },
+  '.env': { bg: 'linear-gradient(135deg, #475569, #64748b)', color: '#fff' }
+}
+
+const FOLDER_ICON_STYLE = { bg: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#fff' }
+
 // 文件图标样式（渐变徽章， Shares 页专有视觉，保留私有实现）
 const getFileIconStyle = (share: FileShareDto) => {
-  if (share.isFolder) return { bg: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#fff' }
+  if (share.isFolder) return FOLDER_ICON_STYLE
   const ext = share.fileName.substring(share.fileName.lastIndexOf('.')).toLowerCase()
-  
-  // PDF - 红色
-  if (['.pdf'].includes(ext)) return { bg: 'linear-gradient(135deg, #ef4444, #f87171)', color: '#fff' }
-  
-  // Word文档 - 蓝色
-  if (['.doc', '.docx'].includes(ext)) return { bg: 'linear-gradient(135deg, #3b82f6, #60a5fa)', color: '#fff' }
-  
-  // Excel - 绿色
-  if (['.xls', '.xlsx', '.csv'].includes(ext)) return { bg: 'linear-gradient(135deg, #10b981, #34d399)', color: '#fff' }
-  
-  // PPT - 橙色
-  if (['.ppt', '.pptx'].includes(ext)) return { bg: 'linear-gradient(135deg, #f97316, #fb923c)', color: '#fff' }
-  
-  // 文本 - 灰色
-  if (['.txt', '.md', '.rtf'].includes(ext)) return { bg: 'linear-gradient(135deg, #6b7280, #9ca3af)', color: '#fff' }
-  
-  // 图片 - 青绿色
-  if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.ico'].includes(ext)) 
-    return { bg: 'linear-gradient(135deg, #14b8a6, #2dd4bf)', color: '#fff' }
-  
-  // 视频 - 紫色
-  if (['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'].includes(ext)) 
-    return { bg: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', color: '#fff' }
-  
-  // 音频 - 粉色
-  if (['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a'].includes(ext)) 
-    return { bg: 'linear-gradient(135deg, #ec4899, #f472b6)', color: '#fff' }
-  
-  // 压缩包 - 棕色
-  if (['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'].includes(ext)) 
-    return { bg: 'linear-gradient(135deg, #a16207, #ca8a04)', color: '#fff' }
-  
-  // 代码 - 靛蓝色
-  if (['.js', '.ts', '.jsx', '.tsx', '.vue', '.py', '.java', '.c', '.cpp', '.h', '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt'].includes(ext)) 
-    return { bg: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff' }
-  
-  // 配置文件 - 深灰
-  if (['.json', '.xml', '.yaml', '.yml', '.ini', '.conf', '.env'].includes(ext)) 
-    return { bg: 'linear-gradient(135deg, #475569, #64748b)', color: '#fff' }
-  
-  return { bg: 'linear-gradient(135deg, #6b7280, #9ca3af)', color: '#fff' }
+  return ICON_STYLES_BY_EXT[ext] ?? ICON_STYLE_FALLBACK
 }
 
 const copyLink = async (share: FileShareDto) => {

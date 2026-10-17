@@ -190,7 +190,9 @@ const toggleAutoRefresh = () => {
 }
 
 // 启动自动刷新（ITM-N19：后台标签页暂停，避免不可见页面的无效请求风暴）
-const REFRESH_INTERVAL_MS = 30000
+// 间隔 60s：这三个数据（容量概览、文件统计、进程状态）都不是秒级精度，
+// 30s 时每秒都在重跑全池目录遍历与 5 条聚合 SQL，收益不抵成本
+const REFRESH_INTERVAL_MS = 60000
 const startAutoRefresh = () => {
   if (refreshTimer) return
   const tick = () => {
@@ -200,7 +202,8 @@ const startAutoRefresh = () => {
     loadSystemStatus()
     lastUpdateTime.value = new Date()
   }
-  tick()
+  // 不在这里立即 tick：onMounted 的 loadAllData 刚取过同一批数据，
+  // 立即重发一遍是纯重复（实测首屏 11 个请求里有 3 个是重复的）
   refreshTimer = setInterval(tick, REFRESH_INTERVAL_MS)
 }
 // 标签页可见性变化时恢复自动刷新（具名函数，与 onUnmounted 的 removeEventListener 必须是同一引用，否则每次进入页面叠加一个匿名监听器）
