@@ -408,7 +408,7 @@ onUnmounted(() => {
 
     <!-- 系统状态卡片 -->
     <el-row :gutter="16" class="stats-row">
-      <el-col :xs="12" :sm="6" :md="6">
+      <el-col :xs="12" :sm="12" :md="12" :lg="6">
         <el-card shadow="hover" class="stat-card status-card">
           <div class="stat-content">
             <div class="stat-icon" style="background: linear-gradient(135deg, #67C23A, #85ce61)">
@@ -421,7 +421,7 @@ onUnmounted(() => {
           </div>
         </el-card>
       </el-col>
-      <el-col :xs="12" :sm="6" :md="6">
+      <el-col :xs="12" :sm="12" :md="12" :lg="6">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-content">
             <div class="stat-icon" style="background: linear-gradient(135deg, #409EFF, #66b1ff)">
@@ -434,7 +434,7 @@ onUnmounted(() => {
           </div>
         </el-card>
       </el-col>
-      <el-col :xs="12" :sm="6" :md="6">
+      <el-col :xs="12" :sm="12" :md="12" :lg="6">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-content">
             <div class="stat-icon" style="background: linear-gradient(135deg, #E6A23C, #ebb563)">
@@ -447,7 +447,7 @@ onUnmounted(() => {
           </div>
         </el-card>
       </el-col>
-      <el-col :xs="12" :sm="6" :md="6">
+      <el-col :xs="12" :sm="12" :md="12" :lg="6">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-content">
             <div class="stat-icon" style="background: linear-gradient(135deg, #909399, #a6a9ad)">
@@ -1006,7 +1006,10 @@ onUnmounted(() => {
 }
 
 // stats-row 不设行级 margin：行间距统一由卡自身的 margin-bottom 提供。
-// 早先两者叠加使这一行与下方间距翻倍（32px），且 xs 断点两行卡会紧贴
+// 早先两者叠加使这一行与下方间距翻倍（32px），且 xs 断点两行卡会紧贴。
+// 列断点 lg=6（四分之一）意为 ≥1200px 才四列；768~1199px 区间曾是
+// sm/md=6 四列横排，每张仅 130~210px，56px 图标加间距把标签挤成两行，
+// 故该区间改两列（sm/md=12），由卡片内响应式补偿图标与字号
 .stat-card {
   margin-bottom: 16px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1055,6 +1058,40 @@ onUnmounted(() => {
       color: var(--el-text-color-secondary);
       margin-top: 4px;
     }
+  }
+
+  // 768~1199px：两列布局，图标与字号收一档，保证运行时间这类长值不截断
+  @media (max-width: 1199px) {
+    .stat-content { gap: 12px; }
+
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+    }
+
+    .stat-info .stat-value { font-size: 20px; }
+  }
+
+  // <768px：改上下布局（图标在上、文字在下通栏），窄卡也能容纳
+  // "1天 03:20:37" 这类长值；图标再缩一档
+  @media (max-width: 767px) {
+    :deep(.el-card__body) { padding: 16px; }
+
+    .stat-content {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .stat-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    }
+
+    .stat-info .stat-value { font-size: 18px; }
   }
 }
 
