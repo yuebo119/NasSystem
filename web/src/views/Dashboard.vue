@@ -77,8 +77,10 @@ const lastUpdateTime = ref<Date | null>(null)
 const autoRefresh = ref(true)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-// 格式化运行时间
+// 格式化运行时间。空值防御：接口字段变动或首次加载未回填时返回 '-'，
+// 不让 uptime.split 以 TypeError 的形式挂在渲染函数里
 const formatUptime = (uptime: string): string => {
+  if (!uptime) return '-'
   const parts = uptime.split('.')
   if (parts.length === 2) {
     const days = parseInt(parts[0])

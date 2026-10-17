@@ -16,7 +16,9 @@ vi.mock('@/api/file', () => ({
   fileApi: {
     getDirectory: vi.fn(),
     createFolder: vi.fn(),
-    rename: vi.fn()
+    rename: vi.fn(),
+    copy: vi.fn(),
+    move: vi.fn()
   }
 }))
 
@@ -27,6 +29,8 @@ import type { DirectoryContent, FileItem } from '@/types'
 const mockGetDirectory = vi.mocked(fileApi.getDirectory)
 const mockCreateFolder = vi.mocked(fileApi.createFolder)
 const mockRename = vi.mocked(fileApi.rename)
+const mockCopy = vi.mocked(fileApi.copy)
+const mockMove = vi.mocked(fileApi.move)
 
 function makeFile(overrides: Partial<FileItem> & { id: string; name: string }): FileItem {
   return {
@@ -311,6 +315,117 @@ describe('useFileStore', () => {
 
       expect(mockRename).toHaveBeenCalledWith('/docs/old.txt', 'new.txt')
       expect(mockGetDirectory).toHaveBeenCalled()
+    })
+  })
+
+  // 剪贴板自 Files.vue 内迁入：这三测的是原视图层逻辑的契约副本
+  describe('剪贴板', () => {
+    beforeEach(() => {
+      // paste 末尾会重载目录，给 getDirectory 一个默认成功响应
+      mockGetDirectory.mockResolvedValue({ success: true, data: makeDir([]), timestamp: '' })
+    })
+
+    it('无选择时 setClipboard 返回 false 且不设剪贴板', () => {
+      const store = useFileStore()
+
+      expect(store.setClipboard('copy')).toBe(false)
+      expect(store.clipboard).toBeNull()
+    })
+
+    it('存入的是选择副本，后续选择变化不改写剪贴板', () => {
+      const store = useFileStore()
+      const a = makeFile({ id: '1', name: 'a.txt' })
+      store.selectItem(a, true)
+
+      store.setClipboard('copy')
+      store.selectItem(makeFile({ id: '2', name: 'b.txt' }), true)
+
+      expect(store.clipboard?.items.map(i => i.id)).toEqual(['1'])
+    })
+
+    it('无剪贴板时 pasteClipboard 返回 null，不发请求', async () => {
+      const store = useFileStore()
+
+      expect(await store.pasteClipboard()).toBeNull()
+      expect(mockCopy).not.toHaveBeenCalled()
+      expect(mockMove).not.toHaveBeenCalled()
+    })
+
+    it('copy 全量成功：路径数组一次请求，剪贴板保留，目录重载', async () => {
+      mockCopy.mockResolvedValue({ success: true, data: [], timestamp: '' })
+      const store = useFileStore()
+      store.selectItem(makeFile({ id: '1', name: 'a.txt', path: '/a.txt' }), true)
+      store.selectItem(makeFile({ id: '2', name: 'b.txt', path: '/b.txt' }), true)
+      store.currentPath = '/docs'
+      store.setClipboard('copy')
+
+      const result = await store.pasteClipboard()
+
+      expect(mockCopy).toHaveBeenCalledWith(['/a.txt', '/b.txt'], '/docs')
+      expect(result).toEqual({ ok: 2, failed: 0, action: 'copy' })
+      expect(store.clipboard).not.toBeNull()
+      expect(mockGetDirectory).toHaveBeenCalledWith('/docs', false)
+    })
+
+    it('cut 成功后清空剪贴板（移动即搬走），走 move 请求', async () => {
+      mockMove.mockResolvedValue({ success: true, data: [], timestamp: '' })
+      const store = useFileStore()
+      store.selectItem(makeFile({ id: '1', name: 'a.txt', path: '/a.txt' }), true)
+      store.setClipboard('cut')
+
+      const result = await store.pasteClipboard()
+
+      expect(mockMove).toHaveBeenCalledWith(['/a.txt'], '/')
+      expect(result).toEqual({ ok: 1, failed: 0, action: 'cut' })
+      expect(store.clipboard).toBeNull()
+    })
+
+    it('cut 部分失败也清空剪贴板（清空与成败无关）', async () => {
+      mockMove.mockResolvedValue({ success: true, data: { failedItems: ['/a.txt'] } as never, timestamp: '' })
+      const store = useFileStore()
+      store.selectItem(makeFile({ id: '1', name: 'a.txt', path: '/a.txt' }), true)
+      store.setClipboard('cut')
+
+      const result = await store.pasteClipboard()
+
+      expect(result).toEqual({ ok: 0, failed: 1, action: 'cut' })
+      expect(store.clipboard).toBeNull()
+    })
+
+    it('copy 部分失败按 failedItems 计数，剪贴板保留供重试', async () => {
+      mockCopy.mockResolvedValue({ success: true, data: { failedItems: ['/b.txt'] } as never, timestamp: '' })
+      const store = useFileStore()
+      store.selectItem(makeFile({ id: '1', name: 'a.txt', path: '/a.txt' }), true)
+      store.selectItem(makeFile({ id: '2', name: 'b.txt', path: '/b.txt' }), true)
+      store.setClipboard('copy')
+
+      const result = await store.pasteClipboard()
+
+      expect(result).toEqual({ ok: 1, failed: 1, action: 'copy' })
+      expect(store.clipboard?.items).toHaveLength(2)
+    })
+
+    it('接口抛异常时全部计为失败，目录仍重载', async () => {
+      mockCopy.mockRejectedValue(new Error('offline'))
+      const store = useFileStore()
+      store.selectItem(makeFile({ id: '1', name: 'a.txt', path: '/a.txt' }), true)
+      store.selectItem(makeFile({ id: '2', name: 'b.txt', path: '/b.txt' }), true)
+      store.setClipboard('copy')
+
+      const result = await store.pasteClipboard()
+
+      expect(result).toEqual({ ok: 0, failed: 2, action: 'copy' })
+      expect(mockGetDirectory).toHaveBeenCalled()
+    })
+
+    it('clearClipboard 清空剪贴板', () => {
+      const store = useFileStore()
+      store.selectItem(makeFile({ id: '1', name: 'a.txt' }), true)
+      store.setClipboard('copy')
+
+      store.clearClipboard()
+
+      expect(store.clipboard).toBeNull()
     })
   })
 })

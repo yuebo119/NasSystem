@@ -125,6 +125,51 @@ export const useFileStore = defineStore('file', () => {
     return response
   }
 
+  // 剪贴板（自 Files.vue 内迁入）：复制/剪切/粘贴的状态与结果计算。
+  // guard 提示与 ElMessage 通知留在视图层，store 只提供可断言的结果。
+  // 存入的是选择数组的副本：之后选择变化不会改写已复制的剪贴板内容
+  const clipboard = ref<{ items: FileItem[]; action: 'copy' | 'cut' } | null>(null)
+
+  function setClipboard(action: 'copy' | 'cut'): boolean {
+    if (selectedItems.value.length === 0) return false
+    clipboard.value = { items: [...selectedItems.value], action }
+    return true
+  }
+
+  /** 清空剪贴板（工具栏剪贴板标签的关闭按钮） */
+  function clearClipboard() {
+    clipboard.value = null
+  }
+
+  /**
+   * 执行粘贴：copy/move 各一次数组请求（ITM-N19：不逐项循环），
+   * 统计部分失败。无剪贴板返回 null；剪切成功后清空剪贴板
+   * （语义：移动即搬走）；目录重载收在这里，粘贴后刷新是剪贴板
+   * 语义的一部分而非调用方的额外职责
+   */
+  async function pasteClipboard(): Promise<{ ok: number; failed: number; action: 'copy' | 'cut' } | null> {
+    if (!clipboard.value) return null
+    const { items, action } = clipboard.value
+    const destination = currentPath.value
+
+    let failed = 0
+    try {
+      const paths = items.map(i => i.path)
+      const result = action === 'copy'
+        ? await fileApi.copy(paths, destination)
+        : await fileApi.move(paths, destination)
+      failed = ((result.data as { failedItems?: string[] } | null)?.failedItems ?? []).length
+    } catch {
+      failed = items.length
+    }
+
+    if (action === 'cut') {
+      clipboard.value = null
+    }
+    await loadDirectory(currentPath.value)
+    return { ok: items.length - failed, failed, action }
+  }
+
   return {
     currentPath,
     directoryContent,
@@ -140,6 +185,7 @@ export const useFileStore = defineStore('file', () => {
     breadcrumbs,
     hasSelection,
     selectionCount,
+    clipboard,
     loadDirectory,
     selectItem,
     clearSelection,
@@ -147,6 +193,9 @@ export const useFileStore = defineStore('file', () => {
     setSort,
     setFocusItem,
     createFolder,
-    rename
+    rename,
+    setClipboard,
+    pasteClipboard,
+    clearClipboard
   }
 })

@@ -62,9 +62,6 @@ const uploadProgress = ref(0)
 // 文本预览内容
 const textContent = ref('')
 
-// 剪贴板
-const clipboard = ref<{ items: FileItem[], action: 'copy' | 'cut' } | null>(null)
-
 // 扫描同步
 const scanning = ref(false)
 
@@ -269,63 +266,37 @@ async function handleDeleteItem(item: FileItem, permanent = false) {
   }
 }
 
-// 复制到剪贴板
+// 复制到剪贴板（状态与结果计算在 file store，guard 提示与通知留视图层）
 function copyToClipboard() {
-  if (fileStore.selectedItems.length === 0) {
+  if (!fileStore.setClipboard('copy')) {
     ElMessage.warning(t('filesView.selectFilesFirst'))
     return
   }
-  clipboard.value = { items: [...fileStore.selectedItems], action: 'copy' }
   ElMessage.success(t('filesView.copiedCount', { count: fileStore.selectedItems.length }))
 }
 
 // 剪切到剪贴板
 function cutToClipboard() {
-  if (fileStore.selectedItems.length === 0) {
+  if (!fileStore.setClipboard('cut')) {
     ElMessage.warning(t('filesView.selectFilesFirst'))
     return
   }
-  clipboard.value = { items: [...fileStore.selectedItems], action: 'cut' }
   ElMessage.success(t('filesView.cutCount', { count: fileStore.selectedItems.length }))
 }
 
 // 粘贴
 async function handlePaste() {
-  if (!clipboard.value) {
+  const result = await fileStore.pasteClipboard()
+  if (!result) {
     ElMessage.warning(t('filesView.clipboardEmpty'))
     return
   }
-  const items = [...clipboard.value.items]
-  const action = clipboard.value.action
-  const destination = fileStore.currentPath
-  
-  // ITM-N19：一次数组请求，替代逐项循环
-  let pasteFailed = 0
-  try {
-    const paths = items.map(i => i.path)
-    if (action === 'copy') {
-      const result = await fileApi.copy(paths, destination)
-      pasteFailed = ((result.data as { failedItems?: string[] } | null)?.failedItems ?? []).length
-    } else {
-      const result = await fileApi.move(paths, destination)
-      pasteFailed = ((result.data as { failedItems?: string[] } | null)?.failedItems ?? []).length
-    }
-  } catch {
-    pasteFailed = items.length
-  }
-
-  const okCount = items.length - pasteFailed
-  if (pasteFailed === 0) {
-    ElMessage.success(t('filesView.pasteDone', { action: t(action === 'copy' ? 'filesView.copyAction' : 'filesView.moveAction'), count: okCount }))
+  const actionText = t(result.action === 'copy' ? 'filesView.copyAction' : 'filesView.moveAction')
+  if (result.failed === 0) {
+    ElMessage.success(t('filesView.pasteDone', { action: actionText, count: result.ok }))
   } else {
-    ElMessage.warning(t('filesView.pastePartial', { action: t(action === 'copy' ? 'filesView.copyAction' : 'filesView.moveAction'), ok: okCount, fail: pasteFailed }))
+    ElMessage.warning(t('filesView.pastePartial', { action: actionText, ok: result.ok, fail: result.failed }))
   }
-
-  if (action === 'cut') {
-    clipboard.value = null  // 剪切后清空剪贴板
-  }
-
-  await fileStore.loadDirectory(fileStore.currentPath)
 }
 
 // 打开上传对话框
@@ -993,11 +964,11 @@ async function ensurePreviewUrl(item: FileItem): Promise<void> {
   }
 }
 
-// 剪贴板状态文本
+// 剪贴板状态文本（数据源已迁到 file store）
 const clipboardText = computed(() => {
-  if (!clipboard.value) return ''
-  const action = clipboard.value.action === 'copy' ? t('filesView.copyWord') : t('filesView.cutAction')
-  return t('filesView.clipboardStatus', { action, count: clipboard.value.items.length })
+  if (!fileStore.clipboard) return ''
+  const action = fileStore.clipboard.action === 'copy' ? t('filesView.copyWord') : t('filesView.cutAction')
+  return t('filesView.clipboardStatus', { action, count: fileStore.clipboard.items.length })
 })
 
 // 处理右键菜单命令
@@ -1207,7 +1178,7 @@ onUnmounted(() => {
             </el-button>
           </el-tooltip>
           <el-tooltip :content="$t('filesView.pasteTip')" placement="bottom">
-            <el-button @click="handlePaste" :disabled="!clipboard">
+            <el-button @click="handlePaste" :disabled="!fileStore.clipboard">
               <el-icon><Document /></el-icon>
             </el-button>
           </el-tooltip>
@@ -1231,9 +1202,9 @@ onUnmounted(() => {
       </div>
       
       <div class="toolbar-right">
-        <el-tooltip :content="clipboardText" v-if="clipboard">
-          <el-tag closable @close="clipboard = null" size="small">
-            {{ clipboard.action === 'copy' ? $t('filesView.copiedBadge') : $t('filesView.cutTip') }} {{ clipboard.items.length }}
+        <el-tooltip :content="clipboardText" v-if="fileStore.clipboard">
+          <el-tag closable @close="fileStore.clearClipboard()" size="small">
+            {{ fileStore.clipboard.action === 'copy' ? $t('filesView.copiedBadge') : $t('filesView.cutTip') }} {{ fileStore.clipboard.items.length }}
           </el-tag>
         </el-tooltip>
         
