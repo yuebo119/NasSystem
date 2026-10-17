@@ -29,11 +29,13 @@ export interface MountedView {
 /**
  * 挂载一个视图组件。
  * route 为初始路由（可带 query，如 '/login?redirect=/files'）；
- * routes 为视图所需的路由表（如 ShareAccess 的 /s/:shareCode）。
+ * routes 为视图所需的路由表（如 ShareAccess 的 /s/:shareCode）；
+ * pinia 可注入外部实例（测试需预先往 store 写登录态时用，
+ * 配合 setActivePinia 让测试代码与组件内拿到同一实例）。
  */
 export async function mountView(
   component: Component,
-  options: { route?: string; routes?: RouteRecordRaw[] } = {}
+  options: { route?: string; routes?: RouteRecordRaw[]; pinia?: ReturnType<typeof createPinia> } = {}
 ): Promise<MountedView> {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -46,7 +48,7 @@ export async function mountView(
   await router.isReady()
 
   const app = createApp({ render: () => h(component) })
-  app.use(createPinia())
+  app.use(options.pinia ?? createPinia())
   app.use(i18n)
   app.use(router)
   // 模板里的 router-link 在没有真实路由记录时可解析，避免 Vue warn

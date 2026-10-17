@@ -87,19 +87,32 @@ describe('Login 视图层契约', () => {
     localStorage.clear()
   })
 
-  it('空表单提交会直接发登录请求（无提交前校验，现状记录）', async () => {
-    // 注意：这是测试暴露的产品缺口而非期望行为。element-plus 2.14 的
-    // el-form 根元素不监听 submit，本页 @submit.prevent 直达 handleLogin，
-    // rules 只配了 trigger: 'blur'，用户不聚焦输入框直接点提交时空值
-    // 会发给后端。此处锁定现状供后续裁决（加提交前校验则本测试随修），
-    // happy-dom 下 blur 校验链同样不可用，故不以 UI 断言校验态
-    mockLogin.mockResolvedValue({ success: false, error: { code: 'BadRequest', message: 'bad' }, timestamp: '' })
+  it('空表单提交被提交前 guard 拦截，不发登录请求', async () => {
+    // 修复前此处是产品缺口：el-form 2.14 根元素不监听原生 submit，
+    // rules 只配 trigger:'blur'，空值会直达后端。修复为 handleLogin
+    // 前置手写 guard（与 Settings.changePassword 同模式，不依赖 el-form
+    // 校验链），提示对应字段缺失
+    mockLogin.mockResolvedValue(loginOk())
     const { div, unmount } = await mountView(Login, { route: '/login' })
 
     submit(div)
     await flush(50)
 
-    expect(mockLogin).toHaveBeenCalledWith({ username: '', password: '' })
+    expect(mockLogin).not.toHaveBeenCalled()
+    expect(elMessage.warning).toHaveBeenCalledWith('请输入用户名')
+    unmount()
+  })
+
+  it('只填用户名不填密码时提示密码缺失', async () => {
+    mockLogin.mockResolvedValue(loginOk())
+    const { div, unmount } = await mountView(Login, { route: '/login' })
+
+    fillForm(div, 'admin', '')
+    submit(div)
+    await flush(50)
+
+    expect(mockLogin).not.toHaveBeenCalled()
+    expect(elMessage.warning).toHaveBeenCalledWith('请输入密码')
     unmount()
   })
 

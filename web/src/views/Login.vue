@@ -24,6 +24,15 @@ const rules = {
 }
 
 async function handleLogin() {
+  // 提交前 guard：el-form 根元素不监听原生 submit，rules 的 trigger:'blur'
+  // 只覆盖"聚焦后失焦"路径，用户不聚焦直接点提交时空值会直达后端。
+  // 这里用手写 guard 兜底（与 Settings.changePassword 同模式）：不依赖
+  // el-form 的校验链，行为确定；el-form rules 保留作聚焦时的即时提示
+  if (!form.username || !form.password) {
+    ElMessage.warning(!form.username ? t('login.usernameRequired') : t('login.passwordRequired'))
+    return
+  }
+
   loading.value = true
   try {
     const success = await userStore.login({
@@ -58,7 +67,6 @@ async function handleLogin() {
       </div>
 
       <el-form
-        ref="formRef"
         :model="form"
         :rules="rules"
         class="login-form"
