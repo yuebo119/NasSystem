@@ -6,6 +6,11 @@ import router from '@/router'
 import i18n from '@/locales'
 
 // 创建 axios 实例
+// timeout 按请求类型区分：默认 30s 只适合普通 JSON API。
+// 上传走 formData 且后端允许 500MB，30s 传不完就被 axios 中断，
+// 而服务端可能还在继续写，结果是用户看到"超时"但文件落盘一半。
+// 上传因此不设客户端超时，靠服务端 Kestrel 的 MaxRequestBodySize 与
+// 磁盘写失败兜底（http.ts 的 upload 方法单独覆盖 timeout）
 const http: AxiosInstance = axios.create({
   baseURL: '/api/v1',
   timeout: 30000,

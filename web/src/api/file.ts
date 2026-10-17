@@ -116,6 +116,10 @@ export const fileApi = {
     formData.append('file', file)
 
     return http.post('/files/upload', formData, {
+      // 覆盖实例默认的 30s：大文件上传必然超过，被客户端中断会让用户看到
+      // "超时"而服务端还在写，结果文件落盘一半。这里不设超时，
+      // 由服务端 Kestrel 的 MaxRequestBodySize 与物理写失败兜底
+      timeout: 0,
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (progressEvent) => {
         if (onProgress && progressEvent.total) {

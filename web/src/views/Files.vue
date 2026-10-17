@@ -8,7 +8,7 @@ import { fileApi } from '@/api/file'
 import { fileShareApi, ShareAccessType, PermissionLevel, type FileShareDto, type CreateFileShareRequest } from '@/api/fileShare'
 import { storageApi } from '@/api/storage'
 import { ElMessage, ElMessageBox, ElCheckbox } from 'element-plus'
-import { ElTableV2, ElAutoResizer, TableV2SortOrder, TableV2FixedDir, type Column, type ColumnSortParams, type RowEventHandlers, type TableV2Instance } from 'element-plus'
+import { ElTableV2, ElAutoResizer, TableV2SortOrder, type Column, type ColumnSortParams, type RowEventHandlers, type TableV2Instance } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import { 
   Refresh, Upload, Delete, Download, 
@@ -18,6 +18,7 @@ import {
 } from '@element-plus/icons-vue'
 import type { FileItem } from '@/types'
 import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
+import { createPreviewUrlManager } from '@/utils/previewUrl'
 
 // ITM-M3 收尾：Files 页 i18n 全量接入
 const { t } = useI18n()
@@ -755,10 +756,13 @@ const columns = computed<Column<FileItem>[]>(() => {
     key: 'actions',
     title: t('filesView.colActions'),
     width: 120,
-    fixed: TableV2FixedDir.RIGHT,
+    // 不用 fixed: RIGHT。el-table-v2 的固定列会渲染成独立的行容器
+    // （实测固定列所在行只剩一个单元格，与数据行分离），
+    // 导致操作按钮与数据行错位，点第 2 行的按钮拿到的是别的行。
+    // 本项目列数不多、总宽未超容器，不需要固定列
     // 只渲染一个按钮，不在这里建 ElDropdown：cellRenderer 为每个可见行各建一个
     // dropdown，而 el-popper 会挂到 body 且 unmount 时不清理，实测点一次操作按钮
-    // 就在 DOM 里留下 13 个残留菜单，越滚越多。改为受控单实例，见模板里的 rowActionsDropdown
+    // 就在 DOM 里留下 13 个残留菜单，越滚越多。改为受控单实例，见模板里的 rowActionsMenu
     cellRenderer: ({ rowData }) => h('button', {
       class: 'row-action-btn',
       onClick: (e: MouseEvent) => openRowActions(e, rowData)
@@ -766,6 +770,90 @@ const columns = computed<Column<FileItem>[]>(() => {
   }
 
   return [selectionColumn, nameColumn, sizeColumn, typeColumn, modifiedColumn, actionsColumn]
+})
+
+// ─── 网格视图虚拟滚动 ───
+// 网格此前与表格一样全量渲染：实测 3000 个文件的目录切到网格会一次性建
+// 3000 个 .grid-item、21226 个 DOM 节点（表格改虚拟滚动后是 24 行 786 节点，
+// 网格是它的 27 倍）。表格换成 el-table-v2 解决，这里给网格补上同一件事。
+// 网格是等宽格子，自己按"可见行"算区间即可，不必为此引第三方虚拟滚动库。
+const GRID_MIN_COL_WIDTH = 120   // 对应样式的 minmax(120px, 1fr)
+const GRID_GAP = 16
+const GRID_ROW_HEIGHT = 144      // 单格高度：padding 32 + 图标 48 + 名称两行约 36 + 大小 16 + 间距
+const GRID_OVERSCAN_ROWS = 2     // 上下各多渲染两行，快速滚动时不出现空白
+
+const gridContainerRef = ref<HTMLElement | null>(null)
+const gridScrollTop = ref(0)
+const gridWidth = ref(0)
+const gridViewportHeight = ref(0)
+
+// 列数由容器宽度决定：与 CSS 的 repeat(auto-fill, minmax(120px, 1fr)) 同口径
+const gridColumns = computed(() => {
+  if (gridWidth.value <= 0) return 1
+  const usable = gridWidth.value - GRID_GAP * 2   // 左右 padding
+  return Math.max(1, Math.floor((usable + GRID_GAP) / (GRID_MIN_COL_WIDTH + GRID_GAP)))
+})
+
+// 单格实际宽度：把扣除 gap 后的宽度均分
+const gridColWidth = computed(() => {
+  const usable = gridWidth.value - GRID_GAP * 2
+  return Math.max(GRID_MIN_COL_WIDTH,
+    (usable - GRID_GAP * (gridColumns.value - 1)) / gridColumns.value)
+})
+
+const gridRowStride = computed(() => GRID_ROW_HEIGHT + GRID_GAP)
+const gridRowCount = computed(() =>
+  Math.ceil(fileStore.sortedFiles.length / gridColumns.value))
+// spacer 撑起总高度，让滚动条反映真实内容量
+const gridTotalHeight = computed(() =>
+  gridRowCount.value * gridRowStride.value + GRID_GAP)
+
+// 只渲染可见行（加上下各两行缓冲）。绝对定位到各自的行列位置
+const visibleGridCells = computed(() => {
+  const cols = gridColumns.value
+  const total = fileStore.sortedFiles.length
+  if (total === 0 || gridViewportHeight.value <= 0) return []
+
+  const firstRow = Math.max(0,
+    Math.floor(gridScrollTop.value / gridRowStride.value) - GRID_OVERSCAN_ROWS)
+  const rowsOnScreen = Math.ceil(gridViewportHeight.value / gridRowStride.value)
+    + GRID_OVERSCAN_ROWS * 2
+  const lastRow = Math.min(gridRowCount.value, firstRow + rowsOnScreen)
+
+  const start = firstRow * cols
+  const end = Math.min(total, lastRow * cols)
+
+  const cells = []
+  for (let i = start; i < end; i++) {
+    cells.push({
+      item: fileStore.sortedFiles[i],
+      top: Math.floor(i / cols) * gridRowStride.value + GRID_GAP,
+      left: GRID_GAP + (i % cols) * (gridColWidth.value + GRID_GAP),
+      width: gridColWidth.value
+    })
+  }
+  return cells
+})
+
+// 容器尺寸变化时重算列数与视口高度
+let gridResizeObserver: ResizeObserver | null = null
+watch(gridContainerRef, (el) => {
+  gridResizeObserver?.disconnect()
+  gridResizeObserver = null
+  if (!el) return
+  gridResizeObserver = new ResizeObserver(entries => {
+    const box = entries[0]?.contentRect
+    gridWidth.value = box?.width ?? 0
+    gridViewportHeight.value = el.clientHeight
+  })
+  gridResizeObserver.observe(el)
+  gridWidth.value = el.clientWidth
+  gridViewportHeight.value = el.clientHeight
+}, { immediate: true })
+
+onUnmounted(() => {
+  gridResizeObserver?.disconnect()
+  gridResizeObserver = null
 })
 
 // ─── 行操作菜单（受控单实例）───
@@ -867,11 +955,27 @@ const rowEventHandlers = computed<RowEventHandlers>(() => ({
   onContextmenu: ({ rowData }) => fileStore.selectItem(rowData as FileItem)
 }))
 
-// 预览资源 objectURL 缓存（ITM-N19/G19：token 走 Header，blob 经 createObjectURL 提供给媒体标签）
-const previewUrls = ref<Record<string, string>>({})
+// 预览资源 objectURL 管理。单槽语义与 create/revoke 的配对关系抽到
+// utils/previewUrl.ts，那里有纯单元测试锁住"每次 create 最终有且仅有一次 revoke"
+// （本项目没有 @vue/test-utils，视图层没有组件测试兜底，逻辑必须可单测）。
+// 原实现把 URL 存在只增不减的 Record 里：关闭对话框不清、卸载不 revoke、
+// 同一文件重复预览还重新 fetch，objectURL 指向的 blob 会一直钉在内存里。
+const previewUrlManager = createPreviewUrlManager(
+  (url) => URL.revokeObjectURL(url)
+)
+
+function revokePreviewUrl() {
+  previewUrlManager.release()
+}
+
+function getPreviewUrl(item: FileItem): string | undefined {
+  return previewUrlManager.urlFor(item.path)
+}
 
 async function ensurePreviewUrl(item: FileItem): Promise<void> {
-  if (previewUrls.value[item.path]) return
+  // 已缓存同一个文件则直接复用，不重复 fetch
+  if (previewUrlManager.has(item.path)) return
+
   try {
     const token = localStorage.getItem('token')
     const response = await fetch(fileApi.getDownloadUrl(item.path), {
@@ -879,7 +983,8 @@ async function ensurePreviewUrl(item: FileItem): Promise<void> {
     })
     if (!response.ok) throw new Error(String(response.status))
     const blob = await response.blob()
-    previewUrls.value[item.path] = URL.createObjectURL(blob)
+    // put 内部会先释放上一个 URL，避免同时钉住多个 blob
+    previewUrlManager.put(item.path, URL.createObjectURL(blob))
   } catch {
     ElMessage.error(t('filesView.loadFailedText'))
   }
@@ -1043,7 +1148,11 @@ async function resubscribe(path: string) {
 
 onMounted(() => void resubscribe(fileStore.currentPath))
 watch(() => fileStore.currentPath, (path) => void resubscribe(path))
-onUnmounted(() => void unsubscribe?.())
+onUnmounted(() => {
+  void unsubscribe?.()
+  // 离开页面前释放预览用的 objectURL，否则指向的 blob 会一直钉在内存里
+  revokePreviewUrl()
+})
 </script>
 
 <template>
@@ -1184,24 +1293,33 @@ onUnmounted(() => void unsubscribe?.())
       </el-auto-resizer>
     </div>
 
-    <!-- 网格视图 -->
-    <div v-else class="grid-view" v-loading="fileStore.isLoading">
-      <div
-        v-for="item in fileStore.sortedFiles"
-        :key="item.id"
-        class="grid-item"
-        :class="{ selected: selectedIds.has(item.id) }"
-        @click="fileStore.selectItem(item, $event.ctrlKey)"
-        @dblclick="navigateToFolder(item)"
-        @contextmenu.prevent="openContextMenu($event, item)"
-      >
-        <div class="grid-item-icon">
-          <el-icon :size="48" :color="getFileIconColor(item)">
-            <component :is="getFileIcon(item)" />
-          </el-icon>
+    <!-- 网格视图：虚拟滚动，只渲染可见行（加两行缓冲），绝对定位到各自行列 -->
+    <div
+      v-else
+      ref="gridContainerRef"
+      class="grid-view"
+      v-loading="fileStore.isLoading"
+      @scroll.passive="gridScrollTop = ($event.target as HTMLElement).scrollTop"
+    >
+      <div class="grid-spacer" :style="{ height: gridTotalHeight + 'px' }">
+        <div
+          v-for="cell in visibleGridCells"
+          :key="cell.item.id"
+          class="grid-item"
+          :class="{ selected: selectedIds.has(cell.item.id) }"
+          :style="{ top: cell.top + 'px', left: cell.left + 'px', width: cell.width + 'px' }"
+          @click="fileStore.selectItem(cell.item, $event.ctrlKey)"
+          @dblclick="navigateToFolder(cell.item)"
+          @contextmenu.prevent="openContextMenu($event, cell.item)"
+        >
+          <div class="grid-item-icon">
+            <el-icon :size="48" :color="getFileIconColor(cell.item)">
+              <component :is="getFileIcon(cell.item)" />
+            </el-icon>
+          </div>
+          <div class="grid-item-name" :title="cell.item.name">{{ cell.item.name }}</div>
+          <div class="grid-item-size">{{ cell.item.isFolder ? '' : formatSize(cell.item.sizeBytes) }}</div>
         </div>
-        <div class="grid-item-name" :title="item.name">{{ item.name }}</div>
-        <div class="grid-item-size">{{ item.isFolder ? '' : formatSize(item.sizeBytes) }}</div>
       </div>
       <el-empty v-if="fileStore.sortedFiles.length === 0 && !fileStore.isLoading" :description="$t('filesView.emptyFolderList')" />
     </div>
@@ -1373,19 +1491,20 @@ onUnmounted(() => void unsubscribe?.())
     </el-dialog>
 
     <!-- 预览对话框 -->
-    <el-dialog 
-      v-model="previewDialogVisible" 
-      :title="previewItem?.name || $t('filesView.previewFallbackTitle')" 
+    <el-dialog
+      v-model="previewDialogVisible"
+      :title="previewItem?.name || $t('filesView.previewFallbackTitle')"
       width="80%"
       class="preview-dialog"
+      @closed="revokePreviewUrl"
     >
       <div class="preview-content" v-if="previewItem">
         <!-- 图片预览 -->
-        <img v-if="isImage(previewItem)" :src="previewUrls[previewItem.path]" class="preview-image" />
+        <img v-if="isImage(previewItem)" :src="getPreviewUrl(previewItem)" class="preview-image" />
         <!-- 视频预览 -->
-        <video v-else-if="isVideo(previewItem)" :src="previewUrls[previewItem.path]" controls class="preview-video" />
+        <video v-else-if="isVideo(previewItem)" :src="getPreviewUrl(previewItem)" controls class="preview-video" />
         <!-- 音频预览 -->
-        <audio v-else-if="isAudio(previewItem)" :src="previewUrls[previewItem.path]" controls class="preview-audio" />
+        <audio v-else-if="isAudio(previewItem)" :src="getPreviewUrl(previewItem)" controls class="preview-audio" />
         <!-- 文本预览 -->
         <div v-else-if="isTextFile(previewItem)" class="preview-text">
           <pre><code>{{ textContent }}</code></pre>
@@ -1700,39 +1819,49 @@ onUnmounted(() => void unsubscribe?.())
   }
 }
 
+// 网格虚拟滚动：容器负责滚动，spacer 撑起总高度让滚动条反映真实内容量，
+// 单个格子用绝对定位放到各自的行列位置。列宽与列数由 JS 按容器宽度算出
+// （GRID_MIN_COL_WIDTH / GRID_GAP），与原先 CSS 的 auto-fill 同口径
 .grid-view {
   flex: 1;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 16px;
-  padding: 16px;
+  min-height: 0;
+  position: relative;
   overflow: auto;
-  align-content: start;
-  
+  padding: 16px;
+
+  .grid-spacer {
+    position: relative;
+    width: 100%;
+  }
+
   .grid-item {
+    position: absolute;
     display: flex;
     flex-direction: column;
     align-items: center;
+    height: 144px;   // 与 JS 的 GRID_ROW_HEIGHT 一致，两边必须同源
     padding: 16px 8px;
     border-radius: 12px;
     cursor: pointer;
     transition: all 0.2s ease;
     border: 1px solid transparent;
-    
+    box-sizing: border-box;
+
     &:hover {
       background: var(--el-fill-color-light);
       border-color: var(--el-border-color-lighter);
     }
-    
+
     &.selected {
       background: var(--el-color-primary-light-9);
       border-color: var(--el-color-primary);
     }
-    
+
     .grid-item-icon {
       margin-bottom: 8px;
+      flex-shrink: 0;
     }
-    
+
     .grid-item-name {
       font-size: 13px;
       text-align: center;
@@ -1743,11 +1872,12 @@ onUnmounted(() => void unsubscribe?.())
       overflow: hidden;
       color: var(--el-text-color-primary);
     }
-    
+
     .grid-item-size {
       font-size: 11px;
       color: var(--el-text-color-secondary);
       margin-top: 4px;
+      flex-shrink: 0;
     }
   }
 }
