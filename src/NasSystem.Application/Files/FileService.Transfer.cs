@@ -214,6 +214,7 @@ public sealed partial class FileService
         if (await _fileRepository.PathExistsAsync(newPath, cancellationToken))
             return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(newPath));
 
+        var oldPhysicalPath = item.PhysicalPath;
         var newPhysicalPath = Path.Combine(Path.GetDirectoryName(item.PhysicalPath)!, request.NewName);
         _fileSystemService.Move(item.PhysicalPath, newPhysicalPath);
 
@@ -221,12 +222,22 @@ public sealed partial class FileService
         item.MoveTo(newPath, newPhysicalPath, item.ParentId);
         await _fileRepository.UpdateAsync(item, cancellationToken);
 
-        // ITM-N3：文件夹重命名必须同步重写后代路径，否则子树 Path/PhysicalPath 指向旧位置
-        await RewriteDescendantPathsAsync(item.Id, GetParentPath(path), newPath, newPhysicalPath, cancellationToken);
+        // ITM-N3：文件夹重命名必须同步重写后代路径，否则子树 Path/PhysicalPath 指向旧位置。
+        // 旧基路径传文件夹自身旧路径（path 局部变量，item.Path 已被 Rename 改成新值）：
+        // 原实现传 GetParentPath(path)（父目录），后代 Path 以 "/a/" 开头而基是 "/a"，
+        // StartsWith("//") 不成立，后代被整体跳过，Path 停留在旧位置——
+        // 按路径下载/移动/扫描同步全拿到旧路径（浏览按 ParentId 联动看不出问题）
+        await RewriteDescendantPathsAsync(path, newPath, oldPhysicalPath, newPhysicalPath, cancellationToken);
 
         var saved = await SaveChangesWithConflictGuardAsync(FileErrors.AlreadyExists(newPath), cancellationToken);
         if (saved.IsFailure)
             return Result<FileItemDto>.Failure(saved.Error);
+
+        // 版本号：父目录的条目集合变了（名字变了）。子树内目录的内容没变
+        // （还是那些子项），不需要 bump；根实体经 UoW 跟踪已 bump 父目录，
+        // 这里显式 bump 旧父目录覆盖移动场景（见 MoveAsync 同款注释）
+        BumpParentVersion(path);
+        BumpParentVersion(newPath);
 
         await NotifyChangedAsync(GetParentPath(newPath), FileChangeType.Renamed, item.Path);
 
@@ -240,6 +251,7 @@ public sealed partial class FileService
     {
         var results = new List<FileItemDto>();
         var destPath = NormalizePath(request.DestinationPath);
+        var movedFromPaths = new List<string>();
 
         // 默认池与目标目录准备（Move/Copy 共用的前奏，目标目录缺失统一报错）
         var prepared = await PrepareTransferDestinationAsync(destPath, cancellationToken);
@@ -267,16 +279,19 @@ public sealed partial class FileService
                 _fileSystemService.CreateDirectory(targetDir);
 
                 // 移动物理文件/目录
+                var oldPhysicalPath = item.PhysicalPath;
                 _fileSystemService.Move(item.PhysicalPath, newPhysicalPath);
                 
                 // 更新数据库记录
                 item.MoveTo(newPath, newPhysicalPath, destParentId);
                 await _fileRepository.UpdateAsync(item, cancellationToken);
 
-                // ITM-N3：移动文件夹时同步重写后代路径（ParentId 树不变，仅路径串前缀变化）
+                // ITM-N3：移动文件夹时同步重写后代路径（ParentId 树不变，仅路径串前缀变化）。
+                // 单条 SQL 批量重写（S3），旧基路径传文件夹自身旧路径
                 if (item.IsFolder)
-                    await RewriteDescendantPathsAsync(item.Id, normalized, newPath, newPhysicalPath, cancellationToken);
+                    await RewriteDescendantPathsAsync(normalized, newPath, oldPhysicalPath, newPhysicalPath, cancellationToken);
 
+                movedFromPaths.Add(GetParentPath(normalized));
                 results.Add(MapToDto(item));
             }
             catch (Exception)
@@ -291,7 +306,16 @@ public sealed partial class FileService
             return Result<IReadOnlyList<FileItemDto>>.Failure(saved.Error);
 
         if (results.Count > 0)
+        {
+            // 版本号：目标父目录少了/多了一项由根实体经 UoW 跟踪自动 bump；
+            // 来源父目录同样少了一项，原实现漏了它，客户端缓存里来源目录
+            // 仍显示已移走的条目（ETag 不变 → 304 → 陈旧）。这里显式补上
+            foreach (var fromParent in movedFromPaths)
+                DirectoryVersion.Bump(fromParent);
+            DirectoryVersion.Bump(destPath);
+
             await NotifyChangedAsync(destPath, FileChangeType.Moved, destPath);
+        }
         return Result<IReadOnlyList<FileItemDto>>.Success(results);
     }
 
@@ -537,28 +561,26 @@ public sealed partial class FileService
     }
 
 
-    private async Task RewriteDescendantPathsAsync(
-        Guid folderId,
-        string oldBasePath,
+    /// <summary>
+    /// S3：后代路径重写从逐条实体 UPDATE 改单条 SQL（按旧基路径前缀截断拼接）。
+    /// 命令经 UoW 意图队列登记，与根实体的更新在同一事务提交。
+    /// 不含 IsDeleted 过滤：软删后代同样要跟随重写，否则其 Path 停在旧位置，
+    /// 恢复时可能撞上旧路径上的新记录（Path 唯一部分索引）。
+    /// 子树内目录的内容集合没变（还是那些子项），不需要 bump 目录版本号，
+    /// 父目录的变更由调用方显式处理（见 Rename/Move 的 BumpParentVersion）。
+    /// </summary>
+    private Task RewriteDescendantPathsAsync(
+        string oldVirtualBase,
         string newVirtualBase,
+        string oldPhysicalBase,
         string newPhysicalBase,
-        CancellationToken ct)
-    {
-        var descendants = await _fileRepository.GetDescendantsAsync(folderId, ct);
-        foreach (var d in descendants)
-        {
-            if (!d.Path.StartsWith(oldBasePath + "/", StringComparison.Ordinal))
-                continue;
+        CancellationToken ct) =>
+        _fileRepository.RewriteSubtreePathsAsync(
+            oldVirtualBase, newVirtualBase, oldPhysicalBase, newPhysicalBase, ct);
 
-            var relative = d.Path[oldBasePath.Length..]; // 以 / 开头
-            var newDescendantPath = newVirtualBase + relative;
-            var newDescendantPhysical = Path.Combine(
-                newPhysicalBase,
-                relative.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-            d.MoveTo(newDescendantPath, newDescendantPhysical, d.ParentId);
-            await _fileRepository.UpdateAsync(d, ct);
-        }
-    }
+    /// <summary>递增路径所在父目录的版本号（批量操作不跟踪实体时的显式 bump）</summary>
+    private static void BumpParentVersion(string path) =>
+        DirectoryVersion.BumpForFile(path);
 
 
 }

@@ -375,6 +375,90 @@ public sealed class FileItemRepository(
         return rows.ConvertAll(r => r.ToDomain());
     }
 
+    // ---- 子树批量操作（S3：单条 SQL 替代逐条实体 UPDATE）----
+
+    public async Task<IReadOnlyList<FileItemEntry>> GetSubtreeEntriesAsync(
+        string rootPath,
+        CancellationToken cancellationToken = default)
+    {
+        var db = await sessions.GetAsync(cancellationToken);
+
+        // 根自身 + 全部后代，不论删除态。OR 的两支都走参数绑定：
+        // 根路径等值比较与 LIKE 前缀各一个占位
+        var prefix = EscapeLike(rootPath) + "/%";
+        var rows = await db.QueryAsync<FileItemEntryRow>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "SELECT Path, ItemType FROM FileItems WHERE Path = {0} OR Path LIKE {1} ESCAPE '#'",
+                rootPath, prefix),
+            false,
+            cancellationToken);
+
+        return rows.Select(r => new FileItemEntry(r.Path, r.ItemType)).ToList();
+    }
+
+    public Task SoftDeleteSubtreeAsync(
+        string rootPath,
+        DateTime deletedAt,
+        CancellationToken cancellationToken = default)
+    {
+        // 经意图队列登记：与同批次其他写入在同一个事务里提交，
+        // 中途失败整体回滚（逐条实体 Update 时代同样由 UoW 事务保证）。
+        // UpdatedAt 一并写：原逐条实现经 SoftDelete 的 MarkAsModified 会写，
+        // 不写则前端"修改时间"显示与旧行为不一致
+        var prefix = EscapeLike(rootPath) + "/%";
+        unitOfWork.EnqueueCommand(async (db, ct) => await db.ExecuteAsync(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "UPDATE FileItems SET IsDeleted = 1, DeletedAt = {0}, UpdatedAt = {0} " +
+                "WHERE (Path = {1} OR Path LIKE {2} ESCAPE '#') AND IsDeleted = 0",
+                deletedAt, rootPath, prefix),
+            ct));
+
+        return Task.CompletedTask;
+    }
+
+    public Task RestoreSubtreeAsync(
+        string rootPath,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        var prefix = EscapeLike(rootPath) + "/%";
+        unitOfWork.EnqueueCommand(async (db, ct) => await db.ExecuteAsync(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "UPDATE FileItems SET IsDeleted = 0, DeletedAt = NULL, UpdatedAt = {0} " +
+                "WHERE Path = {1} OR Path LIKE {2} ESCAPE '#'",
+                now, rootPath, prefix),
+            ct));
+
+        return Task.CompletedTask;
+    }
+
+    public Task RewriteSubtreePathsAsync(
+        string oldVirtualBase,
+        string newVirtualBase,
+        string oldPhysicalBase,
+        string newPhysicalBase,
+        CancellationToken cancellationToken = default)
+    {
+        // 新路径 = 新基路径 + 旧路径去掉旧基前缀的相对部分。substr(Path, len+1)
+        // 从旧基长度之后一位开始取（SQLite substr 从 1 起数），取出的相对段以
+        // 路径分隔符开头，直接拼到新基后面。物理路径同法：库存 PhysicalPath
+        // 用 OS 分隔符，相对段原样拼接即可，不需要 replace（旧基与新基同形态）。
+        // 五个值全部走绑定参数：基路径含用户输入（名称），内联即绕过参数化；
+        // 两个长度是本方法计算的 int，同样按参数传递保持口径统一
+        var prefix = EscapeLike(oldVirtualBase) + "/%";
+        unitOfWork.EnqueueCommand(async (db, ct) => await db.ExecuteAsync(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "UPDATE FileItems SET " +
+                "Path = {1} || substr(Path, {2}), " +
+                "PhysicalPath = {3} || substr(PhysicalPath, {4}) " +
+                "WHERE Path LIKE {0} ESCAPE '#'",
+                prefix, newVirtualBase, oldVirtualBase.Length + 1,
+                newPhysicalBase, oldPhysicalBase.Length + 1),
+            ct));
+
+        return Task.CompletedTask;
+    }
+
     public async Task<long> CalculateUserUsedSpaceAsync(
         Guid userId,
         CancellationToken cancellationToken = default)

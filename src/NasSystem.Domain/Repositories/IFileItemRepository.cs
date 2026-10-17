@@ -92,6 +92,51 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 取根路径自身加全部后代的轻量清单（路径 + 类型，不物化实体）。
+    /// </summary>
+    /// <remarks>
+    /// 供子树批量操作（软删/恢复/路径重写）的副作用处理：文件路径用于缩略图
+    /// 缓存清理，文件夹路径用于目录版本号递增。不含 IsDeleted 过滤：软删态的
+    /// 后代同样要跟随恢复与重写，见各批量方法的注释。
+    /// </remarks>
+    Task<IReadOnlyList<FileItemEntry>> GetSubtreeEntriesAsync(
+        string rootPath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 单条 SQL 软删整个子树（根自身加全部后代，不论当前删除态）。
+    /// 命令经 UnitOfWork 意图队列登记，随同批次其他写入在同一事务提交。
+    /// </summary>
+    Task SoftDeleteSubtreeAsync(
+        string rootPath,
+        DateTime deletedAt,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 单条 SQL 恢复整个子树（根自身加全部后代，不论当前删除态）。
+    /// </summary>
+    /// <remarks>
+    /// 不含 IsDeleted 过滤是有意的：软删一个文件夹时整棵子树都进了回收站，
+    /// 恢复必须把后代一并拉起。按 Id 取后代再逐条恢复的实现受
+    /// <see cref="GetDescendantsAsync"/> 的 IsDeleted = 0 过滤所限，实际只恢复根。
+    /// </remarks>
+    Task RestoreSubtreeAsync(
+        string rootPath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 单条 SQL 重写子树全部路径（虚拟路径与物理路径同趟，按旧基路径长度截断拼接）。
+    /// 不含 IsDeleted 过滤：软删后代同样要跟随重写，否则其 Path 停在旧位置，
+    /// 恢复时可能撞上旧路径上的新记录（Path 唯一部分索引）。
+    /// </summary>
+    Task RewriteSubtreePathsAsync(
+        string oldVirtualBase,
+        string newVirtualBase,
+        string oldPhysicalBase,
+        string newPhysicalBase,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 计算用户已使用空间（上传配额预检取实时聚合，不依赖滞后的 UsedBytes 字段）
     /// </summary>
     Task<long> CalculateUserUsedSpaceAsync(
@@ -173,3 +218,9 @@ public sealed record FileSearchResult
     public required IReadOnlyList<Entities.FileItem> Items { get; init; }
     public required int TotalCount { get; init; }
 }
+
+/// <summary>
+/// 子树条目的轻量投影：路径 + 类型。子树批量操作的副作用处理用，
+/// 不物化完整实体（万级子树下实体化是纯浪费）。
+/// </summary>
+public sealed record FileItemEntry(string Path, Enums.FileItemType ItemType);

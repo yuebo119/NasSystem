@@ -91,6 +91,7 @@ public class FilePathNormalizeTests
             new Moq.Mock<Microsoft.Extensions.Configuration.IConfiguration>().Object,
             new Moq.Mock<NasSystem.Application.Notifications.IHubNotificationService>().Object,
             new Microsoft.Extensions.Caching.Memory.MemoryCache(
-                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
+                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
+            new Moq.Mock<IThumbnailService>().Object);
     }
 }

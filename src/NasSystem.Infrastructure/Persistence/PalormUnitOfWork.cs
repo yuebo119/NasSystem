@@ -57,6 +57,16 @@ public sealed class PalormUnitOfWork : IUnitOfWork
         Track(entity);
     }
 
+    /// <summary>
+    /// 登记一条不跟踪实体的原始命令。供子树批量操作使用：单条 SQL 影响多行，
+    /// 没有可跟踪的实体实例，目录版本号改由调用方按需显式递增
+    /// （<see cref="NasSystem.Application.Files.DirectoryVersion"/>）。
+    /// </summary>
+    public void EnqueueCommand(Func<DataSession<SqliteProvider>, CancellationToken, Task> command)
+    {
+        _commands.Add(command);
+    }
+
     private void Track<TEntity>(TEntity entity)
     {
         if (entity is NasSystem.Domain.Common.Entity<Guid> tracked)

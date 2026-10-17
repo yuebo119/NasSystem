@@ -31,6 +31,12 @@ public sealed partial class FileService
         var result = new DeleteResultDto();
         var succeededPaths = new List<string>();
 
+        // S3：子树软删改单条 SQL 后的两类副作用收集。原实现由逐实体
+        // UpdateAsync 经 UoW 跟踪自动完成（目录版本号递增、FileDeletedEvent
+        // 分发缩略图缓存清理），批量 SQL 不跟踪实体，改为服务显式处理
+        var subtreeFilePaths = new List<string>();
+        var subtreeDirPaths = new List<string>();
+
         foreach (var path in request.Paths)
         {
             var normalized = NormalizePath(path);
@@ -48,25 +54,39 @@ public sealed partial class FileService
             }
             else
             {
-                // ITM-N7/N4：默认软删除——自身 + 后代子树标记，回收站读 IsDeleted 记录
-                var descendants = await _fileRepository.GetDescendantsAsync(item.Id, cancellationToken);
-                item.SoftDelete();
-                await _fileRepository.UpdateAsync(item, cancellationToken);
+                // ITM-N7/N4：默认软删除——自身 + 后代子树标记，回收站读 IsDeleted 记录。
+                // 单条 SQL 替代逐条实体 UPDATE（含根自身），先取轻量条目清单供副作用处理
+                var subtree = await _fileRepository.GetSubtreeEntriesAsync(item.Path, cancellationToken);
+                await _fileRepository.SoftDeleteSubtreeAsync(item.Path, DateTime.UtcNow, cancellationToken);
 
-                foreach (var descendant in descendants)
+                foreach (var entry in subtree)
                 {
-                    descendant.SoftDelete();
-                    await _fileRepository.UpdateAsync(descendant, cancellationToken);
+                    if (entry.ItemType == FileItemType.Folder)
+                        subtreeDirPaths.Add(entry.Path);
+                    else
+                        subtreeFilePaths.Add(entry.Path);
                 }
+
                 result.DeletedCount++;
                 succeededPaths.Add(normalized);
             }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        // ITM-N25：只对成功项推送——失败项记录仍在，推送 Deleted 会误导订阅端
+
+        // S3 副作用（提交成功后执行，与 UoW 的 BumpDirectoryVersions 同时序）：
+        // 缩略图缓存清理等价于原 FileDeletedEvent 逐实体分发；目录版本号递增
+        // 覆盖子树内所有目录（内容全空）加各删除项的父目录（少一项）
+        foreach (var filePath in subtreeFilePaths)
+            await _thumbnailService.ClearCacheAsync(filePath);
+        foreach (var dir in subtreeDirPaths)
+            DirectoryVersion.Bump(dir);
         foreach (var path in succeededPaths)
+        {
+            DirectoryVersion.Bump(GetParentPath(path));
+            // ITM-N25：只对成功项推送——失败项记录仍在，推送 Deleted 会误导订阅端
             await NotifyChangedAsync(GetParentPath(path), FileChangeType.Deleted, path);
+        }
         return Result<DeleteResultDto>.Success(result);
     }
 
@@ -120,22 +140,31 @@ public sealed partial class FileService
         if (item is null)
             return Result<FileItemDto>.Failure(FileErrors.NotFoundById(fileId));
 
+        // 内存实体同步恢复态：持久化走下面的批量 SQL（不经过实体），
+        // 但响应 DTO 由实体映射，不同步则 IsDeleted/UpdatedAt 与库内不一致
         item.Restore();
-        await _fileRepository.UpdateAsync(item, cancellationToken);
 
-        // ITM-N7：恢复文件夹时后代一并恢复，否则子项仍处于软删态导致目录内容为空
-        var descendants = await _fileRepository.GetDescendantsAsync(item.Id, cancellationToken);
-        foreach (var descendant in descendants)
-        {
-            descendant.Restore();
-            await _fileRepository.UpdateAsync(descendant, cancellationToken);
-        }
+        // S3：整棵子树单条 SQL 恢复（根 + 全部后代不论删除态）。
+        // 原实现按 Id 取后代再逐条 Restore，而 GetDescendantsAsync 带
+        // IsDeleted = 0 过滤：软删文件夹的后代全是 1，取回空列表，
+        // 实际只恢复了根、后代留在回收站（与 ITM-N7 的注释意图相悖）。
+        // 先取轻量清单供目录版本号递增
+        var subtree = await _fileRepository.GetSubtreeEntriesAsync(item.Path, cancellationToken);
+        await _fileRepository.RestoreSubtreeAsync(item.Path, cancellationToken);
 
         var saved = await SaveChangesWithConflictGuardAsync(
             new Error("File.AlreadyExists", "同路径已存在记录，无法恢复"),
             cancellationToken);
         if (saved.IsFailure)
             return Result<FileItemDto>.Failure(saved.Error);
+
+        // 子树内所有目录的内容都变了（后代回来），父目录少了一项（根回来）
+        foreach (var entry in subtree)
+        {
+            if (entry.ItemType == FileItemType.Folder)
+                DirectoryVersion.Bump(entry.Path);
+        }
+        DirectoryVersion.Bump(GetParentPath(item.Path));
 
         return Result<FileItemDto>.Success(MapToDto(item));
     }

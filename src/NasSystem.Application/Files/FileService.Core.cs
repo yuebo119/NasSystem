@@ -40,6 +40,16 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     private readonly IHubNotificationService _notifier;
     private readonly IMemoryCache _cache;
 
+    /// <summary>
+    /// 缩略图服务：子树软删时按路径清理缓存用。
+    /// </summary>
+    /// <remarks>
+    /// 原实现经 FileDeletedEvent 领域事件逐实体分发到 Infrastructure 的处理器，
+    /// 子树软删改单条 SQL 后没有实体可产生事件，副作用（缩略图缓存清理）
+    /// 随之改为服务显式调用。接口在 Application 层，依赖方向不变。
+    /// </remarks>
+    private readonly IThumbnailService _thumbnailService;
+
     public FileService(
         IFileItemRepository fileRepository,
         IStoragePoolRepository storagePoolRepository,
@@ -48,7 +58,8 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         IFileSystemService fileSystemService,
         IConfiguration configuration,
         IHubNotificationService notifier,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        IThumbnailService thumbnailService)
     {
         _fileRepository = fileRepository;
         _storagePoolRepository = storagePoolRepository;
@@ -57,6 +68,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         _fileSystemService = fileSystemService;
         _notifier = notifier;
         _cache = cache;
+        _thumbnailService = thumbnailService;
     }
 
     /// <summary>操作成功后向父目录订阅组推送变更（SignalR 实时刷新闭环）</summary>

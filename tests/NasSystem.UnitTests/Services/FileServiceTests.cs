@@ -52,7 +52,10 @@ public class FileServiceTests
             _notifierMock.Object,
             // 真实 MemoryCache：Moq 模拟 IMemoryCache 时扩展方法 Set 会踩 null
             new Microsoft.Extensions.Caching.Memory.MemoryCache(
-                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
+                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
+            // S3：子树软删改批量 SQL 后缩略图缓存清理由服务显式调用，
+            // 本测试类不覆盖删除路径，mock 即可
+            new Mock<IThumbnailService>().Object);
     }
 
     #region GetDirectoryContentsAsync Tests
@@ -397,9 +400,14 @@ public class FileServiceTests
             Permanent = false
         };
 
+        // S3：软删走单条 SQL（GetSubtreeEntriesAsync 取副作用清单 +
+        // SoftDeleteSubtreeAsync 登记批量命令），不再逐条 UpdateAsync
         _fileRepositoryMock
-            .Setup(x => x.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<FileItem>());
+            .Setup(x => x.GetSubtreeEntriesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItemEntry>
+            {
+                new("/documents/test.txt", FileItemType.File),
+            });
 
         _fileRepositoryMock
             .Setup(x => x.GetByPathAsync("/documents/test.txt", It.IsAny<CancellationToken>()))
@@ -411,6 +419,9 @@ public class FileServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         _unitOfWorkMock.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _fileRepositoryMock.Verify(
+            x => x.SoftDeleteSubtreeAsync("/documents/test.txt", It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -499,9 +510,10 @@ public class FileServiceTests
             .Setup(x => x.GetByPathAsync("/documents/file2.txt", It.IsAny<CancellationToken>()))
             .ReturnsAsync(file2);
 
+        // S3：软删走单条 SQL，逐条 UpdateAsync 的验证改为批量命令的验证
         _fileRepositoryMock
-            .Setup(x => x.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<FileItem>());
+            .Setup(x => x.GetSubtreeEntriesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItemEntry>());
 
         // Act
         var result = await _sut.DeleteAsync(request, userId);
@@ -511,8 +523,10 @@ public class FileServiceTests
         result.Value.Should().NotBeNull();
         result.Value.DeletedCount.Should().Be(2);
         // 软删除链路已按 CONVENTIONS §3.5 落地（ITM-N7/N4 验收）：
-        // Permanent=false 走 SoftDelete + UpdateAsync，而非物理删除
-        _fileRepositoryMock.Verify(x => x.UpdateAsync(It.IsAny<FileItem>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        // Permanent=false 走 SoftDeleteSubtreeAsync（单条 SQL），而非物理删除
+        _fileRepositoryMock.Verify(
+            x => x.SoftDeleteSubtreeAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
     }
 
     [Fact]
@@ -759,19 +773,25 @@ public class FileServiceTests
         var fileId = Guid.NewGuid();
         var file = CreateFileItem(fileId, "deleted.txt", "/documents/deleted.txt", FileItemType.File);
 
+        // S3：恢复走单条 SQL（整棵子树），不再逐条 Restore + UpdateAsync
         _fileRepositoryMock
             .Setup(x => x.GetByIdAsync(fileId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(file);
         _fileRepositoryMock
-            .Setup(x => x.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<FileItem>());
+            .Setup(x => x.GetSubtreeEntriesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<FileItemEntry>
+            {
+                new("/documents/deleted.txt", FileItemType.File),
+            });
 
         // Act
         var result = await _sut.RestoreAsync(fileId, userId);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        _fileRepositoryMock.Verify(x => x.UpdateAsync(file, It.IsAny<CancellationToken>()), Times.Once);
+        _fileRepositoryMock.Verify(
+            x => x.RestoreSubtreeAsync("/documents/deleted.txt", It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
