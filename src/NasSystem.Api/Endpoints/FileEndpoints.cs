@@ -6,6 +6,7 @@
 namespace NasSystem.Api.Extensions;
 
 using System.Security.Claims;
+using Microsoft.AspNetCore.WebUtilities;
 using NasSystem.Application.Files;
 using NasSystem.Application.Files.Dtos;
 using NasSystem.Shared;
@@ -175,30 +176,96 @@ public static class FileEndpoints
     private static async Task<IResult> UploadFile(
         HttpRequest request,
         IFileTransferService fileService,
-        ClaimsPrincipal user)
+        ClaimsPrincipal user,
+        CancellationToken cancellationToken)
     {
         var userId = GetUserId(user);
-        var form = await request.ReadFormAsync();
-        var file = form.Files.FirstOrDefault();
 
-        if (file is null)
-            return Results.BadRequest(ApiResponse<object>.Fail("Validation.NoFile", "未提供文件"));
-
-        var destinationPath = form["path"].FirstOrDefault() ?? "/";
-        var overwrite = bool.TryParse(form["overwrite"].FirstOrDefault(), out var ow) && ow;
-
-        var metadata = new UploadFileMetadata
+        // S5：MultipartReader 流式解析。原实现 ReadFormAsync 会把超过 8MB 的
+        // 文件 part 落临时盘（FormOptions.MemoryBufferThreshold），大文件上传的
+        // 磁盘路径是 网络→临时文件→读回→写目标 三趟；流式下 section.Body 直接
+        // 接进服务的写入加哈希流水线，单趟完成。代价：拿不到 part 声明大小，
+        // 容量预检改"余量判定 + 边写边检"（FileService.PreflightUploadAsync）。
+        // 注意：MultipartReader 是单向的，文件 part 的流必须在其出现时立即消费，
+        // 因此 path/overwrite 字段必须先于 file 字段发送（前端已按此顺序）
+        if (!Microsoft.Net.Http.Headers.MediaTypeHeaderValue.TryParse(request.ContentType, out var mediaType)
+            || !string.Equals(mediaType.MediaType.ToString(), "multipart/form-data", StringComparison.OrdinalIgnoreCase))
         {
-            FileName = file.FileName,
-            DestinationPath = destinationPath,
-            FileSize = file.Length,
-            ContentType = file.ContentType,
-            Overwrite = overwrite
-        };
+            return Results.BadRequest(ApiResponse<object>.Fail("Validation.ContentType", "请求必须是 multipart/form-data"));
+        }
 
-        await using var stream = file.OpenReadStream();
-        var result = await fileService.UploadFileAsync(metadata, stream, userId);
-        return result.ToHttpResult();
+        var boundary = mediaType.Parameters
+            .FirstOrDefault(p => string.Equals(p.Name.Value, "boundary", StringComparison.OrdinalIgnoreCase))
+            ?.Value.Value?.Trim('"');
+        if (string.IsNullOrEmpty(boundary))
+        {
+            return Results.BadRequest(ApiResponse<object>.Fail("Validation.ContentType", "multipart 请求缺少 boundary"));
+        }
+
+        var destinationPath = "/";
+        var overwrite = false;
+        string? fileName = null;
+        string? contentType = null;
+
+        var reader = new MultipartReader(boundary, request.Body);
+        while (await reader.ReadNextSectionAsync(cancellationToken) is { } section)
+        {
+            if (!Microsoft.Net.Http.Headers.ContentDispositionHeaderValue.TryParse(
+                    section.ContentDisposition, out var disposition))
+            {
+                continue;
+            }
+
+            var fieldName = disposition.Name.Value;
+            if (fieldName is null)
+                continue;
+
+            if (fieldName.Equals("file", StringComparison.OrdinalIgnoreCase))
+            {
+                // 文件 part：不读流，直接交给服务边收边写。出现即消费，
+                // 因此它必须排在 path 之后（path 有默认值 "/"，缺失时
+                // 上传会落到根目录，与旧实现的 form["path"] ?? "/" 一致）
+                fileName = disposition.FileNameStar.Value ?? disposition.FileName.Value;
+                if (string.IsNullOrEmpty(fileName))
+                {
+                    return Results.BadRequest(ApiResponse<object>.Fail("Validation.NoFile", "未提供文件"));
+                }
+
+                // MultipartSection.Headers 是 Dictionary<string, StringValues>，
+                // 没有强类型的 ContentType 访问器
+                section.Headers.TryGetValue("Content-Type", out var contentTypeValue);
+                contentType = contentTypeValue.ToString();
+
+                var metadata = new UploadFileMetadata
+                {
+                    FileName = fileName,
+                    DestinationPath = destinationPath,
+                    // 流式解析拿不到声明大小：预检与容量判定改余量模式，见服务端注释
+                    FileSize = 0,
+                    ContentType = contentType,
+                    Overwrite = overwrite
+                };
+
+                await using var stream = section.Body;
+                var result = await fileService.UploadFileAsync(metadata, stream, userId, cancellationToken);
+                return result.ToHttpResult();
+            }
+
+            if (fieldName.Equals("path", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = await section.ReadAsStringAsync(cancellationToken);
+                if (!string.IsNullOrEmpty(value))
+                    destinationPath = value;
+            }
+            else if (fieldName.Equals("overwrite", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = await section.ReadAsStringAsync(cancellationToken);
+                overwrite = bool.TryParse(value, out var ow) && ow;
+            }
+        }
+
+        // 走到这里说明整个 body 里没有 file part（file part 出现时上面直接返回）
+        return Results.BadRequest(ApiResponse<object>.Fail("Validation.NoFile", "未提供文件"));
     }
 
     private static async Task<IResult> DownloadFile(

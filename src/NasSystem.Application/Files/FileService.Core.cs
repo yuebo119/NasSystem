@@ -95,7 +95,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     }
 
     /// <summary>
-    /// 上传预检：用户配额 + 存储池容量。
+    /// 上传预检：用户配额与存储池容量。
     /// </summary>
     /// <remarks>
     /// 用户用量取实时聚合查询——User.UsedBytes 字段没有生产维护者（前端展示口径滞后），
@@ -103,32 +103,60 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     /// 此处为 best-effort 前置拦截，物理写失败由 IO 层兜底）。
     /// 声明大小来自客户端 metadata.FileSize；超大谎报由物理写失败兜底，
     /// 上传后不对账声明值（record 记账用实际写入字节）。
+    /// <para>
+    /// 【S5】流式 multipart 解析拿不到声明大小（FileSize=0），此时预检退化为
+    /// 余量判定：有配额/上限时确认还有余量即放行，返回的余量由写入循环边写边检。
+    /// 无配额且无上限时对应余量为 null（不设防）。
+    /// </para>
     /// </remarks>
-    private async Task<Result> PreflightUploadAsync(
+    private async Task<Result<(long? QuotaRemainingBytes, long? PoolAvailableBytes)>> PreflightUploadAsync(
         long declaredSize,
         Guid userId,
         Guid poolId,
         CancellationToken cancellationToken)
     {
+        // 用户配额余量。无配额时 null（不设防）
+        long? quotaRemaining = null;
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user?.QuotaBytes.HasValue == true)
         {
             var usedBytes = await _fileRepository.CalculateUserUsedSpaceAsync(userId, cancellationToken);
             if (usedBytes + declaredSize > user.QuotaBytes.Value)
-                return Result.Failure(UserErrors.QuotaExceeded);
+                return Result<(long?, long?)>.Failure(UserErrors.QuotaExceeded);
+            quotaRemaining = user.QuotaBytes.Value - usedBytes;
         }
 
-        if (declaredSize > 0)
+        // 池容量余量：放得下的判定要连同磁盘物理剩余——池只是盘上的文件夹，
+        // 只按配额放行会把盘写爆（写失败发生在流式中途，比预检拒绝更难收拾）。
+        // 流式上传声明大小为 0 时这里取余量供边写边检，判定退化为"还有余量即放行"。
+        // 余量无从判断（无配额且挂载点不可达）时拒绝：与旧 HasEnoughSpace 的
+        // fail-closed 语义一致，真写下去也只会在流式中途失败，更难收拾
+        long? poolAvailable = null;
+        var pool = await _storagePoolRepository.GetByIdAsync(poolId, cancellationToken);
+        if (pool is not null)
         {
-            var pool = await _storagePoolRepository.GetByIdAsync(poolId, cancellationToken);
-            // 放得下的判定要连同磁盘物理剩余：池只是盘上的文件夹，
-            // 只按配额放行会把盘写爆（写失败发生在流式中途，比预检拒绝更难收拾）
-            if (pool is not null && !pool.HasEnoughSpace(
-                    declaredSize, DiskSpace.GetPhysicalFreeBytes(pool.MountPath)))
-                return Result.Failure(StorageErrors.InsufficientSpace);
+            var available = pool.AvailableBytesWithin(DiskSpace.GetPhysicalFreeBytes(pool.MountPath));
+            if (available is null || available.Value < declaredSize)
+                return Result<(long?, long?)>.Failure(StorageErrors.InsufficientSpace);
+            poolAvailable = available;
         }
 
-        return Result.Success();
+        return Result<(long?, long?)>.Success((quotaRemaining, poolAvailable));
+    }
+
+    /// <summary>清理上传半成品临时文件（存在性竞争与 IO 错误都吞掉：它本来就是可弃的）</summary>
+    private static void TryDeleteTempFile(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+        }
+        catch
+        {
+            // 临时文件清理失败不阻断主流程；残留的 .uploading-* 文件由扫描同步忽略
+            //（物理存在但库里没有对应记录时会被当新文件入库——见下方说明）
+        }
     }
 
     /// <summary>

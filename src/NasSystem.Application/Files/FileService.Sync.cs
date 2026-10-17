@@ -246,6 +246,13 @@ public sealed partial class FileService
         foreach (var file in Directory.EnumerateFiles(physicalDir))
         {
             var fileName = Path.GetFileName(file);
+
+            // S5：上传半成品临时文件（<目标名>.uploading-<guid>）不入库。
+            // 上传中断（客户端断开/进程退出）会留下它，库里没有对应记录，
+            // 不跳过的话下次扫描会把半成品当用户文件导入
+            if (fileName.Contains(".uploading-", StringComparison.Ordinal))
+                continue;
+
             var fileVirtualPath = CombinePath(virtualPath, fileName);
             physicalPaths.Add(fileVirtualPath);
 

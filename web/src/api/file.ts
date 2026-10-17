@@ -109,8 +109,11 @@ export const fileApi = {
     onProgress?: (percentage: number) => void
   ): Promise<ApiResponse<FileItem>> {
     const formData = new FormData()
+    // 字段顺序：path 必须先于 file。后端用 MultipartReader 流式解析，
+    // 文件 part 的流出现时就要立即消费，拿不到后面的 path 字段
+    // （S5：边收边写单趟 IO，替代 ReadFormAsync 落临时盘的三趟）
+    formData.append('path', destinationPath)
     formData.append('file', file)
-    formData.append('path', destinationPath)  // 后端使用 'path' 字段
 
     return http.post('/files/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

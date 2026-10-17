@@ -98,40 +98,88 @@ public sealed partial class FileService
         if (defaultPool.IsFailure)
             return Result<FileItemDto>.Failure(defaultPool.Error);
 
-        // ITM-F：上传预检——用户配额与存储池容量（先于任何物理写入，失败即拒绝）
+        // ITM-F：上传预检。流式 multipart 解析下拿不到 part 声明大小
+        // （FileSize=0），预检从"声明值判定"退化为"余量判定"：
+        // 有配额/容量上限时确认还有余量即放行，超限由写入循环边写边检
         var preflight = await PreflightUploadAsync(
             metadata.FileSize, userId, defaultPool.Value.Id, cancellationToken);
         if (preflight.IsFailure)
             return Result<FileItemDto>.Failure(preflight.Error);
+        var limits = preflight.Value;
 
         // 写入物理文件并同步计算哈希——单遍 IO 流水线。
         // 【性能精炼记录】原实现"写盘 → 重开读盘 → 整流哈希"，大文件场景读放大 ×2；
         // 精炼为复制缓冲循环内增量喂入 SHA256（IncrementalHash），IO 量减半且语义不变。
         // 缓冲区与 FileHasher 保持同规格（80KB），ArrayPool 复用避免大文件反复分配。
+        // 【S5】先写 .uploading-<guid> 临时文件，成功后改名落位：边写边检发现
+        // 超限时中止删除临时文件，目标路径不被破坏（覆盖上传场景下旧文件
+        // 不会像原地截断写那样被半个新文件顶掉）
         var physicalPath = GetPhysicalPath(filePath, defaultPool.Value.MountPath);
         var physicalDir = Path.GetDirectoryName(physicalPath)!;
         _fileSystemService.CreateDirectory(physicalDir);
+        var tempPath = $"{physicalPath}.uploading-{Guid.NewGuid():N}";
 
         long totalBytes = 0;
-        string hash;
+        string hash = string.Empty;
+        Error? limitError = null;
         var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(80 * 1024);
         try
         {
-            await using var fs = _fileSystemService.OpenWrite(physicalPath);
-            using var incrementalHash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
-            int bytesRead;
-            while ((bytesRead = await fileStream.ReadAsync(buffer, cancellationToken)) > 0)
+            // using 块内退出即释放流：超限中止后临时文件不被占用才能删掉
+            await using (var fs = _fileSystemService.OpenWrite(tempPath))
+            using (var incrementalHash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256))
             {
-                await fs.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-                incrementalHash.AppendData(buffer, 0, bytesRead);
-                totalBytes += bytesRead;
+                int bytesRead;
+                while ((bytesRead = await fileStream.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    // 边写边检：流式上传没有声明大小，超配额/超容量时立即中止，
+                    // 删掉半成品临时文件，不在目标路径留下损坏数据
+                    if (limits.QuotaRemainingBytes is { } quota && totalBytes + bytesRead > quota)
+                    {
+                        limitError = UserErrors.QuotaExceeded;
+                        break;
+                    }
+                    if (limits.PoolAvailableBytes is { } available && totalBytes + bytesRead > available)
+                    {
+                        limitError = StorageErrors.InsufficientSpace;
+                        break;
+                    }
+
+                    await fs.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                    incrementalHash.AppendData(buffer, 0, bytesRead);
+                    totalBytes += bytesRead;
+                }
+
+                if (limitError is null)
+                    hash = Convert.ToBase64String(incrementalHash.GetHashAndReset());
             }
 
-            hash = Convert.ToBase64String(incrementalHash.GetHashAndReset());
+            if (limitError is not null)
+            {
+                TryDeleteTempFile(tempPath);
+                return Result<FileItemDto>.Failure(limitError.Value);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 写入失败：清理半成品临时文件，目标路径保持原状
+            TryDeleteTempFile(tempPath);
+            throw;
         }
         finally
         {
             System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        // 临时文件落位（覆盖语义：同卷 rename，旧文件被替换）
+        try
+        {
+            File.Move(tempPath, physicalPath, overwrite: true);
+        }
+        catch
+        {
+            TryDeleteTempFile(tempPath);
+            throw;
         }
 
         // 创建或更新记录

@@ -273,6 +273,14 @@
 | path | string | 否 | 目标路径，默认 "/" |
 | overwrite | bool | 否 | 是否覆盖，默认 false |
 
+`path` 与 `overwrite` 字段必须先于 `file` 字段发送：服务端用 MultipartReader
+流式解析，文件 part 的流出现时立即消费写入，拿不到排在后面的字段。
+
+上传为单趟流式（边收边写边算 SHA256），不落服务端临时文件；中断上传留下的
+`.uploading-` 半成品不被扫描同步入库。容量控制为余量预检加边写边检：超用户
+配额或池容量时中止并清理半成品，目标路径不被破坏。Kestrel 全局请求体上限
+500MB（`/api/v1/system/settings` 的 `maxUploadSizeMB` 同源上报）。
+
 ### 2.4 下载文件
 
 **GET** `/api/v1/files/download/{*path}`
