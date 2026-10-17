@@ -76,18 +76,18 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 - ✅ SecretKey 占位符化 + 注册期 fail-fast；分享令牌 HMAC-SHA256 签名；分享码/前端密码加密随机数
 - ✅ Kestrel 上传 500MB 限制 + auth 端点限流（仅生产严格）；生产 CORS 白名单策略（SetIsOriginAllowed 拒绝制，来源清单待接入配置）
 
-### 上传链路的两个阈值（2026-10-16 对齐）
+### 上传链路的体积上限（2026-10-17 流式化后）
 
-Kestrel 的 `MaxRequestBodySize` 不是唯一生效的上限。multipart 表单层有两个独立阈值，
-原先都取框架默认值，与 Kestrel 不一致：
+上传只受一个上限约束：Kestrel 的 `MaxRequestBodySize`（`UploadLimit.MaxRequestBodySize`，
+500MB）。`UploadLimit` 已注入 DI 供系统设置端点回读，是单一事实源。
 
-| 阈值 | 默认值 | 现状 | 不一致的后果 |
-|------|--------|------|--------------|
-| `FormOptions.MultipartBodyLengthLimit` | 128MB | 与 `UploadLimit.MaxRequestBodySize` 对齐 | 上传 128MB~500MB 之间的文件被表单层先拒，配置的 500MB 名不副实 |
-| `FormOptions.MemoryBufferThreshold` | 64KB | 8MB | 超过即落临时盘，上传链路变成网络 → 临时文件 → 目标文件，白翻一倍磁盘 IO |
-
-新增上传相关限制时必须三处同源：`UploadLimit` 常量、Kestrel 选项、FormOptions。
-`UploadLimit` 已注入 DI 供系统设置端点回读，是三处的单一事实源。
+2026-10-17 起 multipart 解析从 `ReadFormAsync` 改 `MultipartReader` 流式
+（FileEndpoints.UploadFile）：表单层的 `FormOptions.MultipartBodyLengthLimit`
+与 `MemoryBufferThreshold` 不再参与上传链路（无 ReadFormAsync 调用方，
+配置已删）。改动前这两个阈值与 Kestrel 各管一段，且超过内存阈值的文件 part
+会落临时盘，上传变成网络 → 临时文件 → 目标文件三趟磁盘 IO。流式化后为单趟，
+容量控制改为余量预检加边写边检，中断留下的 `.uploading-` 半成品由扫描同步
+跳过。注意 multipart 字段顺序：`path`/`overwrite` 必须先于 `file`（流单向消费）。
 
 ### 压缩层归属（未决，待部署环境实测）
 
