@@ -6,7 +6,7 @@
 namespace NasSystem.Application.FileVersions;
 
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using NasSystem.Application.Configuration;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Repositories;
@@ -23,7 +23,7 @@ public class FileVersionService : IFileVersionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<FileVersionService> _logger;
     private readonly IFileSystemService _fileSystemService;
-    private readonly FileVersionOptions _options;
+    private readonly ISystemConfigService _configService;
 
     public FileVersionService(
         IFileVersionRepository versionRepository,
@@ -31,14 +31,14 @@ public class FileVersionService : IFileVersionService
         IUnitOfWork unitOfWork,
         ILogger<FileVersionService> logger,
         IFileSystemService fileSystemService,
-        IOptions<FileVersionOptions> options)
+        ISystemConfigService configService)
     {
         _versionRepository = versionRepository;
         _fileItemRepository = fileItemRepository;
         _unitOfWork = unitOfWork;
         _logger = logger;
         _fileSystemService = fileSystemService;
-        _options = options.Value;
+        _configService = configService;
     }
 
     /// <inheritdoc />
@@ -113,7 +113,16 @@ public class FileVersionService : IFileVersionService
         if (versions.Count == 0)
             return;
 
-        var cutoff = DateTime.UtcNow.AddDays(-_options.MaxVersionAgeDays);
+        // 保留策略从动态配置读（配置页可调，改完下次产版本即生效）。
+        // 每次产版本读一次库：版本创建不是热路径，为它加缓存反而要处理失效
+        var maxVersions = await _configService.GetIntAsync(
+            ConfigDescriptors.Keys.VersionMaxCount, cancellationToken);
+        var maxAgeDays = await _configService.GetIntAsync(
+            ConfigDescriptors.Keys.VersionMaxAgeDays, cancellationToken);
+        if (maxVersions < 1) maxVersions = 1;
+        if (maxAgeDays < 1) maxAgeDays = 1;
+
+        var cutoff = DateTime.UtcNow.AddDays(-maxAgeDays);
         var evictable = versions
             .Where(v => !v.IsCurrent)
             .OrderBy(v => v.VersionNumber)
@@ -122,7 +131,7 @@ public class FileVersionService : IFileVersionService
         var expired = evictable.Where(v => v.CreatedAt < cutoff).ToList();
         // 新版本已在清单内（AddAsync + SaveChanges 先于保留策略执行），
         // 超量判定直接用 MaxVersionsPerFile，不再为"即将加入的那个"留位
-        var overflow = evictable.Count - expired.Count - _options.MaxVersionsPerFile;
+        var overflow = evictable.Count - expired.Count - maxVersions;
         if (overflow > 0)
         {
             // 未过期部分里最旧的先走：保留策略的牺牲顺序永远是旧版本

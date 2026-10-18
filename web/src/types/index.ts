@@ -134,6 +134,29 @@ export interface MediaItem {
 
 export type MediaType = 'image' | 'video' | 'audio'
 
+// 系统动态配置（配置页，descriptor 驱动）
+export interface SystemConfigItem {
+  key: string
+  labelKey: string
+  type: number // 0=Int, 1=Bool（与后端 ConfigValueType 对齐）
+  value: string
+  defaultValue: string
+  min?: number
+  max?: number
+  descriptionKey?: string
+}
+
+export interface SystemConfigGroup {
+  group: string
+  titleKey: string
+  items: SystemConfigItem[]
+}
+
+export interface SystemConfigSnapshot {
+  groups: SystemConfigGroup[]
+  lastUpdatedAt?: string
+}
+
 // 元数据按需提取，未取到的字段缺席（后端 WhenWritingNull）
 export interface MediaMetadata {
   path: string

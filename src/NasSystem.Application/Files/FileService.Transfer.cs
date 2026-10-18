@@ -201,6 +201,7 @@ public sealed partial class FileService
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             // ITM-N25：覆盖上传是 Modified 变更，与新建同等推送（否则订阅端不刷新）
             await NotifyChangedAsync(destPath, FileChangeType.Modified, existingItem.Path);
+            await AutoRecognizeAsync(existingItem, cancellationToken);
             return Result<FileItemDto>.Success(MapToDto(existingItem));
         }
 
@@ -221,6 +222,7 @@ public sealed partial class FileService
             return Result<FileItemDto>.Failure(saved.Error);
 
         await NotifyChangedAsync(destPath, FileChangeType.Created, file.Path);
+        await AutoRecognizeAsync(file, cancellationToken);
         return Result<FileItemDto>.Success(MapToDto(file));
     }
 

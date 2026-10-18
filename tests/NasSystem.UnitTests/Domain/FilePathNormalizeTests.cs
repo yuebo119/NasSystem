@@ -94,6 +94,10 @@ public class FilePathNormalizeTests
                 new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
             new Moq.Mock<IThumbnailService>().Object,
             // ROADMAP Phase 1：版本服务注入，本测试类不覆盖版本路径
-            new Moq.Mock<NasSystem.Application.FileVersions.IFileVersionService>().Object);
+            new Moq.Mock<NasSystem.Application.FileVersions.IFileVersionService>().Object,
+            // ROADMAP Phase 2/配置页：OCR 与动态配置 mock（本测试类不覆盖）
+            new Moq.Mock<NasSystem.Application.Ocr.IOcrService>().Object,
+            new Moq.Mock<NasSystem.Application.Configuration.ISystemConfigService>().Object,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<NasSystem.Application.Files.FileService>.Instance);
     }
 }

@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<IFileVersionRepository, FileVersionRepository>();
         services.AddScoped<IBackupDeviceRepository, BackupDeviceRepository>();
         services.AddScoped<IFileOcrTextRepository, FileOcrTextRepository>();
+        services.AddScoped<ISystemSettingRepository, SystemSettingRepository>();
         services.AddScoped<IStoragePoolRepository, StoragePoolRepository>();
         services.AddScoped<IFileShareRepository, FileShareRepository>();
 
@@ -86,6 +87,11 @@ public static class DependencyInjection
 
         // 媒体库（ROADMAP Phase 3）。无状态提取器 + 走仓储的聚合服务
         services.AddScoped<Application.Media.IMediaService, Media.MediaService>();
+
+        // 系统动态配置（配置页）：descriptor 驱动，键值表存储，改完即生效。
+        // Scoped：与仓储同生命周期；消费方（版本保留/OCR 开关/WebDAV 闸）
+        // 都是 scoped 或 per-request，直接注入
+        services.AddScoped<Application.Configuration.ISystemConfigService, Configuration.SystemConfigService>();
 
         // 内存缓存
         services.AddMemoryCache();
@@ -268,6 +274,7 @@ public static class DependencyInjection
         drift.AddRange(await db.ValidateSchemaAsync<FileVersionRow>());
         drift.AddRange(await db.ValidateSchemaAsync<BackupDeviceRow>());
         drift.AddRange(await db.ValidateSchemaAsync<FileOcrTextRow>());
+        drift.AddRange(await db.ValidateSchemaAsync<SystemSettingRow>());
 
         if (drift.Count == 0)
         {

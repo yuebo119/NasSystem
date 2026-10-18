@@ -8,7 +8,9 @@ namespace NasSystem.IntegrationTests;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
+using NasSystem.Application.Users.Dtos;
 using NasSystem.Domain.Entities;
 using Xunit;
 
@@ -84,6 +86,32 @@ public class WebDavEndpointTests : ApiTestBase, IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         var challenge = response.Headers.GetValues("WWW-Authenticate");
         string.Join(" ", challenge).Should().Contain("Basic", "必须提示客户端走 Basic 认证");
+    }
+
+    [Fact]
+    public async Task PropFind_WhenDisabledByConfig_Returns503()
+    {
+        // 配置页关停 WebDAV 后 /dav 整体不可用：已挂载客户端收到 503。
+        // OPTIONS 仍放行（能力探测不该被开关影响），其余动词一律 503
+        var adminToken = await LoginAsAdminAsync();
+        var disable = await Client.SendAsync(CreateJsonRequest(
+            HttpMethod.Put, "/api/v1/system/config", adminToken,
+            new { values = new Dictionary<string, string> { ["webdav.enabled"] = "false" } }));
+        disable.StatusCode.Should().Be(HttpStatusCode.OK, "关停开关应保存成功");
+
+        var request = new HttpRequestMessage(new HttpMethod("PROPFIND"), "/dav/");
+        var response = await Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+        var options = await Client.SendAsync(new HttpRequestMessage(HttpMethod.Options, "/dav/"));
+        options.StatusCode.Should().Be(HttpStatusCode.OK, "OPTIONS 能力探测不受开关影响");
+
+        // 还原：同工厂其他用例依赖 WebDAV 可用（测试类共享工厂与配置库）
+        var restore = await Client.SendAsync(CreateJsonRequest(
+            HttpMethod.Put, "/api/v1/system/config", adminToken,
+            new { values = new Dictionary<string, string> { ["webdav.enabled"] = "true" } }));
+        restore.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -387,6 +415,26 @@ public class WebDavEndpointTests : ApiTestBase, IDisposable
             username,
             content: new StringContent(content, Encoding.UTF8, "text/plain"));
         return await Client.SendAsync(request);
+    }
+
+    /// <summary>种子 admin 登录换令牌（配置端点限管理员）</summary>
+    private async Task<string> LoginAsAdminAsync()
+    {
+        var response = await Client.PostAsJsonAsync("/api/v1/users/login",
+            new { username = "admin", password = "admin123" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "种子 admin 账号应可登录");
+
+        var result = await response.Content.ReadFromJsonAsync<ApiResponse<LoginResultDto>>(JsonOptions);
+        return result?.Data?.Token ?? throw new InvalidOperationException("admin 登录失败");
+    }
+
+    private static HttpRequestMessage CreateJsonRequest(HttpMethod method, string url, string token, object payload)
+    {
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        return request;
     }
 }
 

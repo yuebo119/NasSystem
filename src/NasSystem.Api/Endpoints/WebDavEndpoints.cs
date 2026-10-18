@@ -5,12 +5,14 @@
 
 namespace NasSystem.Api.Extensions;
 
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using System.Xml;
 using Microsoft.AspNetCore.Http.Features;
 using NasSystem.Api.Security;
+using NasSystem.Application.Configuration;
 using NasSystem.Application.Files;
 using NasSystem.Application.Files.Dtos;
 using NasSystem.Domain.Common;
@@ -62,6 +64,7 @@ public static class WebDavEndpoints
         IPasswordHasher passwordHasher,
         IUnitOfWork unitOfWork,
         IWebDavAuthGuard authGuard,
+        ISystemConfigService configService,
         CancellationToken cancellationToken)
     {
         var method = context.Request.Method;
@@ -71,6 +74,28 @@ public static class WebDavEndpoints
         if (method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
         {
             return HandleOptions(context);
+        }
+
+        // 总开关（配置页可配）：关停后 /dav 整体不可用，
+        // 已挂载的客户端会收到 503，UI 上有明确提示
+        if (!await configService.GetBoolAsync(ConfigDescriptors.Keys.WebDavEnabled, cancellationToken))
+        {
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+
+        // Basic 认证的凭据是 Base64 不是加密，裸 HTTP 暴露等同于明文密码。
+        // 默认只允许 HTTPS 与本机回环（开发/内网直连），
+        // 真要裸 HTTP 对外需在配置页显式放开（webdav.allow-http）。
+        // 只在能确定是非回环网络地址时拦：RemoteIpAddress 为 null 的请求
+        // 来自进程内宿主（测试）或反代 unix socket（TLS 已在反代侧终结），
+        // 没有可路由地址就不构成明文暴露，拦了反而误伤
+        var remote = context.Connection.RemoteIpAddress;
+        if (!context.Request.IsHttps
+            && remote is not null
+            && !System.Net.IPAddress.IsLoopback(remote)
+            && !await configService.GetBoolAsync(ConfigDescriptors.Keys.WebDavAllowHttp, cancellationToken))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
         var (principal, authFailure) = await AuthenticateAsync(
@@ -749,8 +774,7 @@ public static class WebDavEndpoints
     /// 构造 href：逐段转义（文件名含空格、中文、# 等字符时客户端才能正确还原）。
     /// 根目录特判：encode 后为空段，直接拼会出 /dav// 双斜杠
     /// </summary>
-    private static string BuildHref(FileItemDto item)
-    {
+    private static string BuildHref(FileItemDto item)    {
         if (item.Path == "/")
         {
             return $"{DavPrefix}/";

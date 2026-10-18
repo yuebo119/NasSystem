@@ -7,6 +7,7 @@ namespace NasSystem.UnitTests.Services;
 
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using NasSystem.Application.Files;
 using NasSystem.Application.Files.Dtos;
@@ -58,7 +59,13 @@ public class FileServiceTests
             new Mock<IThumbnailService>().Object,
             // ROADMAP Phase 1：版本服务注入（覆盖上传/永久删除前自动产版本）。
             // 本测试类不覆盖版本路径，mock 即可
-            new Mock<NasSystem.Application.FileVersions.IFileVersionService>().Object);
+            new Mock<NasSystem.Application.FileVersions.IFileVersionService>().Object,
+            // ROADMAP Phase 2/配置页：上传后 OCR 自动识别与动态配置。
+            // 本测试类不覆盖这两条路径，mock 即可（GetBool 默认回落 descriptor
+            // 默认值 false，自动识别不触发）
+            new Mock<NasSystem.Application.Ocr.IOcrService>().Object,
+            new Mock<NasSystem.Application.Configuration.ISystemConfigService>().Object,
+            NullLogger<NasSystem.Application.Files.FileService>.Instance);
     }
 
     #region GetDirectoryContentsAsync Tests

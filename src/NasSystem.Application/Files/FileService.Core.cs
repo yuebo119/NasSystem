@@ -9,9 +9,12 @@ namespace NasSystem.Application.Files;
 
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using NasSystem.Application.Common;
+using NasSystem.Application.Configuration;
 using NasSystem.Application.Files.Dtos;
 using NasSystem.Application.FileVersions;
+using NasSystem.Application.Ocr;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
@@ -52,9 +55,16 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     private readonly IThumbnailService _thumbnailService;
 
     /// <summary>
-    /// 版本服务：覆盖上传与永久删除前自动产版本用（ROADMAP Phase 1）
+    /// 版本服务：覆盖上传/永久删除前自动产版本用（ROADMAP Phase 1）
     /// </summary>
     private readonly IFileVersionService _fileVersionService;
+
+    /// <summary>
+    /// OCR 服务与动态配置：上传后按开关自动识别图内文字（ROADMAP Phase 2）
+    /// </summary>
+    private readonly IOcrService _ocrService;
+    private readonly ISystemConfigService _configService;
+    private readonly ILogger<FileService> _logger;
 
     public FileService(
         IFileItemRepository fileRepository,
@@ -66,7 +76,10 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         IHubNotificationService notifier,
         IMemoryCache cache,
         IThumbnailService thumbnailService,
-        IFileVersionService fileVersionService)
+        IFileVersionService fileVersionService,
+        IOcrService ocrService,
+        ISystemConfigService configService,
+        ILogger<FileService> logger)
     {
         _fileRepository = fileRepository;
         _storagePoolRepository = storagePoolRepository;
@@ -77,6 +90,45 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         _cache = cache;
         _thumbnailService = thumbnailService;
         _fileVersionService = fileVersionService;
+        _ocrService = ocrService;
+        _configService = configService;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// 上传后的 OCR 自动识别（配置页开关，默认关）。同步等待：
+    /// 识别是 CPU 密集的百毫秒级操作，开启即接受这点上传延迟；
+    /// 失败只记日志不影响上传结果——识别是增强不是主路径
+    /// </summary>
+    private async Task AutoRecognizeAsync(FileItem item, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!await _configService.GetBoolAsync(
+                    ConfigDescriptors.Keys.OcrAutoRecognize, cancellationToken))
+            {
+                return;
+            }
+
+            var extension = item.Extension?.ToLowerInvariant();
+            var isImage = extension is ".jpg" or ".jpeg" or ".png" or ".bmp" or ".webp" or ".gif";
+            if (!isImage)
+            {
+                return;
+            }
+
+            var result = await _ocrService.RecognizeAsync(item.Path, item.OwnerId, cancellationToken);
+            if (result.IsFailure)
+            {
+                _logger.LogWarning(
+                    "上传后自动 OCR 失败（不影响上传）: Path={Path}, 原因={Reason}",
+                    item.Path, result.Error.Message);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "上传后自动 OCR 异常（不影响上传）: Path={Path}", item.Path);
+        }
     }
 
     /// <summary>操作成功后向父目录订阅组推送变更（SignalR 实时刷新闭环）</summary>

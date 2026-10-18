@@ -182,4 +182,16 @@ public static class RowMapper
             ElapsedMs = entity.ElapsedMs,
             CreatedAt = entity.CreatedAt,
         };
+
+    public static SystemSetting ToDomain(this SystemSettingRow row) =>
+        SystemSetting.Restore(row.Id, row.Key, row.Value, row.UpdatedAt);
+
+    public static SystemSettingRow ToRow(this SystemSetting entity) =>
+        new()
+        {
+            Id = entity.Id,
+            Key = entity.Key,
+            Value = entity.Value,
+            UpdatedAt = entity.UpdatedAt,
+        };
 }
