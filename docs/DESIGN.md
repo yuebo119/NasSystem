@@ -81,7 +81,6 @@
 | PalORM | 6.5.0 | ORM 框架（编译期生成，SQLite 方言） |
 | SQLite | 3.x | 嵌入式数据库 |
 | Serilog | Latest | 结构化日志 |
-| FluentValidation | 12.x | 输入验证 |
 | SignalR | 11.0 | 实时通信 |
 
 ### 2.2 前端技术栈
@@ -290,10 +289,8 @@ public enum PermissionLevel
 NasSystem.Application/Users/
 ├── IUserService.cs          # 服务接口
 ├── UserService.cs           # 服务实现
-├── Dtos/
-│   └── UserDtos.cs          # 数据传输对象
-└── Validators/
-    └── UserValidators.cs    # 输入验证
+└── Dtos/
+    └── UserDtos.cs          # 数据传输对象
 ```
 
 **核心接口：**
@@ -315,34 +312,26 @@ public interface IUserService
 
 ```
 NasSystem.Application/Files/
-├── IFileService.cs          # 服务接口
-├── FileService.cs           # 服务实现
-├── Dtos/
-│   └── FileDtos.cs          # 数据传输对象
-└── Validators/
-    └── FileValidators.cs    # 输入验证
+├── IFileBrowseService.cs    # 浏览与查询用例域窄接口（ITM-T3 ISP 拆分）
+├── IFileTransferService.cs  # 传输与结构变更用例域窄接口
+├── IFileRecycleService.cs   # 回收站生命周期用例域窄接口
+├── IFileSyncService.cs      # 扫描同步用例域窄接口
+├── FileService.Browse.cs    # 部分类：浏览实现
+├── FileService.Transfer.cs  # 部分类：传输实现
+├── FileService.Recycle.cs   # 部分类：回收实现
+├── FileService.Sync.cs      # 部分类：同步实现
+├── FileService.Core.cs      # 部分类：共享内部件
+├── DirectoryVersion.cs      # 目录版本号（ETag/304 真源）
+└── Dtos/
+    └── FileDtos.cs          # 数据传输对象
 ```
 
-**核心接口：**
+**核心接口（四窄接口，按用例域拆分；原单一 IFileService 已按 ITM-T3 接口隔离原则拆开）：**
 ```csharp
-public interface IFileService
-{
-    Task<Result<DirectoryContentDto>> GetDirectoryContentsAsync(string path, Guid userId, bool includeHidden);
-    Task<Result<FileItemDto>> GetFileInfoAsync(string path, Guid userId);
-    Task<Result<FileItemDto>> CreateFolderAsync(CreateFolderRequest request, Guid userId);
-    Task<Result<FileItemDto>> UploadFileAsync(UploadFileMetadata metadata, Stream stream, Guid userId);
-    Task<Result<(Stream, string, string)>> DownloadFileAsync(string path, Guid userId);
-    Task<Result<FileItemDto>> RenameAsync(RenameItemRequest request, Guid userId);
-    Task<Result> MoveAsync(MoveOrCopyRequest request, Guid userId);
-    Task<Result> CopyAsync(MoveOrCopyRequest request, Guid userId);
-    Task<Result> DeleteAsync(DeleteItemsRequest request, Guid userId);
-    Task<Result<PagedResult<FileItemDto>>> SearchAsync(SearchFilesRequest request, Guid userId);
-    Task<Result<IReadOnlyList<FileItemDto>>> GetRecycleBinAsync(Guid userId);
-    Task<Result> RestoreAsync(Guid id, Guid userId);
-    Task<Result> EmptyRecycleBinAsync(Guid userId);
-    Task<Result<FileStatisticsDto>> GetStatisticsAsync(Guid userId);
-    Task<Result<ScanResultDto>> ScanAndSyncAsync(Guid userId);
-}
+public interface IFileBrowseService      // 只读：目录内容 / 文件信息 / 搜索 / 统计 / 最近文件
+public interface IFileTransferService    // 传输：建夹 / 上传 / 下载 / 重命名 / 移动 / 复制
+public interface IFileRecycleService     // 回收：软删 / 恢复 / 清空
+public interface IFileSyncService        // 同步：扫描物理目录并对账数据库
 ```
 
 ### 4.3 文件分享模块

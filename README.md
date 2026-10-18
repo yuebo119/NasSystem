@@ -5,40 +5,62 @@
 ## 📋 功能特性
 
 ### 文件管理
-- ✅ 文件浏览和目录导航
-- ✅ 文件上传/下载
+- ✅ 文件浏览和目录导航（列表/网格双视图、面包屑、排序、虚拟滚动）
+- ✅ 文件上传/下载（流式上传、Range 断点续传）
 - ✅ 创建文件夹
-- ✅ 重命名/移动/复制
+- ✅ 重命名/移动/复制（剪贴板式剪切粘贴）
 - ✅ 软删除和回收站
 - ✅ 文件搜索（支持类型、扩展名过滤）
-- ✅ 缩略图生成
-- ✅ 文件版本控制
+- ✅ 缩略图生成（SkiaSharp 缩放、磁盘缓存、ETag/304）
 - ✅ 文件扫描同步
+- ✅ 文件预览（图片/视频/音频/文本）
+- ✅ SignalR 按目录订阅实时刷新
+
+### 协议层访问（WebDAV / SMB）
+- ✅ WebDAV 挂载：Windows 资源管理器、macOS Finder、Linux davfs2、iOS 文件 App 直接挂载（`/dav`，Basic 认证）
+- ✅ WebDAV 完整文件操作经应用层：配额检查、软删除、实时推送全部生效，大文件不受网页端 500MB 上限约束
+- ✅ SMB 网络磁盘直通（可选 sidecar，`docker compose --profile smb up -d`），管理员直通模式
+- ✅ 认证暴力破解防护：同客户端 5 分钟 10 次失败锁定
+- 详见 [协议层访问指南](docs/PROTOCOL_ACCESS.md)
 
 ### 文件分享
 - ✅ 创建分享链接
-- ✅ 公开/密码保护分享
+- ✅ 公开/密码保护/仅内部用户（Internal）分享
 - ✅ 设置过期时间
 - ✅ 设置下载次数限制
-- ✅ 文件夹分享浏览
+- ✅ 文件夹分享浏览（流式 ZIP 打包下载）
+- ✅ 分享统计（总数/有效/过期/下载量）
 
 ### 存储管理
 - ✅ 存储池管理
-- ✅ 容量监控
+- ✅ 容量监控（库记账与物理磁盘双口径）
 - ✅ 容量限制设置
 - ✅ 默认存储池设置
+- ✅ 上传前空间预检（配额剩余与磁盘物理剩余取小）
 
 ### 用户管理
 - ✅ 用户认证 (JWT)
 - ✅ 角色权限管理（SuperAdmin/Admin/PowerUser/User）
 - ✅ 用户配额管理
 - ✅ 多用户支持
+- ✅ 登录限流防暴力破解
 
-### 系统管理
-- ✅ 系统状态监控
+### 系统管理与监控
+- ✅ 系统信息八组域（应用/.NET 运行时/操作系统/处理器/内存/数据库/网络/进程）
+- ✅ Dashboard 仪表盘（存储账目、分享概览、最近文件、回收站面板、快捷操作、自动刷新）
 - ✅ 健康检查
-- ✅ 目录浏览
-- ✅ 驱动器信息
+- ✅ 目录浏览、驱动器信息
+- ✅ Serilog 结构化日志
+
+### 界面与体验
+- ✅ 中英文双语切换
+- ✅ 暗色主题（跟随系统 + 手动持久化）
+- ✅ 响应式布局（窄屏侧边栏改抽屉）
+
+### 开发中
+- 🔧 文件版本控制（后端 API 与数据模型已完成，前端界面与自动产版本逻辑建设中，见 [ROADMAP](docs/ROADMAP.md) Phase 1）
+- 🔧 移动端相册自动备份（ROADMAP Phase 1）
+- 🔧 快照备份与 OCR 内容搜索（ROADMAP Phase 2）
 
 ## 🛠 技术栈
 
@@ -78,7 +100,11 @@ NasSystem/
 │   ├── DESIGN.md                # 设计文档
 │   ├── API_REFERENCE.md         # API 接口文档
 │   ├── TESTING.md               # 测试文档
-│   └── USER_MANUAL.md           # 使用手册
+│   ├── USER_MANUAL.md           # 使用手册
+│   ├── PROTOCOL_ACCESS.md       # 协议层访问指南（WebDAV/SMB）
+│   └── ROADMAP.md               # 改造路线图
+├── docker/
+│   └── smb/                     # SMB sidecar（可选 profile: smb）
 ├── Dockerfile
 └── docker-compose.yml
 ```
@@ -187,6 +213,8 @@ dotnet test --project tests/NasSystem.IntegrationTests
 | [API 文档](docs/API_REFERENCE.md) | 完整的 API 接口参考 |
 | [测试文档](docs/TESTING.md) | 测试策略和用例 |
 | [使用手册](docs/USER_MANUAL.md) | 用户操作指南 |
+| [协议层访问指南](docs/PROTOCOL_ACCESS.md) | WebDAV/SMB 挂载方法 |
+| [改造路线图](docs/ROADMAP.md) | 功能演进规划与阶段方案 |
 
 ## 🐳 Docker 部署
 
@@ -235,3 +263,4 @@ MIT License
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | 1.0.0 | 2026-01-29 | 初始版本 |
+| 1.1.0 | 2026-10-18 | 协议层落地（WebDAV 挂载 + SMB sidecar），Dashboard、系统信息八组域、Internal 分享、SignalR 实时推送、暗色主题与 i18n |

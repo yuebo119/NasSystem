@@ -69,8 +69,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 创建非 root 用户
-RUN groupadd -r nasuser && useradd -r -g nasuser nasuser
+# 创建非 root 用户。UID/GID 固定 1000：SMB sidecar（docker/smb）以
+# force user = nasuser 映射共享卷上的全部写入，两侧 UID 不一致时
+# sidecar 落盘的文件应用层无权读写。固定值是两侧对齐的唯一真源
+RUN groupadd -r -g 1000 nasuser && useradd -r -u 1000 -g nasuser nasuser
 
 # 创建数据目录
 RUN mkdir -p /app/data /app/storage /app/logs \

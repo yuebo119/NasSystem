@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using System.Threading.RateLimiting;
 using NasSystem.Api.Hubs;
+using NasSystem.Api.Security;
 using NasSystem.Application.Notifications;
 using Scalar.AspNetCore;
 
@@ -130,6 +131,9 @@ public static class ServiceCollectionExtensions
 
         // 注册 Hub 通知服务
         services.AddScoped<IHubNotificationService, HubNotificationService>();
+
+        // WebDAV Basic 认证失败锁定（ROADMAP Phase 0）：单例，全进程共享失败计数
+        services.AddSingleton<IWebDavAuthGuard, WebDavAuthGuard>();
 
         // 健康检查
         services.AddHealthChecks();
@@ -273,5 +277,10 @@ public static class ServiceCollectionExtensions
         
         // 公开分享访问端点（无需登录）
         app.MapPublicShareEndpoints();
+
+        // WebDAV 协议端点（ROADMAP Phase 0）：挂 /dav，与 /api/v1 平级。
+        // 必须早于 SPA fallback 注册，且动词全集在路由内显式列出，
+        // 否则未匹配的 WebDAV 动词会落进 fallback 返回 index.html
+        app.MapWebDavEndpoints();
     }
 }

@@ -69,6 +69,33 @@ services:
     profiles:
       - production
 
+  # 可选: SMB 网络磁盘直通（ROADMAP Phase 0 协议层）
+  # 默认不随 compose up 启动，需显式带 profile：
+  #   docker compose --profile smb up -d
+  # 直通模式：旁路应用层的配额检查、软删除与 SignalR 推送，
+  # 面向"把 NAS 当网络磁盘直接用"的管理员场景，边界见 docs/PROTOCOL_ACCESS.md
+  nas-smb:
+    build:
+      context: ./docker/smb
+      dockerfile: Dockerfile
+    container_name: nas-smb
+    ports:
+      - "445:445"
+    volumes:
+      # 与主应用共享同一存储卷：SMB 落盘的文件网页端立即可见
+      - nas-storage:/app/storage
+    environment:
+      # SMB 账号独立于应用账号体系（samba 自有 passdb，与应用 SQLite 不通）。
+      # 用户名固定 nasadmin（smb.conf 的 valid users）。缺省空值由 entrypoint
+      # 兜底为本地体验密码并打 WARN；不能用 ${VAR:?} 形式，那会让未设变量的
+      # 宿主在解析整个 compose 文件时就失败，连带拖垮不带 smb profile 的默认启动
+      - NAS_SMB_PASSWORD=${NAS_SMB_PASSWORD:-}
+    restart: unless-stopped
+    networks:
+      - nas-network
+    profiles:
+      - smb
+
 # 命名卷
 volumes:
   nas-data:
