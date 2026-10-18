@@ -292,6 +292,9 @@ public static class ServiceCollectionExtensions
 
         // 3-2-1 导出端点（ROADMAP Phase 2）
         apiGroup.MapExportEndpoints();
+
+        // 语义搜图端点（ROADMAP Phase 2）
+        apiGroup.MapSemanticEndpoints();
         
         // 公开分享访问端点（无需登录）
         app.MapPublicShareEndpoints();

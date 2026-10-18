@@ -12,10 +12,13 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Link, CopyDocument, FolderOpened, Monitor, Warning } from '@element-plus/icons-vue'
+import { Link, CopyDocument, FolderOpened, Monitor, Warning, Picture } from '@element-plus/icons-vue'
+import { formatSize } from '@/utils/format'
 import { systemConfigApi } from '@/api/systemConfig'
 import { systemControlApi } from '@/api/systemControl'
 import { thumbnailApi } from '@/api/thumbnail'
+import { semanticApi } from '@/api/semantic'
+import type { SemanticStatus } from '@/api/semantic'
 import http from '@/api/http'
 import type { SystemConfigSnapshot, SystemConfigItem } from '@/types'
 
@@ -32,6 +35,38 @@ const maxUploadMB = ref<number | null>(null)
 const controlRunning = ref(false)
 // 维护区：清空全部缩略图缓存进行中
 const thumbClearingAll = ref(false)
+// 语义搜图（ROADMAP Phase 2）：模型状态与索引进度
+const semanticStatus = ref<SemanticStatus | null>(null)
+const semanticLoading = ref(false)
+const semanticDownloading = ref(false)
+
+// 模型状态：设置页打开时拉一次；下载进行中由下载方法内轮询推进
+async function loadSemanticStatus() {
+  semanticLoading.value = true
+  try {
+    const resp = await semanticApi.getStatus()
+    if (resp.success && resp.data) semanticStatus.value = resp.data
+  } finally {
+    semanticLoading.value = false
+  }
+}
+
+// 下载模型四件套（约 606MB）。后端同步执行，前端轮询 status 观察
+// 文件逐个就位（下载是幂等慢动作，不做假进度条——文件就位是唯一事实）
+async function downloadSemanticModel() {
+  semanticDownloading.value = true
+  try {
+    const resp = await semanticApi.downloadModel()
+    if (resp.success) {
+      ElMessage.success(t('config.semanticDownloadDone'))
+    }
+  } catch {
+    // 错误消息由 http 拦截器统一弹出
+  } finally {
+    semanticDownloading.value = false
+    await loadSemanticStatus()
+  }
+}
 
 // 清空全部缩略图缓存：下次访问全量重新生成（CPU 与磁盘压力），
 // 确认文案说明代价。失败只提示不阻断（缓存清了大不了再生成）
@@ -298,6 +333,52 @@ function statusOf(key: string): boolean {
       <div class="danger-actions">
         <el-button :loading="thumbClearingAll" @click="clearAllThumbnails">
           {{ $t('config.clearAllThumbnails') }}
+        </el-button>
+      </div>
+    </div>
+
+    <!-- ④-b 语义搜图：模型四件套状态与索引（ROADMAP Phase 2） -->
+    <div class="config-card" v-if="semanticStatus">
+      <h3 class="card-title">
+        <el-icon style="vertical-align: -2px; margin-right: 4px"><Picture /></el-icon>
+        {{ $t('config.semanticTitle') }}
+      </h3>
+      <p class="readonly-desc">{{ $t('config.semanticDesc') }}</p>
+
+      <div class="semantic-files">
+        <div v-for="file in semanticStatus.model.files" :key="file.name" class="semantic-file">
+          <el-tag :type="file.present ? 'success' : 'info'" size="small">
+            {{ file.present ? $t('config.semanticFilePresent') : $t('config.semanticFileMissing') }}
+          </el-tag>
+          <span class="semantic-file-name">{{ file.name }}</span>
+          <span v-if="file.present" class="semantic-file-size">{{ formatSize(file.sizeBytes) }}</span>
+        </div>
+      </div>
+
+      <div class="semantic-progress" v-if="semanticStatus.model.ready">
+        <span>{{ $t('config.semanticIndexProgress', {
+          indexed: semanticStatus.index_.indexedImages,
+          total: semanticStatus.index_.totalImages
+        }) }}</span>
+        <el-tag v-if="semanticStatus.index_.isIndexing" type="warning" size="small">
+          {{ $t('config.semanticIndexing') }}
+        </el-tag>
+        <span v-if="semanticStatus.index_.error" class="semantic-error">
+          {{ semanticStatus.index_.error }}
+        </span>
+      </div>
+
+      <div class="danger-actions">
+        <el-button
+          type="primary"
+          :loading="semanticDownloading"
+          :disabled="semanticStatus.model.ready"
+          @click="downloadSemanticModel"
+        >
+          {{ semanticStatus.model.ready ? $t('config.semanticModelReady') : $t('config.semanticDownload') }}
+        </el-button>
+        <el-button :loading="semanticLoading" @click="loadSemanticStatus">
+          {{ $t('common.refresh') }}
         </el-button>
       </div>
     </div>

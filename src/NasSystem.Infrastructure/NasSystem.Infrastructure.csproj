@@ -46,6 +46,15 @@
     <!-- 版本收敛至 Directory.Build.props 单一真源（原 csproj 覆盖条目会把版本钉低于中央） -->
     <PackageReference Include="SkiaSharp" />
 
+    <!-- sqlite-vec（ROADMAP Phase 2 语义搜图）：vec0 原生件随 runtimes
+         分发（win-x64/linux-x64），Docker linux-x64 链路原生件随包发布 -->
+    <PackageReference Include="HiraokaHyperTools.sqlite-vec" />
+
+    <!-- CLIP 图文编码（ROADMAP Phase 2 语义搜图）：ElBruno 纯托管
+         ONNX Runtime 推理 + ImageSharp 预处理（模型四件套运行时下载，
+         见 Semantic/ClipModelDownloader） -->
+    <PackageReference Include="ElBruno.LocalEmbeddings.ImageEmbeddings" />
+
     <!-- OCR（ROADMAP Phase 2）：SimdPaddleOCR 纯 C# PP-OCRv6 推理 +
          ChineseV6Tiny 模型（内嵌 Assembly 资源，不落临时文件）。
          图像解码复用已有 SkiaSharp（README 的 SkiaSharp 集成路径），

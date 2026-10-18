@@ -15,6 +15,7 @@ using NasSystem.Domain.Services;
 using NasSystem.Infrastructure.Data.Repositories;
 using NasSystem.Infrastructure.Persistence;
 using NasSystem.Infrastructure.Services;
+using NasSystem.Infrastructure.Semantic;
 using PalORM;
 using PalORM.Sqlite;
 
@@ -104,6 +105,24 @@ public static class DependencyInjection
         // （snapshot.enabled=false），管理员在配置页开启
         services.AddHostedService<Services.SnapshotBackgroundService>();
 
+        // 语义搜图（ROADMAP Phase 2，探针结论见 ADR-0003）。引擎单例
+        // （模型加载秒级，编码器无状态可重入）；索引存储 Scoped 会每请求
+        // 开连接太浪费，注册为 Singleton 自带并发闸；服务 Scoped 走仓储
+        var semanticOptions = new SemanticOptions();
+        configuration.GetSection("Semantic").Bind(semanticOptions);
+        services.AddSingleton(semanticOptions);
+        services.AddSingleton<Semantic.ClipEngineHolder>();
+        services.AddSingleton(provider => new Semantic.SemanticIndexStore(
+            connectionString,
+            ResolveVecLibraryPath(configuration),
+            provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Semantic.SemanticIndexStore>>()));
+        services.AddHttpClient<Semantic.ClipModelDownloader>();
+        services.AddScoped<Application.Semantic.ISemanticSearchService, Semantic.SemanticSearchService>();
+
+        // 语义索引后台建库：模型就位且开关打开时增量编码（单张 58ms，
+        // 容量口径决定必须后台）
+        services.AddHostedService<Semantic.SemanticIndexBackgroundService>();
+
         // 系统动态配置（配置页）：descriptor 驱动，键值表存储，改完即生效。
         // Scoped：与仓储同生命周期；消费方（版本保留/OCR 开关/WebDAV 闸）
         // 都是 scoped 或 per-request，直接注入
@@ -113,6 +132,29 @@ public static class DependencyInjection
         services.AddMemoryCache();
 
         return services;
+    }
+
+    /// <summary>
+    /// 定位 sqlite-vec 的原生件（vec0.dll / vec0.so）。NuGet 移植包的
+    /// runtimes 布局把原生件放在输出目录的 runtimes/{rid}/native/ 下；
+    /// 允许配置覆盖（自备扩展或非标准布局）
+    /// </summary>
+    private static string ResolveVecLibraryPath(IConfiguration configuration)
+    {
+        var configured = configuration["Semantic:VecLibraryPath"];
+        if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
+            return configured;
+
+        var isWindows = OperatingSystem.IsWindows();
+        var name = isWindows ? "vec0.dll" : "vec0.so";
+        var rid = isWindows ? "win-x64" : "linux-x64";
+        var candidate = Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", name);
+        if (File.Exists(candidate))
+            return candidate;
+
+        // 回退：与程序集同目录（某些发布形态会摊平 runtimes）
+        var flat = Path.Combine(AppContext.BaseDirectory, name);
+        return File.Exists(flat) ? flat : candidate;
     }
 
     /// <summary>

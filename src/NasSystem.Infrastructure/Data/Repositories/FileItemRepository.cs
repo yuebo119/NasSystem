@@ -486,6 +486,35 @@ public sealed class FileItemRepository(
         return rows.ConvertAll(r => r.ToDomain());
     }
 
+    // ---- 语义索引的扩展名查询（ROADMAP Phase 2）----
+
+    public async Task<int> CountByExtensionAsync(
+        string extension,
+        CancellationToken cancellationToken = default)
+    {
+        var db = await sessions.GetAsync(cancellationToken);
+        var normalized = extension.StartsWith('.') ? extension.ToLowerInvariant() : "." + extension.ToLowerInvariant();
+        return (int)await db.CountAsync<FileItemRow>(
+            $"IsDeleted = 0 AND ItemType = {(int)FileItemType.File} AND lower(Extension) = {normalized}",
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<FileItemPathEntry>> GetPathsByExtensionAsync(
+        string extension,
+        CancellationToken cancellationToken = default)
+    {
+        var db = await sessions.GetAsync(cancellationToken);
+        var normalized = extension.StartsWith('.') ? extension.ToLowerInvariant() : "." + extension.ToLowerInvariant();
+        var rows = await db.QueryAsync<FileItemPathProjectionRow>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "SELECT Id, Path, PhysicalPath FROM FileItems " +
+                "WHERE IsDeleted = 0 AND ItemType = {0} AND lower(Extension) = {1}",
+                (int)FileItemType.File, normalized),
+            false,
+            cancellationToken);
+        return rows.Select(r => new FileItemPathEntry(r.Id, r.Path, r.PhysicalPath)).ToList();
+    }
+
     // ---- 子树批量操作（S3：单条 SQL 替代逐条实体 UPDATE）----
 
     public async Task<IReadOnlyList<FileItemSnapshotEntry>> GetSnapshotEntriesAsync(

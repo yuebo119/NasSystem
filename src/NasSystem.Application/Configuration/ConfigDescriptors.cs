@@ -23,6 +23,8 @@ public static class ConfigDescriptors
         public const string SnapshotEnabled = "snapshot.enabled";
         public const string SnapshotSchedule = "snapshot.schedule";
         public const string SnapshotKeepCount = "snapshot.keep-count";
+        public const string SemanticEnabled = "semantic.enabled";
+        public const string SemanticAutoIndex = "semantic.auto-index";
     }
 
     public static IReadOnlyList<ConfigDescriptor> All { get; } =
@@ -60,7 +62,18 @@ public static class ConfigDescriptors
             DescriptionKey: "config.snapshotScheduleDesc"),
         new(Keys.SnapshotKeepCount, "snapshot", "config.snapshotKeepCount",
             ConfigValueType.Int, "10", Min: 1, Max: 100,
-            DescriptionKey: "config.snapshotKeepCountDesc")
+            DescriptionKey: "config.snapshotKeepCountDesc"),
+
+        // ─── 语义搜图（ROADMAP Phase 2，探针结论见 ADR-0003）───
+        // 总开关：关闭时后台建索引停跑，搜索返回"未启用"。
+        // auto-index：开启时后台自动扫缺向量图片逐张编码（单张 58ms，
+        // 10 万张外推约 97 分钟）；关闭则只在手动触发时建
+        new(Keys.SemanticEnabled, "semantic", "config.semanticEnabled",
+            ConfigValueType.Bool, "false",
+            DescriptionKey: "config.semanticEnabledDesc"),
+        new(Keys.SemanticAutoIndex, "semantic", "config.semanticAutoIndex",
+            ConfigValueType.Bool, "true",
+            DescriptionKey: "config.semanticAutoIndexDesc")
 
         // 缩略图参数不在此表：ThumbnailService 是单例 + IOptions 构造期读取，
         // 动态化要么改生命周期要么每请求读库，与"低频调整的基础设施参数"
@@ -73,7 +86,8 @@ public static class ConfigDescriptors
         ("version", "config.groupVersion"),
         ("ocr", "config.groupOcr"),
         ("webdav", "config.groupWebdav"),
-        ("snapshot", "config.groupSnapshot")
+        ("snapshot", "config.groupSnapshot"),
+        ("semantic", "config.groupSemantic")
     ];
 
     /// <summary>按键取 descriptor。未知键返回 null（调用方按"不可配置"处理）</summary>

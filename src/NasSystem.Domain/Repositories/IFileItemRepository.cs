@@ -118,6 +118,21 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 按扩展名计数（语义索引进度用：图片总量）。含软删过滤
+    /// </summary>
+    Task<int> CountByExtensionAsync(
+        string extension,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 按扩展名取全部文件的轻量清单（Id + 虚拟路径 + 物理路径，
+    /// 供语义索引逐张编码）。含软删过滤，不分页
+    /// </summary>
+    Task<IReadOnlyList<FileItemPathEntry>> GetPathsByExtensionAsync(
+        string extension,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 取根路径自身加全部后代（不论删除态）的快照采集投影：路径 + 类型 +
     /// 大小 + 内容 hash + 修改时间。供清单快照生成条目（ROADMAP Phase 2）。
     /// </summary>
@@ -334,3 +349,6 @@ public sealed record FileItemSnapshotEntry(
     string? Hash,
     DateTime? UpdatedAt,
     DateTime CreatedAt);
+
+/// <summary>语义索引的文件路径投影：Id + 虚拟路径 + 物理路径</summary>
+public sealed record FileItemPathEntry(Guid Id, string Path, string PhysicalPath);

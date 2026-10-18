@@ -13,6 +13,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Picture, VideoCamera, Headset } from '@element-plus/icons-vue'
 import { mediaApi, type MediaType } from '@/api/media'
+import { semanticApi, type SemanticHit } from '@/api/semantic'
 import { fileApi } from '@/api/file'
 import type { MediaItem, MediaMetadata } from '@/types'
 import { formatSize } from '@/utils/format'
@@ -30,6 +31,52 @@ const pageSize = 60
 const loading = ref(false)
 // 元数据按 path 索引：批量接口一次一页，命中后不再重复请求
 const metadataMap = ref<Map<string, MediaMetadata>>(new Map())
+
+// 语义搜图（ROADMAP Phase 2）：仅图片 tab 可用。命中结果转 MediaItem
+// 形态走同一网格渲染（openInFiles 复用）；模型未就位时后端明确报错，
+// 这里把错误提示为"请先到设置页下载模型"
+const semanticQuery = ref('')
+const semanticHits = ref<SemanticHit[]>([])
+const semanticSearching = ref(false)
+const semanticActive = computed(() => semanticHits.value.length > 0)
+
+// 语义模式下网格数据源：命中按距离升序（后端口径）平铺展示
+const semanticItems = computed<MediaItem[]>(() =>
+  semanticHits.value.map(h => ({
+    id: h.id,
+    name: h.name,
+    path: h.path,
+    extension: h.path.includes('.') ? '.' + h.path.split('.').pop() : '',
+    sizeBytes: h.sizeBytes,
+    mediaType: 'image' as const,
+    dateGroup: '',
+    createdAt: ''
+  }))
+)
+
+async function runSemanticSearch() {
+  const query = semanticQuery.value.trim()
+  if (!query) return
+  semanticSearching.value = true
+  try {
+    const resp = await semanticApi.search(query)
+    if (resp.success && resp.data) {
+      semanticHits.value = resp.data.items
+      if (resp.data.items.length === 0) {
+        ElMessage.info(t('media.semanticNoHits'))
+      }
+    } else if (resp.error?.code === 'Semantic.ModelNotReady') {
+      ElMessage.warning(t('media.semanticModelNotReady'))
+    }
+  } finally {
+    semanticSearching.value = false
+  }
+}
+
+function clearSemanticSearch() {
+  semanticHits.value = []
+  semanticQuery.value = ''
+}
 
 const hasMore = computed(() => items.value.length < total.value)
 
@@ -142,8 +189,51 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
       </el-radio-group>
     </div>
 
+    <!-- 语义搜图（仅图片 tab；模型未就位时后端明确提示） -->
+    <div v-if="activeType === 'image'" class="semantic-bar">
+      <el-input
+        v-model="semanticQuery"
+        :placeholder="$t('media.semanticPlaceholder')"
+        clearable
+        style="max-width: 420px"
+        @keyup.enter="runSemanticSearch"
+        @clear="clearSemanticSearch"
+      />
+      <el-button
+        type="primary"
+        :loading="semanticSearching"
+        :disabled="!semanticQuery.trim()"
+        @click="runSemanticSearch"
+      >
+        {{ $t('media.semanticSearch') }}
+      </el-button>
+      <el-button v-if="semanticActive" @click="clearSemanticSearch">
+        {{ $t('media.semanticClear') }}
+      </el-button>
+      <span v-if="semanticActive" class="semantic-hint">
+        {{ $t('media.semanticHits', { n: semanticHits.length }) }}
+      </span>
+    </div>
+
     <div v-loading="loading" class="media-body">
-      <template v-if="groups.length > 0">
+      <!-- 语义命中模式：平铺网格（距离口径由后端保证，点击同样跳文件位置） -->
+      <template v-if="semanticActive">
+        <div class="media-grid" :class="{ mobile: isMobile }">
+          <div
+            v-for="item in semanticItems"
+            :key="item.id"
+            class="media-cell"
+            @click="openInFiles(item)"
+          >
+            <div class="cell-thumb">
+              <img :src="fileApi.getThumbnailUrl(item.path, 300)" loading="lazy" :alt="item.name" />
+            </div>
+            <div class="cell-name" :title="item.name">{{ item.name }}</div>
+            <div class="cell-size">{{ formatSize(item.sizeBytes) }}</div>
+          </div>
+        </div>
+      </template>
+      <template v-else-if="groups.length > 0">
         <div v-for="group in groups" :key="group.month" class="month-group">
           <div class="month-title">{{ group.label }}</div>
           <div class="media-grid" :class="{ mobile: isMobile }">
