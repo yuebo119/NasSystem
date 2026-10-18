@@ -295,6 +295,9 @@ public static class ServiceCollectionExtensions
 
         // 语义搜图端点（ROADMAP Phase 2）
         apiGroup.MapSemanticEndpoints();
+
+        // 视频 HLS 流端点（ROADMAP Phase 3）
+        apiGroup.MapTranscodeEndpoints();
         
         // 公开分享访问端点（无需登录）
         app.MapPublicShareEndpoints();

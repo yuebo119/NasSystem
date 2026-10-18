@@ -7,7 +7,8 @@
  * （解析盒/帧头毫秒级）。图片格用现有缩略图端点，
  * 视频/音频显示时长徽章（时长来自托管解析，取不到不显示）。
  */
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
+import Hls from 'hls.js'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -53,6 +54,54 @@ const semanticItems = computed<MediaItem[]>(() =>
     createdAt: ''
   }))
 )
+
+// 视频播放（ROADMAP Phase 3）：点击视频格打开 HLS 播放对话框。
+// hls.js 统一路径（不走 video.src 原生 HLS）：原生路径的请求不带
+// Authorization header，Safari 下会 401。hls.js 的 xhrSetup 给 m3u8
+// 与分片请求都带上 token
+const playerVisible = ref(false)
+const playingItem = ref<MediaItem | null>(null)
+const videoEl = ref<HTMLVideoElement | null>(null)
+let hlsInstance: Hls | null = null
+
+function playVideo(item: MediaItem) {
+  playingItem.value = item
+  playerVisible.value = true
+  void nextTick(mountPlayer)
+}
+
+function mountPlayer() {
+  const video = videoEl.value
+  if (!video || !playingItem.value) return
+  destroyPlayer()
+
+  const token = localStorage.getItem('token')
+  const url = `/api/v1/media/stream/${playingItem.value.path.replace(/^\//, '')}`
+  if (Hls.isSupported()) {
+    const hls = new Hls({
+      xhrSetup: (xhr) => {
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      }
+    })
+    hls.loadSource(url)
+    hls.attachMedia(video)
+    hlsInstance = hls
+  } else {
+    // hls.js 不可用（极老浏览器）：直接挂 src，Safari 的 MSE 支持路径
+    video.src = url
+  }
+}
+
+function destroyPlayer() {
+  hlsInstance?.destroy()
+  hlsInstance = null
+}
+
+function closePlayer() {
+  destroyPlayer()
+  playerVisible.value = false
+  playingItem.value = null
+}
 
 async function runSemanticSearch() {
   const query = semanticQuery.value.trim()
@@ -241,7 +290,7 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
               v-for="item in group.items"
               :key="item.id"
               class="media-cell"
-              @click="openInFiles(item)"
+              @click="item.mediaType === 'video' ? playVideo(item) : openInFiles(item)"
             >
               <div class="cell-thumb">
                 <img
@@ -267,6 +316,22 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
       </template>
       <el-empty v-else-if="!loading" :description="$t('media.empty')" />
     </div>
+    <!-- 视频播放对话框（HLS，首次打开触发转码，转码中视频元素自行重试） -->
+    <el-dialog
+      v-model="playerVisible"
+      :title="playingItem?.name ?? ''"
+      width="720px"
+      align-center
+      @closed="closePlayer"
+    >
+      <video
+        v-show="playerVisible"
+        ref="videoEl"
+        controls
+        playsinline
+        style="width: 100%; max-height: 60vh; background: #000"
+      />
+    </el-dialog>
   </div>
 </template>
 

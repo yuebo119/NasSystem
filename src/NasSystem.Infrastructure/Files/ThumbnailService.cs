@@ -17,7 +17,8 @@ using NasSystem.Shared;
 /// 缩略图生成服务实现
 /// </summary>
 /// <remarks>
-/// 图片使用 SkiaSharp 跨平台缩放；视频帧提取需 FFmpeg，当前返回占位图。
+/// 图片使用 SkiaSharp 跨平台缩放；视频帧提取经 ITranscodeService 的
+/// ffmpeg 抽帧（不可用时回落 1x1 占位图，诚实降级）。
 /// 生成链路带三道闸：全局并发信号量（CPU 密集的编解码不无限并行）、
 /// 同缓存键 in-flight 去重（同一张图的并发请求只生成一次）、
 /// 服务端尺寸档位吸附（客户端任意 width/height 不各自成缓存文件）。
@@ -36,12 +37,16 @@ public class ThumbnailService : IThumbnailService
     /// <summary>同缓存键的 in-flight 生成任务，供并发请求合并</summary>
     private readonly ConcurrentDictionary<string, Task<byte[]>> _inFlightGenerations = new();
 
+    private readonly NasSystem.Application.Media.ITranscodeService _transcodeService;
+
     public ThumbnailService(
         IOptions<ThumbnailOptions> options,
-        ILogger<ThumbnailService> logger)
+        ILogger<ThumbnailService> logger,
+        NasSystem.Application.Media.ITranscodeService transcodeService)
     {
         _options = options.Value;
         _logger = logger;
+        _transcodeService = transcodeService;
 
         // 确保缓存目录存在
         if (!Directory.Exists(_options.CacheDirectory))
@@ -247,14 +252,61 @@ public class ThumbnailService : IThumbnailService
     {
         var extension = Path.GetExtension(filePath).ToLowerInvariant();
 
-        // 视频帧提取需 FFmpeg 集成（独立事项）；当前返回占位图并在响应中如实标记
+        // 视频帧：ffmpeg 就位时抽真实代表帧再缩放（ROADMAP Phase 3），
+        // 不可用或抽帧失败回落 1x1 占位图（前端 alt 与文档如实说明）
         if (_options.SupportedVideoExtensions.Contains(extension))
         {
+            if (_transcodeService.IsAvailable)
+            {
+                var frame = await _transcodeService.ExtractVideoFrameAsync(filePath, cancellationToken);
+                if (frame is { Length: > 0 })
+                {
+                    try
+                    {
+                        return ScaleJpegBytes(frame, targetWidth, targetHeight, _options.JpegQuality);
+                    }
+                    catch (Exception ex)
+                    {
+                        // 抽出的帧 SkiaSharp 解不了（极端编码）：回落占位不报错
+                        _logger.LogWarning(ex, "视频帧缩放失败，回落占位图: {Path}", filePath);
+                    }
+                }
+            }
             return GenerateVideoPlaceholder(targetWidth, targetHeight);
         }
 
         // 对于图片文件，使用简单的缩放
         return await GenerateImageThumbnailAsync(filePath, targetWidth, targetHeight, _options.JpegQuality, cancellationToken);
+    }
+
+    /// <summary>
+    /// 把内存中的图片字节（ffmpeg 抽出的帧）缩放为 JPEG 缩略图。
+    /// 与 <see cref="GenerateImageThumbnailAsync"/> 同一缩放口径，
+    /// 差别只在数据来源（内存流 vs 文件路径）
+    /// </summary>
+    private static byte[] ScaleJpegBytes(byte[] source, int targetWidth, int targetHeight, int jpegQuality)
+    {
+        using var sourceBitmap = SkiaSharp.SKBitmap.Decode(source)
+            ?? throw new InvalidOperationException("视频帧解码失败");
+
+        // 与 GenerateImageThumbnailAsync 逐字同口径：等比缩放适配目标框，
+        // 不放大小图（scale 上限夹到 1）
+        var scale = Math.Min(
+            (float)targetWidth / sourceBitmap.Width,
+            (float)targetHeight / sourceBitmap.Height);
+        if (scale >= 1f)
+            scale = Math.Min(scale, 1f);
+
+        var width = Math.Max(1, (int)Math.Round(sourceBitmap.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(sourceBitmap.Height * scale));
+
+        using var scaled = sourceBitmap.Resize(
+            new SkiaSharp.SKImageInfo(width, height),
+            new SkiaSharp.SKSamplingOptions(SkiaSharp.SKFilterMode.Linear))
+            ?? throw new InvalidOperationException("视频帧缩放失败");
+        using var image = SkiaSharp.SKImage.FromBitmap(scaled);
+        using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, jpegQuality);
+        return data.ToArray();
     }
 
     /// <summary>

@@ -16,6 +16,7 @@ using NasSystem.Infrastructure.Data.Repositories;
 using NasSystem.Infrastructure.Persistence;
 using NasSystem.Infrastructure.Services;
 using NasSystem.Infrastructure.Semantic;
+using NasSystem.Infrastructure.Media;
 using PalORM;
 using PalORM.Sqlite;
 
@@ -93,6 +94,14 @@ public static class DependencyInjection
 
         // 媒体库（ROADMAP Phase 3）。无状态提取器 + 走仓储的聚合服务
         services.AddScoped<Application.Media.IMediaService, Media.MediaService>();
+
+        // 视频转码（ROADMAP Phase 3）：FFmpeg HLS 按需转码 + 视频帧抽取。
+        // Singleton：内部持进程内并发闸与缓存目录状态，无请求态。
+        // ThumbnailService 的视频封面依赖它（ffmpeg 就位时抽真帧）
+        var transcodeOptions = new TranscodeOptions();
+        configuration.GetSection("Transcode").Bind(transcodeOptions);
+        services.AddSingleton(transcodeOptions);
+        services.AddSingleton<Application.Media.ITranscodeService, Media.FfmpegTranscodeService>();
 
         // 清单快照与只读保护（ROADMAP Phase 2）。快照采集是库内查询 +
         // 批量写，保护判定是个位数表查询，都随请求作用域

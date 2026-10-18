@@ -64,9 +64,14 @@ RUN dotnet publish src/NasSystem.Api/NasSystem.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:11.0-preview AS runtime
 WORKDIR /app
 
-# 安装必要工具
+# 安装必要工具。ffmpeg（ROADMAP Phase 3 视频转码）：Debian 仓库版约
+# 100MB 级（含 libx264 等编解码器链）。镜像体积代价换取 HLS 按需转码
+# 能力；转码输出落临时目录由应用管理，镜像本身不含媒体数据。
+# 装在哪：aspnet 镜像的 apt 源即 Debian bookworm/trixie 官方源，
+# ffmpeg 是 main 组件，无需第三方源
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # 创建非 root 用户。UID/GID 固定 1000：SMB sidecar（docker/smb）以

@@ -237,11 +237,11 @@ OCR 用 PaddleOCR 的 ONNX 导出模型（中文场景识别率高于 Tesseract�
 | Phase 1 | 文件版本闭环（自动产版本 + 保留策略 + 恢复同步 + FK 迁移 + 前端抽屉） | 完成 | cf83e2e |
 | Phase 1 | 移动备份 API + PWA 入口 | 完成 | 97eca93 |
 | Phase 2 | 图片 OCR（SimdPaddleOCR PP-OCRv6 + 搜索双通道） | 完成 | 8ba0af7 |
-| Phase 2 | 快照备份（清单快照 + 只读保护） | 未开始 | - |
-| Phase 2 | 语义搜图（探针门：CPU 延迟/sqlite-vec 共存/建索引耗时） | 未开始（探针未跑） | - |
+| Phase 2 | 快照备份（清单快照 + 只读保护 + 3-2-1 导出） | 完成 | 3655207 |
+| Phase 2 | 语义搜图（探针门三项全过，CLIP 58ms + sqlite-vec 共存） | 完成 | 4cc3b58 |
 | Phase 3 | 外网访问配置器（Cloudflare/frp/Tailscale） | 完成 | e69ae73 |
-| Phase 3 | 媒体库（聚合 + 托管元数据解析 + 时间线） | 完成 | 待提交 |
-| Phase 3 | 视频转码（FFmpeg HLS，需重估镜像体积） | 未开始 | - |
+| Phase 3 | 媒体库（聚合 + 托管元数据解析 + 时间线） | 完成 | 14f216f |
+| Phase 3 | 视频转码（FFmpeg HLS + 缩略图抽帧 + 前端播放） | 完成 | 本次 |
 
 ### 已落地能力摘要
 
@@ -251,9 +251,15 @@ OCR 用 PaddleOCR 的 ONNX 导出模型（中文场景识别率高于 Tesseract�
 
 外网访问：设置页按 Cloudflare Tunnel / frp / Tailscale 生成配置与操作步骤（不自建中继云），未知方案回 400。
 
-OCR 与媒体库：SimdPaddleOCR PP-OCRv6（纯 C# 推理，无 ONNX Runtime/OpenCV 原生依赖，AOT 友好），SkiaSharp 解码 + 引擎单例懒加载 + 并发闸；识别文本落稀疏表，搜索改「文件名 OR 图内文字」双通道。媒体库按类型聚合 + 时间线，元数据托管解析（图片尺寸 SkiaSharp、MP4/MKV 盒与 EBML、MP3 帧头/Xing），列表与元数据分离避免滚动触发解码。
+OCR 与媒体库：SimdPaddleOCR PP-OCRv6（纯 C# 推理，无 ONNX Runtime/OpenCV 原生依赖，AOT 友好），SkiaSharp 解码 + 引擎单例懒加载 + 并发闸；识别文本落稀疏表，搜索改「文件名 OR 图内文字」双通道（OCR 文本侧已升级 FTS5 trigram，中文子串检索；短查询回退 LIKE）。媒体库按类型聚合 + 时间线，元数据托管解析（图片尺寸 SkiaSharp、MP4/MKV 盒与 EBML、MP3 帧头/Xing），列表与元数据分离避免滚动触发解码。
 
-验证基线：集成 154 + 单元 170 + 前端 132 全绿；oxlint 0 警告；vue-tsc 与生产构建通过。真实客户端挂载（Windows/macOS Finder/iOS 文件 App）、手机端到端备份、外网连通与中文扫描件识别率需在部署环境人工验收。
+清单快照与只读保护（Phase 2）：快照记库内目录树形态（路径/大小/hash/时间）不做物理扫描，diff 四态在 SQL 层按 FULL OUTER JOIN 判定；原生 BackgroundService + 自研最小 cron 驱动定时快照，保留策略超限淘汰；只读保护在 FileService 三条写路径拦截（上传覆盖/Move 整批预检/Delete per-item），WebDAV 与网页端共用 FileService 一处接线全覆盖；3-2-1 导出流式 ZIP 可选 AES-256-CBC 加密（openssl enc 兼容格式）。
+
+语义搜图（Phase 2，探针结论 ADR-0003）：CLIP 双塔编码中位 58ms（门槛 300ms），模型四件套首次启用经设置页下载（hf-mirror 源，不入库）；向量存 sqlite-vec vec0 表（独立连接，PalORM 不暴露扩展加载），后台增量建索引（vec0 表即进度账本）；未就位时诚实降级不做假 UI。
+
+视频转码（Phase 3）：FFmpeg 子进程 HLS 按需转码（libx264/CRF 23/veryfast，1080p 子流，6 秒分片，vod 播放列表），进程内并发闸 + 幂等缓存（物理路径 SHA256 为键）；视频缩略图从 1x1 占位升级为 ffmpeg 抽真实帧（不可用回落占位）；Dockerfile runtime 装 ffmpeg（约 100MB 级，ROADMAP 预告的重估项已兑现）；前端媒体库视频格点击经 hls.js 播放（token 经 xhrSetup 注入）。
+
+验证基线：集成 223 + 单元 178 + 前端 136 全绿（MTP 宿主坏，直跑 exe）；oxlint 0 警告，vue-tsc 与生产构建通过。真实客户端挂载（Windows/macOS Finder/iOS 文件 App）、手机端到端备份、外网连通、中文扫描件识别率、CLIP 检索质量与 ffmpeg 转码画质需在部署环境人工验收。
 
 ## 9. 功能 UI 覆盖审计与配置收口（2026-10-18 补记）
 
@@ -274,6 +280,8 @@ OCR 与媒体库：SimdPaddleOCR PP-OCRv6（纯 C# 推理，无 ONNX Runtime/Ope
 | 重新生成分享码 | 分享编辑抽屉内 | 确认（明示旧链接失效）+ 刷新新码 | 无 |
 | 重启/关机 | 配置页危险区 | 分级确认 + 真实调度（3 秒后停进程） | 无 |
 | 缩略图缓存清理 | 预览抽屉（单文件）+ 配置页维护区（全局） | 确认 + 重取预览 / 全量重建提示 | 无 |
+
+Phase 2/3-a 收口（2026-10-19）：快照与只读保护独立页（/snapshots，两 tab：快照管理 + 保护目录）；3-2-1 导出在快照页工具栏；语义搜图模型卡在系统配置页（状态/下载/进度），搜索入口在媒体库图片 tab；视频转码播放入口在媒体库视频格点击，缓存清理端点 DELETE /media/stream/cache（admin）。本轮新增端点的调用方全部经前端接线，无 API-only 遗留。
 
 第三轮收口（2026-10-18 深夜）：机械审计（从 Endpoints 源码提取全部路由逐个核对前端调用方）发现 DELETE /thumbnails/cache 全局清理缺入口，已补配置页维护区。其余无调用方端点判定 API-only 保留：thumbnails/supported（前端直连 img，预检反增请求）、file-shares/{id}、files/info、storage/pools/{id}（列表数据已全量）；/system/logs 与 PUT /system/settings 为诚实 501 不做假 UI。
 
