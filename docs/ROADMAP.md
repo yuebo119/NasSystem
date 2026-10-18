@@ -273,6 +273,9 @@ OCR 与媒体库：SimdPaddleOCR PP-OCRv6（纯 C# 推理，无 ONNX Runtime/Ope
 | 版本对比 | 版本抽屉勾选两个 + 对话框 | 体积差/哈希/时间范围 | 无 |
 | 重新生成分享码 | 分享编辑抽屉内 | 确认（明示旧链接失效）+ 刷新新码 | 无 |
 | 重启/关机 | 配置页危险区 | 分级确认 + 真实调度（3 秒后停进程） | 无 |
+| 缩略图缓存清理 | 预览抽屉（单文件）+ 配置页维护区（全局） | 确认 + 重取预览 / 全量重建提示 | 无 |
+
+第三轮收口（2026-10-18 深夜）：机械审计（从 Endpoints 源码提取全部路由逐个核对前端调用方）发现 DELETE /thumbnails/cache 全局清理缺入口，已补配置页维护区。其余无调用方端点判定 API-only 保留：thumbnails/supported（前端直连 img，预检反增请求）、file-shares/{id}、files/info、storage/pools/{id}（列表数据已全量）；/system/logs 与 PUT /system/settings 为诚实 501 不做假 UI。
 
 动态配置架构：`ConfigDescriptors` 注册表是前后端单一事实源（键/类型/范围/默认值/i18n 键），配置页按 descriptor 渲染表单；值存 `SystemSettings` 键值表，改完即生效不重启。appsettings 保留给启动期定死项（连接串/JWT/CORS/上传上限/缩略图），配置页明示为只读，不留"声明了但不生效"的死键。
 
