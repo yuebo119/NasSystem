@@ -166,6 +166,27 @@ public static class DependencyInjection
             CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Email ON Users(Email) WHERE [Email] IS NOT NULL;
             """));
 
+        // OCR 全文检索（ROADMAP Phase 2 全文检索升级）：FTS5 trigram 镜像表。
+        // 与 PalORM 行模型体系的关系：FTS5 虚拟表不是行模型（源生成器不产出），
+        // 与两个部分索引同理走幂等裸 SQL。选 trigram tokenizer：中文场景下
+        // unicode61 按 Unicode 类别分词，双字词查询必然落空（探针实测），
+        // trigram 按三字子串切分是 FTS5 对中文开箱可用的形态。
+        // FileItemId 列 UNINDEXED：它只作关联投影不参与检索，不建索引
+        // 省一半写入成本。同步写入在 FileOcrTextRepository（同事务双写），
+        // 存量回填在下面——新库两张表皆空，回填是 no-op
+        await db.ExecuteAsync(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS FileOcrTextsFts USING fts5(
+                FileItemId UNINDEXED,
+                Text,
+                tokenize='trigram'
+            );
+            INSERT INTO FileOcrTextsFts(FileItemId, Text)
+            SELECT FileItemId, Text FROM FileOcrTexts
+            WHERE FileItemId NOT IN (SELECT FileItemId FROM FileOcrTextsFts);
+            """));
+
         // FileVersions.FileItemId 的级联外键移除（ROADMAP Phase 1）。
         // SQLite 不支持 DROP CONSTRAINT，外键变更只能重建表。检测到旧外键
         // （pragma_foreign_key_list 里有指向 FileItems 的行）才执行，新库

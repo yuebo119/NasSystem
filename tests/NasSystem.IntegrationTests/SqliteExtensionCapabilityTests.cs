@@ -96,6 +96,34 @@ public class SqliteExtensionCapabilityTests : IDisposable
     }
 
     [Fact]
+    public async Task Fts5_MatchAcceptsParameterizedQueryString()
+    {
+        // 最小复现：MATCH 右值用绑定参数（SearchAsync 的 FTS 通道形态）
+        // 与 SQL 字面量两种形态的行为差异
+        await using var db = await OpenPalormSessionAsync();
+        await db.ExecuteAsync(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS probe_match USING fts5(content, tokenize='trigram')"));
+        await db.ExecuteAsync(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "INSERT INTO probe_match(content) VALUES ('家庭网络存储中的扫描件文字识别')"));
+
+        // 形态 A：绑定参数（含双引号的查询串）
+        var paramHits = await db.ScalarAsync<long>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "SELECT COUNT(*) FROM probe_match WHERE probe_match MATCH {0}", "\"扫描件\""),
+            false);
+        paramHits.Should().Be(1, "绑定参数形态应命中");
+
+        // 形态 B：SQL 字面量
+        var literalHits = await db.ScalarAsync<long>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "SELECT COUNT(*) FROM probe_match WHERE probe_match MATCH '\"扫描件\"'"),
+            false);
+        literalHits.Should().Be(1, "字面量形态应命中");
+    }
+
+    [Fact]
     public void SqliteVec_LoadsAndRunsKnnQuery()
     {
         var vecDll = Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native", "vec0.dll");

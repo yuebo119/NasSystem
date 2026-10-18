@@ -178,15 +178,26 @@ public sealed class FileItemRepository(
 
         string Slot() => "{" + args.Count + "}";
 
-        // 文件名命中或图片内文字命中（ROADMAP Phase 2 OCR）。
+        // 文件名命中或图片内文字命中（ROADMAP Phase 2 OCR → 全文检索升级）。
         // 子查询而不是 JOIN：FileOcrTexts 是稀疏表（只有识别过的图片有行），
-        // JOIN 会把未识别的文件从结果里挤出去。两个 LIKE 各自一个绑定参数，
-        // 转义规则与文件名一致（EscapeLike 同一函数）
+        // JOIN 会把未识别的文件从结果里挤出去。
+        // OCR 通道按查询长度分流：trigram FTS 按三字子串切分，少于 3 字符的
+        // 查询没有可用的 trigram（实测 MATCH 对 1-2 字符查询不命中），
+        // 回退 LIKE 全表扫——短查询的命中集本来就大，LIKE 的代价可接受。
+        // 文件名通道恒定 LIKE（名称是精确包含语义，与分词无关）
+        // 占位符显式写 {{0}}/{{1}} 而不再调 Slot()：Slot() 按 args.Count 编号，
+        // 而本段的两个占位都在 args.Add 之前求值，连续调用会撞成同一个 {0}
+        // （改造前两个 LIKE 恰好都用同一 searchTerm 值，撞号被掩盖；MATCH 与
+        // LIKE 的参数形态不同后必须分开编号）
         conditions.Add(
-            $"IsDeleted = 0 AND (Name LIKE {Slot()} ESCAPE '#' " +
-            $"OR Id IN (SELECT FileItemId FROM FileOcrTexts WHERE Text LIKE {Slot()} ESCAPE '#'))");
+            $"IsDeleted = 0 AND (Name LIKE {{0}} ESCAPE '#' " +
+            (searchTerm.Length >= 3
+                ? "OR Id IN (SELECT FileItemId FROM FileOcrTextsFts WHERE FileOcrTextsFts MATCH {1}))"
+                : "OR Id IN (SELECT FileItemId FROM FileOcrTexts WHERE Text LIKE {1} ESCAPE '#'))"));
         args.Add("%" + EscapeLike(searchTerm) + "%");
-        args.Add("%" + EscapeLike(searchTerm) + "%");
+        args.Add(searchTerm.Length >= 3
+            ? "\"" + EscapeFtsLiteral(searchTerm) + "\""
+            : "%" + EscapeLike(searchTerm) + "%");
 
         if (ownerId.HasValue)
         {
@@ -241,12 +252,12 @@ public sealed class FileItemRepository(
 
         // 总数走同 WHERE 的 COUNT，不是取回条数（原实现报窗口计数，分页器总页数从第二页起是错的）
         var totalCount = await db.ScalarAsync<long>(
-            System.Runtime.CompilerServices.FormattableStringFactory.Create($"SELECT COUNT(*) FROM FileItems {where}", args.ToArray()),
+            System.Runtime.CompilerServices.FormattableStringFactory.Create("SELECT COUNT(*) FROM FileItems " + where, args.ToArray()),
             false,
             cancellationToken);
 
         var rows = await db.QueryAsync<FileItemRow>(
-            System.Runtime.CompilerServices.FormattableStringFactory.Create($"SELECT * FROM FileItems {where}{orderAndPage}", args.ToArray()),
+            System.Runtime.CompilerServices.FormattableStringFactory.Create("SELECT * FROM FileItems " + where + orderAndPage, args.ToArray()),
             false,
             cancellationToken);
 
@@ -312,12 +323,12 @@ public sealed class FileItemRepository(
         var orderAndPage = $" ORDER BY CreatedAt DESC, Id LIMIT {pageSize} OFFSET {(long)(page - 1) * pageSize}";
 
         var totalCount = await db.ScalarAsync<long>(
-            System.Runtime.CompilerServices.FormattableStringFactory.Create($"SELECT COUNT(*) FROM FileItems {where}", args.ToArray()),
+            System.Runtime.CompilerServices.FormattableStringFactory.Create("SELECT COUNT(*) FROM FileItems " + where, args.ToArray()),
             false,
             cancellationToken);
 
         var rows = await db.QueryAsync<FileItemRow>(
-            System.Runtime.CompilerServices.FormattableStringFactory.Create($"SELECT * FROM FileItems {where}{orderAndPage}", args.ToArray()),
+            System.Runtime.CompilerServices.FormattableStringFactory.Create("SELECT * FROM FileItems " + where + orderAndPage, args.ToArray()),
             false,
             cancellationToken);
 
@@ -765,6 +776,14 @@ public sealed class FileItemRepository(
     /// # 在 C# 字符串里无需转义，写出来就是运行期的样子。
     /// 每个用到这里产物的 LIKE 都必须配 <c>ESCAPE '#'</c> 子句（已由行为测试锁住）。
     /// </remarks>
+    /// <summary>
+    /// FTS5 trigram 字符串字面量转义：双引号双写。查询形态是
+    /// MATCH '"文本"'（trigram 的字符串字面量语法），文本内的双引号
+    /// 不转义会提前终止字面量。SQL 注入面：字面量在单引号的 SQL 参数里，
+    /// 双引号不涉及 SQL 字符串边界，双写只为 FTS 语法正确
+    /// </summary>
+    private static string EscapeFtsLiteral(string term) => term.Replace("\"", "\"\"");
+
     private static string EscapeLike(string value) =>
         value.Replace("#", "##").Replace("%", "#%").Replace("_", "#_");
 
