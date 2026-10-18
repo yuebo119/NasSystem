@@ -133,6 +133,12 @@ public static class DependencyInjection
             CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Email ON Users(Email) WHERE [Email] IS NOT NULL;
             """));
 
+        // FileVersions.FileItemId 的级联外键移除（ROADMAP Phase 1）。
+        // SQLite 不支持 DROP CONSTRAINT，外键变更只能重建表。检测到旧外键
+        // （pragma_foreign_key_list 里有指向 FileItems 的行）才执行，新库
+        // 行模型已无该外键、本就不会命中，天然幂等
+        await MigrateLegacyFileVersionForeignKeyAsync(db, logger);
+
         // 建表后校验 schema 与编译期生成的模型是否一致。
         // MigrateAsync 是幂等的，表已存在时不会重建，因而"库里少了列/索引"这类漂移
         // 它不会报，只在查询时才以"no such column"暴露。启动时主动校验能把问题
@@ -153,6 +159,59 @@ public static class DependencyInjection
 
         // 初始化种子数据
         await SeedDataAsync(db, storagePath);
+    }
+
+    /// <summary>
+    /// 移除 FileVersions.FileItemId 的级联外键（ROADMAP Phase 1）。
+    /// SQLite 不支持 DROP CONSTRAINT，外键变更只能重建表。检测到旧外键
+    /// （pragma_foreign_key_list 里有指向 FileItems 的行）才执行，新库
+    /// 行模型已无该外键、本就不会命中，天然幂等。
+    /// </summary>
+    /// <remarks>
+    /// 语句顺序：先建新表灌数据（失败则旧表完好），再删旧表改名，
+    /// 把不可逆操作压在最后；残留风险是删旧表后改名前崩溃，下次启动
+    /// 检测不到旧外键不会重跑，需人工把 FileVersions_migrated 改名救回。
+    /// 提为 public 供迁移测试直接驱动（否则该一次性脚本无任何执行证据）
+    /// </remarks>
+    public static async Task MigrateLegacyFileVersionForeignKeyAsync(
+        DataSession<SqliteProvider> db,
+        Microsoft.Extensions.Logging.ILogger logger)
+    {
+        var legacyVersionFk = await db.ScalarAsync<long>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                """SELECT COUNT(*) FROM pragma_foreign_key_list('FileVersions') WHERE "table" = 'FileItems'"""),
+            false);
+        if (legacyVersionFk == 0)
+            return;
+
+        await db.ExecuteAsync(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+            """
+            CREATE TABLE "FileVersions_migrated" (
+                "Id" TEXT PRIMARY KEY NOT NULL,
+                "FileItemId" TEXT NOT NULL,
+                "VersionNumber" INTEGER NOT NULL,
+                "StoragePath" TEXT NOT NULL,
+                "FileSize" BIGINT NOT NULL,
+                "FileHash" TEXT NOT NULL,
+                "Comment" TEXT,
+                "IsCurrent" BOOLEAN NOT NULL,
+                "CreatedByUserId" TEXT NOT NULL,
+                "CreatedAt" TIMESTAMP NOT NULL,
+                "UpdatedAt" TIMESTAMP,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES "Users" ("Id") ON DELETE RESTRICT
+            );
+            INSERT INTO "FileVersions_migrated"
+                ("Id", "FileItemId", "VersionNumber", "StoragePath", "FileSize", "FileHash", "Comment", "IsCurrent", "CreatedByUserId", "CreatedAt", "UpdatedAt")
+                SELECT "Id", "FileItemId", "VersionNumber", "StoragePath", "FileSize", "FileHash", "Comment", "IsCurrent", "CreatedByUserId", "CreatedAt", "UpdatedAt" FROM "FileVersions";
+            DROP TABLE "FileVersions";
+            ALTER TABLE "FileVersions_migrated" RENAME TO "FileVersions";
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_FileVersions_FileItemId_VersionNumber" ON "FileVersions"("FileItemId", "VersionNumber");
+            CREATE INDEX IF NOT EXISTS "IX_FileVersions_FileItemId" ON "FileVersions"("FileItemId");
+            CREATE INDEX IF NOT EXISTS "IX_FileVersions_FileItemId_IsCurrent" ON "FileVersions"("FileItemId", "IsCurrent");
+            CREATE INDEX IF NOT EXISTS "IX_FileVersions_CreatedByUserId" ON "FileVersions"("CreatedByUserId");
+            """));
+        logger.LogInformation("已迁移 FileVersions：移除 FileItemId 级联外键（版本快照在文件永久删除后保留）");
     }
 
     /// <summary>

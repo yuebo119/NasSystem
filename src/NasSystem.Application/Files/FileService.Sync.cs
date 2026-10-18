@@ -9,6 +9,7 @@ namespace NasSystem.Application.Files;
 
 using NasSystem.Application.Common;
 using NasSystem.Application.Files.Dtos;
+using NasSystem.Application.FileVersions;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
@@ -180,6 +181,13 @@ public sealed partial class FileService
         foreach (var dir in Directory.EnumerateDirectories(physicalDir))
         {
             var dirName = Path.GetFileName(dir);
+
+            // 版本库目录（ROADMAP Phase 1）：.versions 存文件历史版本，
+            // 与 .uploading- 半成品同理，物理上在池内但不对用户呈现，
+            // 扫描入库会把版本文件当正常文件导进来
+            if (dirName == FileVersionStore.DirectoryName)
+                continue;
+
             var dirVirtualPath = CombinePath(virtualPath, dirName);
             physicalPaths.Add(dirVirtualPath);
 

@@ -40,7 +40,7 @@ try
 
     // 注册服务
     builder.Services
-        .AddApplicationServices()
+        .AddApplicationServices(builder.Configuration)
         .AddInfrastructureServices(builder.Configuration)
         .AddJwtAuthentication(builder.Configuration, builder.Environment)
         .AddApiServices(builder.Environment);

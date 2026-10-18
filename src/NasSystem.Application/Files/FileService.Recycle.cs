@@ -49,7 +49,7 @@ public sealed partial class FileService
 
             if (request.Permanent)
             {
-                if (await PermanentDeleteAsync(item, result, cancellationToken))
+                if (await PermanentDeleteAsync(item, result, userId, cancellationToken))
                     succeededPaths.Add(normalized);
             }
             else
@@ -94,7 +94,14 @@ public sealed partial class FileService
     /// 永久删除：物理删除成功才删数据库记录（ITM-N14：物理失败仍删库会产生孤儿文件，
     /// 并在下次扫描时被当作新文件重新入库）；文件夹级联清理后代记录。
     /// </summary>
-    private async Task<bool> PermanentDeleteAsync(FileItem item, DeleteResultDto result, CancellationToken ct)
+    /// <remarks>
+    /// 单文件永久删除前自动产版本（ROADMAP Phase 1）：永久删除不可逆，
+    /// 版本快照是误操作的最后防线，保留策略（数量+天数）兜底体积。
+    /// 文件夹级联删除不逐文件产版本：一次操作可能产生成千上万条版本记录，
+    /// 快照成本从"元数据级"膨胀为"记录级"，超出保留策略的设计口径。
+    /// 文件夹场景的防误删由默认软删除（回收站）承担。
+    /// </remarks>
+    private async Task<bool> PermanentDeleteAsync(FileItem item, DeleteResultDto result, Guid userId, CancellationToken ct)
     {
         try
         {
@@ -105,6 +112,13 @@ public sealed partial class FileService
             }
             else if (_fileSystemService.FileExists(item.PhysicalPath))
             {
+                // 先快照后删除：顺序反了就成了给已删除的文件产版本（必然失败）
+                var pool = await _storagePoolRepository.GetByIdAsync(item.StoragePoolId, ct);
+                if (pool is not null)
+                {
+                    await _fileVersionService.CreateAutoVersionAsync(item, pool.MountPath, userId, ct);
+                }
+
                 _fileSystemService.DeleteFile(item.PhysicalPath);
             }
 

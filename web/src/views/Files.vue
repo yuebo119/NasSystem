@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api/file'
+import { fileVersionApi } from '@/api/fileVersion'
 import { fileShareApi, ShareAccessType, PermissionLevel, type FileShareDto, type CreateFileShareRequest } from '@/api/fileShare'
 import { storageApi } from '@/api/storage'
 import { ElMessage, ElMessageBox, ElCheckbox } from 'element-plus'
@@ -16,7 +17,7 @@ import {
   Grid, List, View, Hide, DeleteFilled, Back,
   Document, Folder, HomeFilled, Share, Link
 } from '@element-plus/icons-vue'
-import type { FileItem } from '@/types'
+import type { FileItem, FileVersion } from '@/types'
 import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
 import { createPreviewUrlManager } from '@/utils/previewUrl'
 import { useDrawerSize } from '@/utils/useIsMobile'
@@ -36,6 +37,12 @@ const searchDialogVisible = ref(false)
 const recycleBinDialogVisible = ref(false)
 const uploadDialogVisible = ref(false)
 const previewDialogVisible = ref(false)
+
+// 历史版本（ROADMAP Phase 1）
+const versionDialogVisible = ref(false)
+const versionTarget = ref<FileItem | null>(null)
+const versionList = ref<FileVersion[]>([])
+const versionLoading = ref(false)
 
 // 表单数据
 const newFolderName = ref('')
@@ -570,6 +577,109 @@ async function openPreview(item: FileItem) {
     previewDialogVisible.value = true
     // 媒体类预览经 Header 拉取 blob，避免 token 进 URL
     void ensurePreviewUrl(item)
+  }
+}
+
+// ─── 历史版本（ROADMAP Phase 1）───
+
+// el-table 插槽的 row 是 DefaultRow 未定型，与 Shares.vue 的 asShare 同款收窄
+const asVersion = (row: any): FileVersion => row as FileVersion
+
+// 打开版本历史抽屉：仅文件有版本（文件夹的软删除走回收站，不产版本）
+async function openVersionHistory(item: FileItem) {
+  if (item.isFolder) return
+  versionTarget.value = item
+  versionDialogVisible.value = true
+  versionLoading.value = true
+  try {
+    const result = await fileVersionApi.getVersions(item.id)
+    if (result.success) {
+      versionList.value = result.data ?? []
+    } else {
+      versionList.value = []
+      ElMessage.error(t('filesView.versionLoadFailed'))
+    }
+  } catch {
+    versionList.value = []
+    ElMessage.error(t('filesView.versionLoadFailed'))
+  } finally {
+    versionLoading.value = false
+  }
+}
+
+// 恢复到指定版本：当前内容会先被服务端自动存为版本，无数据丢失窗口
+async function restoreVersion(version: FileVersion) {
+  if (!versionTarget.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('filesView.versionRestoreConfirm', { number: version.versionNumber }),
+      t('filesView.versionHistoryTitle'),
+      { type: 'warning' }
+    )
+  } catch {
+    return // 用户取消
+  }
+  try {
+    const result = await fileVersionApi.restore(versionTarget.value.id, version.versionNumber)
+    if (result.success) {
+      ElMessage.success(t('filesView.versionRestoreSuccess', { number: version.versionNumber }))
+      await openVersionHistory(versionTarget.value)
+      await fileStore.loadDirectory(fileStore.currentPath)
+    } else {
+      ElMessage.error(t('filesView.versionRestoreFailed'))
+    }
+  } catch {
+    ElMessage.error(t('filesView.versionRestoreFailed'))
+  }
+}
+
+// 删除单个历史版本（服务端拒绝删当前版本，这里同步禁用入口）
+async function deleteVersion(version: FileVersion) {
+  if (!versionTarget.value || version.isCurrent) {
+    ElMessage.warning(t('filesView.versionCannotDeleteCurrent'))
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      t('filesView.versionDeleteConfirm', { number: version.versionNumber }),
+      t('filesView.versionHistoryTitle'),
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const result = await fileVersionApi.delete(versionTarget.value.id, version.versionNumber)
+    if (result.success) {
+      ElMessage.success(t('filesView.versionDeleteSuccess'))
+      await openVersionHistory(versionTarget.value)
+    } else {
+      ElMessage.error(t('filesView.versionDeleteFailed'))
+    }
+  } catch {
+    ElMessage.error(t('filesView.versionDeleteFailed'))
+  }
+}
+
+// 下载历史版本：token 走 Authorization 头（ITM-N19/G19，禁拼 URL）
+async function downloadVersion(version: FileVersion) {
+  if (!versionTarget.value) return
+  const url = fileVersionApi.getVersionDownloadUrl(versionTarget.value.id, version.versionNumber)
+  const token = localStorage.getItem('token')
+  try {
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!response.ok) throw new Error(String(response.status))
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = `${versionTarget.value.name}.v${version.versionNumber}`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(objectUrl)
+  } catch {
+    ElMessage.error(t('filesView.downloadFailed'))
   }
 }
 
@@ -1512,8 +1622,69 @@ onUnmounted(() => {
       </div>
       <template #footer>
         <el-button @click="previewDialogVisible = false">{{ $t('filesView.close') }}</el-button>
+        <el-button @click="openVersionHistory(previewItem!)" v-if="previewItem && !previewItem.isFolder">
+          {{ $t('filesView.versionHistoryBtn') }}
+        </el-button>
         <el-button type="primary" @click="downloadFile(previewItem!)" v-if="previewItem">{{ $t('filesView.downloadTip') }}</el-button>
       </template>
+    </el-drawer>
+
+    <!-- 历史版本抽屉（ROADMAP Phase 1） -->
+    <el-drawer
+      v-model="versionDialogVisible"
+      :title="$t('filesView.versionHistoryTitle')"
+      :size="drawerSize('420px', '38vw', '560px')"
+    >
+      <div class="version-target" v-if="versionTarget">
+        <el-icon :size="20" :color="getFileIconColor(versionTarget)">
+          <component :is="getFileIcon(versionTarget)" />
+        </el-icon>
+        <div class="version-target-info">
+          <div class="version-target-name">{{ versionTarget.name }}</div>
+          <div class="version-target-path">{{ versionTarget.path }}</div>
+        </div>
+      </div>
+
+      <el-table
+        v-loading="versionLoading"
+        :data="versionList"
+        :empty-text="$t('filesView.versionEmpty')"
+        style="width: 100%"
+      >
+        <el-table-column :label="$t('filesView.versionNumberCol')" width="90">
+          <template #default="{ row }">
+            <span>v{{ row.versionNumber }}</span>
+            <el-tag v-if="row.isCurrent" type="success" size="small" style="margin-left: 6px">
+              {{ $t('filesView.versionCurrentBadge') }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="$t('filesView.versionSizeCol')" width="110">
+          <template #default="{ row }">{{ formatSize(row.fileSize) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('filesView.versionTimeCol')" min-width="160">
+          <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('filesView.delete')" width="170">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="downloadVersion(asVersion(row))">
+              {{ $t('filesView.versionDownload') }}
+            </el-button>
+            <el-button link type="primary" size="small" @click="restoreVersion(asVersion(row))">
+              {{ $t('filesView.versionRestore') }}
+            </el-button>
+            <el-button
+              link
+              type="danger"
+              size="small"
+              :disabled="asVersion(row).isCurrent"
+              @click="deleteVersion(asVersion(row))"
+            >
+              {{ $t('filesView.versionDelete') }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </el-drawer>
 
     <!-- 分享抽屉 -->
@@ -2088,6 +2259,37 @@ onUnmounted(() => {
     }
     
     .share-target-path {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      margin-top: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}
+
+.version-target {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--el-fill-color-light);
+  border-radius: 12px;
+  margin-bottom: 20px;
+  border: 1px solid var(--el-border-color-lighter);
+
+  .version-target-info {
+    flex: 1;
+    min-width: 0;
+
+    .version-target-name {
+      font-weight: 500;
+      font-size: 15px;
+      color: var(--el-text-color-primary);
+    }
+
+    .version-target-path {
       font-size: 12px;
       color: var(--el-text-color-secondary);
       margin-top: 4px;

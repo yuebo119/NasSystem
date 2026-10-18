@@ -6,6 +6,7 @@
 namespace NasSystem.Application.FileVersions;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Repositories;
@@ -22,19 +23,127 @@ public class FileVersionService : IFileVersionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<FileVersionService> _logger;
     private readonly IFileSystemService _fileSystemService;
+    private readonly FileVersionOptions _options;
 
     public FileVersionService(
         IFileVersionRepository versionRepository,
         IFileItemRepository fileItemRepository,
         IUnitOfWork unitOfWork,
         ILogger<FileVersionService> logger,
-        IFileSystemService fileSystemService)
+        IFileSystemService fileSystemService,
+        IOptions<FileVersionOptions> options)
     {
         _versionRepository = versionRepository;
         _fileItemRepository = fileItemRepository;
         _unitOfWork = unitOfWork;
         _logger = logger;
         _fileSystemService = fileSystemService;
+        _options = options.Value;
+    }
+
+    /// <inheritdoc />
+    public async Task CreateAutoVersionAsync(
+        FileItem item,
+        string poolMountPath,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!File.Exists(item.PhysicalPath))
+            {
+                // 库有记录但物理文件缺失（历史遗留或外部删除）：无内容可快照
+                _logger.LogWarning(
+                    "跳过自动版本：物理文件不存在 FileItemId={FileItemId}, Path={Path}",
+                    item.Id, item.PhysicalPath);
+                return;
+            }
+
+            var versionPath = FileVersionStore.GetVersionPath(poolMountPath, item.Id, item.Name);
+            FileVersionStore.CreateSnapshot(item.PhysicalPath, versionPath);
+
+            // 版本号取现有最大值 + 1（版本记录可能被手动删除过，不能依赖条数）
+            var existing = await _versionRepository.GetByFileItemIdAsync(item.Id, cancellationToken);
+            var nextNumber = existing.Count > 0 ? existing.Max(v => v.VersionNumber) + 1 : 1;
+
+            // IsCurrent 语义：自动版本记录的是"被覆盖/被删除前的内容"，
+            // 覆盖完成后活动内容是新写入的文件，与任何版本快照都不相同，
+            // 因此自动版本一律 IsCurrent=false，同时解除上一版本的 current 标记
+            // （上一版本若恰是此前恢复出来的，覆盖后也不再与活动内容一致）
+            foreach (var old in existing.Where(v => v.IsCurrent))
+            {
+                old.MarkAsOld();
+                _versionRepository.Update(old);
+            }
+
+            var version = FileVersion.Create(
+                fileItemId: item.Id,
+                versionNumber: nextNumber,
+                storagePath: versionPath,
+                fileSize: item.SizeBytes,
+                fileHash: item.Hash ?? string.Empty,
+                createdByUserId: userId,
+                comment: null);
+            version.MarkAsOld();
+
+            await _versionRepository.AddAsync(version, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "自动版本已创建: FileItemId={FileItemId}, Version={Version}, Snapshot={Path}",
+                item.Id, nextNumber, versionPath);
+
+            await ApplyRetentionAsync(item.Id, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 快照失败不阻断主流程：覆盖上传/永久删除是用户明确意图，
+            // 为版本失败回滚主操作会把"保险"凌驾于主路径之上
+            _logger.LogWarning(ex, "自动版本创建失败（主操作继续）: FileItemId={FileItemId}", item.Id);
+        }
+    }
+
+    /// <summary>
+    /// 保留策略：单文件版本数超限删最旧，超过天数的全清。
+    /// 被恢复出来的 current 版本不参与淘汰（删掉它等于删掉与活动内容一致的那份）
+    /// </summary>
+    private async Task ApplyRetentionAsync(Guid fileItemId, CancellationToken cancellationToken)
+    {
+        var versions = await _versionRepository.GetByFileItemIdAsync(fileItemId, cancellationToken);
+        if (versions.Count == 0)
+            return;
+
+        var cutoff = DateTime.UtcNow.AddDays(-_options.MaxVersionAgeDays);
+        var evictable = versions
+            .Where(v => !v.IsCurrent)
+            .OrderBy(v => v.VersionNumber)
+            .ToList();
+
+        var expired = evictable.Where(v => v.CreatedAt < cutoff).ToList();
+        // 新版本已在清单内（AddAsync + SaveChanges 先于保留策略执行），
+        // 超量判定直接用 MaxVersionsPerFile，不再为"即将加入的那个"留位
+        var overflow = evictable.Count - expired.Count - _options.MaxVersionsPerFile;
+        if (overflow > 0)
+        {
+            // 未过期部分里最旧的先走：保留策略的牺牲顺序永远是旧版本
+            expired.AddRange(evictable
+                .Where(v => v.CreatedAt >= cutoff)
+                .Take(overflow));
+        }
+
+        foreach (var victim in expired)
+        {
+            FileVersionStore.TryDeleteSnapshot(victim.StoragePath);
+            _versionRepository.Delete(victim);
+        }
+
+        if (expired.Count > 0)
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation(
+                "版本保留策略清理: FileItemId={FileItemId}, 删除 {Count} 个版本",
+                fileItemId, expired.Count);
+        }
     }
 
     /// <inheritdoc />
@@ -43,13 +152,9 @@ public class FileVersionService : IFileVersionService
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        var fileItem = await _fileItemRepository.GetByIdAsync(fileItemId, cancellationToken);
-        if (fileItem is null)
-        {
-            return Result<IReadOnlyList<FileVersionDto>>.Failure(
-                new Error("FileVersion.FileNotFound", "文件不存在"));
-        }
-
+        // 不要求 FileItem 仍存在：永久删除的文件记录已没了，但版本快照的
+        // 全部意义就是兜住这种不可逆操作，此时版本必须仍可列出可下载。
+        // 版本记录自带 CreatedByUserId，用户名经仓储附带查询，不依赖 FileItem
         var versions = await _versionRepository.GetByFileItemIdAsync(fileItemId, cancellationToken);
         var dtos = versions.Select(MapToDto).ToList();
 
@@ -126,6 +231,14 @@ public class FileVersionService : IFileVersionService
                 File.Delete(targetPath);
             }
             File.Move(tempPath, targetPath);
+
+            // 内容换了，库里的体积与哈希必须同步：不同步的话浏览列表显示恢复前的
+            // 旧大小，版本比较的 SizeDifference 也整体偏移（快照记录的是各版本
+            // 创建时的值，当前值只能从 fileItem 取）
+            fileItem.UpdateSize(version.FileSize);
+            if (!string.IsNullOrEmpty(version.FileHash))
+                fileItem.UpdateHash(version.FileHash);
+            _fileItemRepository.UpdateAsync(fileItem, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -191,8 +304,10 @@ public class FileVersionService : IFileVersionService
 
         if (version.IsCurrent)
         {
+            // 错误码带 Conflict 后缀：ResultExtensions 的映射表按此命中 409，
+            // 不带会落默认 500（客户端错误被报成服务端故障）
             return Result.Failure(
-                new Error("FileVersion.CannotDeleteCurrent", "无法删除当前版本"));
+                new Error("FileVersion.CurrentVersionConflict", "无法删除当前版本"));
         }
 
         // 删除版本文件

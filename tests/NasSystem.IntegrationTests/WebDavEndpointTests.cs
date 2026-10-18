@@ -388,32 +388,6 @@ public class WebDavEndpointTests : ApiTestBase, IDisposable
             content: new StringContent(content, Encoding.UTF8, "text/plain"));
         return await Client.SendAsync(request);
     }
-
-    private static HttpRequestMessage CreateDavRequest(
-        HttpMethod method,
-        string url,
-        string? username = null,
-        string password = "password123",
-        string? token = null,
-        HttpContent? content = null)
-    {
-        var request = new HttpRequestMessage(method, url) { Content = content };
-        if (username is null)
-        {
-            return request;
-        }
-
-        if (token is not null)
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        }
-        else
-        {
-            var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}"));
-            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
-        }
-        return request;
-    }
 }
 
 /// <summary>

@@ -5,6 +5,7 @@
 
 namespace NasSystem.Application;
 
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Application.Files;
 using NasSystem.Application.FileShares;
@@ -20,7 +21,14 @@ public static class DependencyInjection
     /// <summary>
     /// 注册应用层服务
     /// </summary>
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    /// <param name="configuration">
+    /// 配置源。与 AddInfrastructureServices 同模式显式传入：
+    /// 在 Configure 委托里 BuildServiceProvider 会造出第二个容器，
+    /// 单例被复制两份、释放语义破裂，是明确的 DI 反模式
+    /// </param>
+    public static IServiceCollection AddApplicationServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
         // 注册应用服务
         services.AddScoped<IUserService, UserService>();
@@ -32,6 +40,20 @@ public static class DependencyInjection
         services.AddScoped<IFileVersionService, FileVersionService>();
         services.AddScoped<IStorageService, StorageService>();
         services.AddScoped<IFileShareService, FileShareService>();
+
+        // 版本保留策略（ROADMAP Phase 1）：未配置时取 FileVersionOptions 默认值。
+        // 显式读键而非 Bind：Bind/GetValue 在 Configuration.Binder 包里，
+        // 应用层只引 Abstractions（CPM 统一管的版本用不上），两个键手工映射
+        // 比为此引一个包划算。新增配置项时同步补这里
+        services.AddOptions<FileVersionOptions>()
+            .Configure(options =>
+            {
+                var section = configuration.GetSection(FileVersionOptions.SectionName);
+                if (int.TryParse(section["MaxVersionsPerFile"], out var maxVersions) && maxVersions > 0)
+                    options.MaxVersionsPerFile = maxVersions;
+                if (int.TryParse(section["MaxVersionAgeDays"], out var maxDays) && maxDays > 0)
+                    options.MaxVersionAgeDays = maxDays;
+            });
 
         return services;
     }

@@ -83,6 +83,20 @@ export interface FileItem {
 
 export type FileItemType = 'File' | 'Folder' | 'Symlink'
 
+// 文件历史版本（ROADMAP Phase 1：覆盖上传与永久删除前自动产版本）
+export interface FileVersion {
+  id: string
+  fileItemId: string
+  versionNumber: number
+  fileSize: number
+  fileHash: string
+  comment?: string
+  isCurrent: boolean
+  createdByUserId: string
+  createdByUsername?: string
+  createdAt: string
+}
+
 export interface DirectoryContent {
   path: string
   name: string

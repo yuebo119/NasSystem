@@ -22,7 +22,15 @@ vi.mock('@/api/storage', () => ({
   }
 }))
 vi.mock('@/api/file', () => ({
-  fileApi: { getStatistics: vi.fn() }
+  // getRecentFiles/getRecycleBin 是 Dashboard 挂载链上的调用（commit ef8a6af
+  // 加入），mock 漏了它们会在控制台刷 "is not a function" 未处理错误：
+  // 测试本身仍绿，但错误噪音会掩盖真实回归。两个返回空数据，
+  // 对应面板的空态（现有断言不覆盖这两个面板的内容）
+  fileApi: {
+    getStatistics: vi.fn(),
+    getRecentFiles: vi.fn(() => Promise.resolve({ success: true, data: [] })),
+    getRecycleBin: vi.fn(() => Promise.resolve({ success: true, data: [] }))
+  }
 }))
 vi.mock('@/api/http', () => ({
   default: { get: vi.fn() }
@@ -65,7 +73,25 @@ function setupMocks() {
   mockHttpGet.mockImplementation((url: string) =>
     url === '/system/status'
       ? ok({ status: 'Healthy', uptime: '1.02:03:04', memoryUsageMB: 512, cpuTime: '00:10:00', threadCount: 32, handleCount: 100 })
-      : ok({ name: 'NAS System', version: '1.0.0', os: 'Windows', machineName: 'host', processorCount: 8, dotNetVersion: '10', startTime: '' })
+      // 分享概览经真实 fileShareApi 打 http.get('/file-shares')（spec 未单独
+      // mock 该模块）：回落分支的对象形状会让 Dashboard 的分享聚合 computed
+      // 撞 "list.filter is not a function"。空数组合法对应空态
+      : url === '/file-shares'
+        ? ok([])
+        // 系统信息八组域全量形状（commit bea8fd6 扩容后 Dashboard 直接渲染
+        // runtime/os/cpu/memory/database/network/process 各组，
+        // 缺任一组都是渲染期 undefined 崩溃）
+        : ok({
+            name: 'NAS System', version: '1.0.0', machineName: 'host', startTime: '2026-10-18T00:00:00Z',
+            runningInContainer: false,
+            runtime: { framework: '.NET', version: '11.0', runtimeIdentifier: 'linux-x64', osArchitecture: 'X64', processArchitecture: 'X64', is64BitProcess: true, gcMode: 'Server', gcGen0Collections: 1, gcGen1Collections: 1, gcGen2Collections: 1 },
+            operatingSystem: { description: 'Windows', version: '10', architecture: 'X64', is64Bit: true, timeZone: 'UTC', culture: 'zh-CN', userName: 'user' },
+            cpu: { logicalCores: 8, model: 'Test CPU', processCpuPercent: 12.5 },
+            memory: { totalPhysicalBytes: 1024, processWorkingSetBytes: 512, gcHeapBytes: 256 },
+            database: { provider: 'SQLite', version: '3.40', filePath: '/data/nas.db', fileSizeBytes: 4096, journalMode: 'WAL' },
+            network: { isAvailable: true, hostName: 'host', primaryInterface: 'eth0', interfaceType: 'Ethernet', ipv4Addresses: ['192.168.1.2'], receivedBytes: 100, sentBytes: 200 },
+            process: { threadCount: 32, handleCount: 100, pagedMemoryBytes: 2048 }
+          })
   )
 }
 

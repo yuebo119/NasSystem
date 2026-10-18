@@ -19,8 +19,11 @@ public partial class FileVersionRow
     [Column("Id")]
     public Guid Id { get; set; }
 
+    // FileItemId 不设外键（ROADMAP Phase 1）：版本快照的用途就是兜住不可逆操作，
+    // 永久删除文件项后版本必须仍然存在、可下载。原 ON DELETE CASCADE 会在删
+    // FileItems 时把版本一起带走，恰好摧毁这道安全网。存量库的级联外键由
+    // InitializeDatabaseAsync 的迁移脚本重建表移除
     [Column("FileItemId")]
-    [ForeignKey("FileItems", "Id", OnDelete = DeleteAction.Cascade)]
     public Guid FileItemId { get; set; }
     [Column("VersionNumber")] public int VersionNumber { get; set; }
     [Column("StoragePath")] public string StoragePath { get; set; } = string.Empty;

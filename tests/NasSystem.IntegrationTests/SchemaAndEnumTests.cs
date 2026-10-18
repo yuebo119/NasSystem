@@ -63,12 +63,15 @@ public class SchemaAndEnumTests : IDisposable
     [Fact]
     public void MigrateAsync_CreatesAllForeignKeyConstraints()
     {
-        // 每张表的期望外键数，与 EF 时代 schema 逐一对齐
+        // 每张表的期望外键数，与 EF 时代 schema 逐一对齐。
+        // 2026-10-18 ROADMAP Phase 1：FileVersions 由 2 降为 1——FileItemId 的
+        // 级联外键被移除（版本快照必须在文件永久删除后存活，级联恰好摧毁
+        // 这道安全网），保留 CreatedByUserId → Users。存量库由启动迁移重建表
         var expected = new Dictionary<string, int>
         {
             ["FileItems"] = 3,
             ["FileShares"] = 2,
-            ["FileVersions"] = 2,
+            ["FileVersions"] = 1,
         };
 
         using var connection = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly");

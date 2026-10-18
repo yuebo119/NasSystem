@@ -11,6 +11,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using NasSystem.Application.Common;
 using NasSystem.Application.Files.Dtos;
+using NasSystem.Application.FileVersions;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
@@ -50,6 +51,11 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     /// </remarks>
     private readonly IThumbnailService _thumbnailService;
 
+    /// <summary>
+    /// 版本服务：覆盖上传与永久删除前自动产版本用（ROADMAP Phase 1）
+    /// </summary>
+    private readonly IFileVersionService _fileVersionService;
+
     public FileService(
         IFileItemRepository fileRepository,
         IStoragePoolRepository storagePoolRepository,
@@ -59,7 +65,8 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         IConfiguration configuration,
         IHubNotificationService notifier,
         IMemoryCache cache,
-        IThumbnailService thumbnailService)
+        IThumbnailService thumbnailService,
+        IFileVersionService fileVersionService)
     {
         _fileRepository = fileRepository;
         _storagePoolRepository = storagePoolRepository;
@@ -69,6 +76,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         _notifier = notifier;
         _cache = cache;
         _thumbnailService = thumbnailService;
+        _fileVersionService = fileVersionService;
     }
 
     /// <summary>操作成功后向父目录订阅组推送变更（SignalR 实时刷新闭环）</summary>

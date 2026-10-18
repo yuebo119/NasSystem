@@ -7,6 +7,7 @@ namespace NasSystem.IntegrationTests;
 
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,6 +75,38 @@ public abstract class ApiTestBase : IClassFixture<NasSystemWebApplicationFactory
     protected void ClearAuthToken()
     {
         Client.DefaultRequestHeaders.Authorization = null;
+    }
+
+    /// <summary>
+    /// 构造 WebDAV 请求。username 存在时挂 Basic 认证（WebDAV 客户端口径），
+    /// token 存在时挂 Bearer（网页端接口口径）；两者都无则是匿名请求。
+    /// 按请求挂头而非改 Client 默认头：同工厂被多个用例共享，
+    /// 默认头会跨用例污染
+    /// </summary>
+    protected static HttpRequestMessage CreateDavRequest(
+        HttpMethod method,
+        string url,
+        string? username = null,
+        string password = "password123",
+        string? token = null,
+        HttpContent? content = null)
+    {
+        var request = new HttpRequestMessage(method, url) { Content = content };
+        if (username is null)
+        {
+            return request;
+        }
+
+        if (token is not null)
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+        else
+        {
+            var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
+        }
+        return request;
     }
 
     // ─── 通用测试辅助（自 FileEndpointsIntegrationTests 提升，供多测试类复用）───

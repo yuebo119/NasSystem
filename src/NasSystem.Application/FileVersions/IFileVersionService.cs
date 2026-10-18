@@ -5,6 +5,7 @@
 
 namespace NasSystem.Application.FileVersions;
 
+using NasSystem.Domain.Entities;
 using NasSystem.Shared;
 
 /// <summary>
@@ -12,6 +13,21 @@ using NasSystem.Shared;
 /// </summary>
 public interface IFileVersionService
 {
+    /// <summary>
+    /// 自动产版本：把文件当前内容快照进版本库（ROADMAP Phase 1）。
+    /// 覆盖上传与永久删除前由 FileService 调用。快照失败不阻断主流程
+    /// （记录告警日志后主操作继续），版本能力是保险而非主路径依赖
+    /// </summary>
+    /// <param name="item">被快照的文件项（取当前物理内容）</param>
+    /// <param name="poolMountPath">该文件所属存储池的挂载点</param>
+    /// <param name="userId">触发操作的用户</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    Task CreateAutoVersionAsync(
+        FileItem item,
+        string poolMountPath,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// 获取文件的所有版本
     /// </summary>

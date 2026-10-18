@@ -174,6 +174,16 @@ public sealed partial class FileService
         // 临时文件落位（覆盖语义：同卷 rename，旧文件被替换）
         try
         {
+            // 覆盖上传：旧内容先进版本库再替换（ROADMAP Phase 1 自动版本）。
+            // 时机必须在 File.Move 之前——替换后旧 inode 只被版本硬链接持有，
+            // 内容还在但已无法从当前路径读取。快照失败不阻断上传（服务内兜底）
+            if (existingItem is not null && metadata.Overwrite
+                && existingItem.ItemType == FileItemType.File)
+            {
+                await _fileVersionService.CreateAutoVersionAsync(
+                    existingItem, defaultPool.Value.MountPath, userId, cancellationToken);
+            }
+
             File.Move(tempPath, physicalPath, overwrite: true);
         }
         catch
