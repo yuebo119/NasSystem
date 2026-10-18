@@ -477,6 +477,26 @@ public sealed class FileItemRepository(
 
     // ---- 子树批量操作（S3：单条 SQL 替代逐条实体 UPDATE）----
 
+    public async Task<IReadOnlyList<FileItemSnapshotEntry>> GetSnapshotEntriesAsync(
+        string rootPath,
+        CancellationToken cancellationToken = default)
+    {
+        var db = await sessions.GetAsync(cancellationToken);
+
+        // 与 GetSubtreeEntriesAsync 同口径：根自身 + 全部后代、不论删除态、
+        // OR 两支都走参数绑定。多取 Hash/UpdatedAt/CreatedAt 三列入快照采集
+        var prefix = EscapeLike(rootPath) + "/%";
+        var rows = await db.QueryAsync<FileItemSnapshotEntryRow>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "SELECT Path, ItemType, SizeBytes, Hash, UpdatedAt, CreatedAt FROM FileItems WHERE Path = {0} OR Path LIKE {1} ESCAPE '#'",
+                rootPath, prefix),
+            false,
+            cancellationToken);
+
+        return rows.Select(r => new FileItemSnapshotEntry(
+            r.Path, r.ItemType, r.SizeBytes, r.Hash, r.UpdatedAt, r.CreatedAt)).ToList();
+    }
+
     public async Task<IReadOnlyList<FileItemEntry>> GetSubtreeEntriesAsync(
         string rootPath,
         CancellationToken cancellationToken = default)

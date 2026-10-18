@@ -35,6 +35,9 @@ public interface ISystemConfigService
 
     /// <summary>取布尔配置（无记录或解析失败回落 descriptor 默认值）</summary>
     Task<bool> GetBoolAsync(string key, CancellationToken cancellationToken = default);
+
+    /// <summary>取字符串配置（无记录回落 descriptor 默认值）</summary>
+    Task<string> GetStringAsync(string key, CancellationToken cancellationToken = default);
 }
 
 // -------------------------------------------------------------------------
@@ -48,7 +51,10 @@ public enum ConfigValueType
     Int,
 
     /// <summary>布尔（el-switch）</summary>
-    Bool
+    Bool,
+
+    /// <summary>短字符串（el-input，如 cron 表达式）</summary>
+    String
 }
 
 /// <summary>配置项描述符</summary>

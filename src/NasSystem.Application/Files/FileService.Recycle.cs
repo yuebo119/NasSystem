@@ -40,6 +40,17 @@ public sealed partial class FileService
         foreach (var path in request.Paths)
         {
             var normalized = NormalizePath(path);
+
+            // ROADMAP Phase 2 只读保护：软删与永久删都拦——软删同样让内容
+            // 从可见目录消失，回收站不是受保护内容的合法出口。走 FailedItems
+            // 部分失败机制（与"路径不存在"同款），其余项照常删除：
+            // Delete 的既有语义就是 per-item 结果汇总，不为策略拒绝改整批语义
+            if (await IsPathProtectedAsync(normalized, cancellationToken))
+            {
+                result.FailedItems.Add($"目录受只读保护，禁止删除: {normalized}");
+                continue;
+            }
+
             var item = await _fileRepository.GetByPathAsync(normalized, cancellationToken);
             if (item is null)
             {

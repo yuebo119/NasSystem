@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 测试项目可见 internal：cron 解析器等基础设施内部工具由测试直接锁定行为，
+         比提权为 public API 更合适（public 即承诺，internal 工具不承诺） -->
+    <InternalsVisibleTo Include="NasSystem.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NasSystem.Domain\NasSystem.Domain.csproj" />
     <ProjectReference Include="..\NasSystem.Application\NasSystem.Application.csproj" />
     <ProjectReference Include="..\NasSystem.Shared\NasSystem.Shared.csproj" />

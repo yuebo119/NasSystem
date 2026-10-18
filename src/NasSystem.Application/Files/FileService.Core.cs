@@ -15,6 +15,7 @@ using NasSystem.Application.Configuration;
 using NasSystem.Application.Files.Dtos;
 using NasSystem.Application.FileVersions;
 using NasSystem.Application.Ocr;
+using NasSystem.Application.ProtectedDirectories;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
@@ -64,6 +65,11 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     /// </summary>
     private readonly IOcrService _ocrService;
     private readonly ISystemConfigService _configService;
+
+    /// <summary>
+    /// 受保护目录服务：写路径的只读保护判定（ROADMAP Phase 2）
+    /// </summary>
+    private readonly IProtectedDirectoryService _protectedDirectoryService;
     private readonly ILogger<FileService> _logger;
 
     public FileService(
@@ -79,6 +85,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         IFileVersionService fileVersionService,
         IOcrService ocrService,
         ISystemConfigService configService,
+        IProtectedDirectoryService protectedDirectoryService,
         ILogger<FileService> logger)
     {
         _fileRepository = fileRepository;
@@ -92,8 +99,24 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         _fileVersionService = fileVersionService;
         _ocrService = ocrService;
         _configService = configService;
+        _protectedDirectoryService = protectedDirectoryService;
         _logger = logger;
     }
+
+    /// <summary>
+    /// ROADMAP Phase 2 只读保护判定：路径自身或任一祖先被标记即受保护。
+    /// 判定经仓储的"标记表空则短路"路径，未配置保护的部署（默认态）
+    /// 写路径零额外开销
+    /// </summary>
+    private Task<bool> IsPathProtectedAsync(string path, CancellationToken cancellationToken) =>
+        _protectedDirectoryService.IsProtectedAsync(path, cancellationToken);
+
+    /// <summary>
+    /// 只读保护拒绝错误。错误码含 Forbidden 关键词（ResultExtensions 的
+    /// 后缀映射落 403），码名带 Protected 便于日志与监控区分于普通越权
+    /// </summary>
+    private static Error ProtectedError(string path) =>
+        new("File.ProtectedForbidden", $"目录处于只读保护状态，禁止修改: {path}");
 
     /// <summary>
     /// 上传后的 OCR 自动识别（配置页开关，默认关）。同步等待：

@@ -118,6 +118,20 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 取根路径自身加全部后代（不论删除态）的快照采集投影：路径 + 类型 +
+    /// 大小 + 内容 hash + 修改时间。供清单快照生成条目（ROADMAP Phase 2）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="GetSubtreeEntriesAsync"/> 同查询形态，多取 Hash 与
+    /// 时间戳：快照条目要内容指纹与最后修改时间做时间点对比。删除态记录
+    /// 也入快照：回收站里的文件同样是"目录在那一刻的形态"的一部分，
+    /// 对比时如实呈现（恢复/清理决策由用户看 diff 后做）。
+    /// </remarks>
+    Task<IReadOnlyList<FileItemSnapshotEntry>> GetSnapshotEntriesAsync(
+        string rootPath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 单条 SQL 软删整个子树（根自身加全部后代，不论当前删除态）。
     /// 命令经 UnitOfWork 意图队列登记，随同批次其他写入在同一事务提交。
     /// </summary>
@@ -308,3 +322,15 @@ public sealed record FileItemScanEntry(
     long SizeBytes,
     Guid? ParentId,
     bool IsDeleted);
+
+/// <summary>
+/// 快照采集的轻量投影：路径 + 类型 + 大小 + 内容 hash + 时间戳。
+/// 供清单快照生成条目（ROADMAP Phase 2），物化完整实体是纯浪费。
+/// </summary>
+public sealed record FileItemSnapshotEntry(
+    string Path,
+    Enums.FileItemType ItemType,
+    long SizeBytes,
+    string? Hash,
+    DateTime? UpdatedAt,
+    DateTime CreatedAt);

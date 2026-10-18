@@ -85,6 +85,12 @@ public sealed partial class FileService
         if (existingItem != null && !metadata.Overwrite)
             return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(filePath));
 
+        // ROADMAP Phase 2 只读保护：覆盖上传即破坏受保护目录内的既有内容，
+        // 在任何 IO（临时文件落盘）之前拦截。新建（existingItem 为 null）
+        // 不拦：保护语义是防覆盖/防删除，不禁止目录内新增文件
+        if (existingItem != null && await IsPathProtectedAsync(existingItem.Path, cancellationToken))
+            return Result<FileItemDto>.Failure(ProtectedError(existingItem.Path));
+
         // 获取父目录 ID
         Guid? parentId = null;
         if (destPath != "/")
@@ -312,6 +318,21 @@ public sealed partial class FileService
         var results = new List<FileItemDto>();
         var destPath = NormalizePath(request.DestinationPath);
         var movedFromPaths = new List<string>();
+
+        // ROADMAP Phase 2 只读保护预检：移出受保护目录（内容从可见位置消失，
+        // 变相删除）与写入受保护目录（目标被覆盖，变相篡改）都拦截。
+        // 放在目录准备与物理移动之前：权限判定先于资源存在性检查
+        // （保护拒绝不该因为"目标目录不存在"换一个错误码），且策略拒绝
+        // 不做部分执行——部分移动后再报错，用户看到的结果与"整单拒绝"
+        // 的预期不符
+        if (await IsPathProtectedAsync(destPath, cancellationToken))
+            return Result<IReadOnlyList<FileItemDto>>.Failure(ProtectedError(destPath));
+        foreach (var sourcePath in request.SourcePaths)
+        {
+            var normalizedSource = NormalizePath(sourcePath);
+            if (await IsPathProtectedAsync(normalizedSource, cancellationToken))
+                return Result<IReadOnlyList<FileItemDto>>.Failure(ProtectedError(normalizedSource));
+        }
 
         // 默认池与目标目录准备（Move/Copy 共用的前奏，目标目录缺失统一报错）
         var prepared = await PrepareTransferDestinationAsync(destPath, cancellationToken);

@@ -179,6 +179,12 @@ function setBool(item: SystemConfigItem, value: string | number | boolean) {
   draft.value[item.key] = value ? 'true' : 'false'
 }
 
+function strOf(item: SystemConfigItem): string {
+  return draft.value[item.key] ?? item.defaultValue
+}
+function setStr(item: SystemConfigItem, value: string) {
+  draft.value[item.key] = value
+}
 function intOf(item: SystemConfigItem): number {
   return Number.parseInt(draft.value[item.key] ?? item.defaultValue, 10) || 0
 }
@@ -241,13 +247,21 @@ function statusOf(key: string): boolean {
           :key="item.key"
           :label="$t(item.labelKey)"
         >
-          <!-- 开关型 -->
+          <!-- 开关型（Bool=1） -->
           <el-switch
             v-if="item.type === 1"
             :model-value="boolOf(item)"
             @update:model-value="(v: string | number | boolean) => setBool(item, v)"
           />
-          <!-- 整数型 -->
+          <!-- 字符串型（String=2，如 cron 表达式；长度界复用 min/max） -->
+          <el-input
+            v-else-if="item.type === 2"
+            :model-value="strOf(item)"
+            :maxlength="item.max ?? undefined"
+            :placeholder="$t('config.cronPlaceholder')"
+            @update:model-value="(v: string) => setStr(item, v)"
+          />
+          <!-- 整数型（Int=0） -->
           <el-input-number
             v-else
             :model-value="intOf(item)"

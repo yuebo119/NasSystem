@@ -55,6 +55,8 @@ public static class DependencyInjection
         services.AddScoped<ISystemSettingRepository, SystemSettingRepository>();
         services.AddScoped<IStoragePoolRepository, StoragePoolRepository>();
         services.AddScoped<IFileShareRepository, FileShareRepository>();
+        services.AddScoped<ISnapshotRepository, SnapshotRepository>();
+        services.AddScoped<IProtectedDirectoryRepository, ProtectedDirectoryRepository>();
 
         // 注册领域服务
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
@@ -90,6 +92,17 @@ public static class DependencyInjection
 
         // 媒体库（ROADMAP Phase 3）。无状态提取器 + 走仓储的聚合服务
         services.AddScoped<Application.Media.IMediaService, Media.MediaService>();
+
+        // 清单快照与只读保护（ROADMAP Phase 2）。快照采集是库内查询 +
+        // 批量写，保护判定是个位数表查询，都随请求作用域
+        services.AddScoped<Application.Snapshots.ISnapshotService, Services.SnapshotService>();
+        services.AddScoped<Application.ProtectedDirectories.IProtectedDirectoryService,
+            Services.ProtectedDirectoryService>();
+
+        // 定时快照（ROADMAP Phase 2）：原生 BackgroundService，cron 由
+        // snapshot.schedule 配置驱动，每分钟 tick 判定。默认关闭
+        // （snapshot.enabled=false），管理员在配置页开启
+        services.AddHostedService<Services.SnapshotBackgroundService>();
 
         // 系统动态配置（配置页）：descriptor 驱动，键值表存储，改完即生效。
         // Scoped：与仓储同生命周期；消费方（版本保留/OCR 开关/WebDAV 闸）
@@ -278,10 +291,13 @@ public static class DependencyInjection
         drift.AddRange(await db.ValidateSchemaAsync<BackupDeviceRow>());
         drift.AddRange(await db.ValidateSchemaAsync<FileOcrTextRow>());
         drift.AddRange(await db.ValidateSchemaAsync<SystemSettingRow>());
+        drift.AddRange(await db.ValidateSchemaAsync<DirectorySnapshotRow>());
+        drift.AddRange(await db.ValidateSchemaAsync<SnapshotEntryRow>());
+        drift.AddRange(await db.ValidateSchemaAsync<ProtectedDirectoryRow>());
 
         if (drift.Count == 0)
         {
-            logger.LogInformation("PalORM schema 校验通过：5 个实体与数据库一致");
+            logger.LogInformation("PalORM schema 校验通过：11 个行模型与数据库一致");
             return;
         }
 

@@ -65,6 +65,12 @@ public class FileServiceTests
             // 默认值 false，自动识别不触发）
             new Mock<NasSystem.Application.Ocr.IOcrService>().Object,
             new Mock<NasSystem.Application.Configuration.ISystemConfigService>().Object,
+            // ROADMAP Phase 2 只读保护：写路径拦截依赖。本测试类不覆盖保护路径，
+
+            // mock 的 IsProtectedAsync 默认返回 false，对既有用例零影响
+
+            new Mock<NasSystem.Application.ProtectedDirectories.IProtectedDirectoryService>().Object,
+
             NullLogger<NasSystem.Application.Files.FileService>.Instance);
     }
 

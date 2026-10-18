@@ -98,6 +98,9 @@ public class FilePathNormalizeTests
             // ROADMAP Phase 2/配置页：OCR 与动态配置 mock（本测试类不覆盖）
             new Moq.Mock<NasSystem.Application.Ocr.IOcrService>().Object,
             new Moq.Mock<NasSystem.Application.Configuration.ISystemConfigService>().Object,
+            // ROADMAP Phase 2 只读保护 mock（本测试类不覆盖保护路径，
+            // 默认 IsProtectedAsync 返回 false，对既有用例零影响）
+            new Moq.Mock<NasSystem.Application.ProtectedDirectories.IProtectedDirectoryService>().Object,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<NasSystem.Application.Files.FileService>.Instance);
     }
 }

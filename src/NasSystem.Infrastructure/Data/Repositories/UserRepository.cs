@@ -26,6 +26,17 @@ public sealed class UserRepository(
         return row?.ToDomain();
     }
 
+    public async Task<Guid?> GetFirstSuperAdminIdAsync(CancellationToken cancellationToken = default)
+    {
+        var db = await sessions.GetAsync(cancellationToken);
+        // Role 库里存 INTEGER：SuperAdmin 是枚举最高档。不按 CreatedAt 排序取
+        // "第一个"：超管理员个数是 1 或 0（种子建 1 个），顺序无意义
+        var row = await db.From<UserRow>()
+            .Where($"Role = {(int)NasSystem.Domain.Enums.UserRole.SuperAdmin}")
+            .FirstOrDefaultAsync(cancellationToken);
+        return row?.Id;
+    }
+
     public async Task<bool> UsernameExistsAsync(string username, CancellationToken cancellationToken = default)
     {
         var normalizedUsername = username.ToLowerInvariant();

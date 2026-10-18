@@ -20,5 +20,16 @@
          ModelProvider 1.0.0，与核心 2.0.0 的同名依赖不冲突） -->
     <PackageVersion Include="Sdcb.SimdPaddleOCR" Version="2.0.0" />
     <PackageVersion Include="Sdcb.SimdPaddleOCR.Models.ChineseV6Tiny" Version="1.0.0" />
+    <!-- sqlite-vec（ROADMAP Phase 2 语义搜图探针）：向量检索 SQLite 扩展，
+         NuGet 移植包随 runtimes 分发 win/linux/osx 原生件（vec0.dll/vec0.so），
+         与 PalORM 的 SQLite3MC 引擎经 load_extension 共存（探针测试锁定）。
+         引用它的项目：NasSystem.IntegrationTests（能力探针）、
+         NasSystem.Infrastructure（语义索引实现，探针通过后落地） -->
+    <PackageVersion Include="HiraokaHyperTools.sqlite-vec" Version="0.1.9" />
+    <!-- CLIP 图文编码（ROADMAP Phase 2 语义搜图）：ElBruno.LocalEmbeddings
+         纯托管 ONNX Runtime 推理 + ImageSharp 预处理，MIT。模型四件套
+         （vision_model/text_model/vocab/merges，Xenova/clip-vit-base-patch32）
+         不入库，首次启用时下载到数据目录（探针与实现共用该契约） -->
+    <PackageVersion Include="ElBruno.LocalEmbeddings.ImageEmbeddings" Version="1.6.4" />
   </ItemGroup>
 </Project>

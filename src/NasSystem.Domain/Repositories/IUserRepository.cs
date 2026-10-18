@@ -19,6 +19,13 @@ public interface IUserRepository : IRepository<User>
     Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 取首个超级管理员的 Id。供系统级后台动作（定时快照）归属操作人：
+    /// 快照不属于任何请求用户，审计上记系统管理员。无超管返回 null
+    /// （调用方按"跳过并记日志"处理，不抛异常）
+    /// </summary>
+    Task<Guid?> GetFirstSuperAdminIdAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 检查用户名是否已存在
     /// </summary>
     Task<bool> UsernameExistsAsync(string username, CancellationToken cancellationToken = default);

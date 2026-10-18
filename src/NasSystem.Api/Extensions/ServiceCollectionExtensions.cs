@@ -283,6 +283,12 @@ public static class ServiceCollectionExtensions
 
         // 系统动态配置端点（配置页）
         apiGroup.MapSystemConfigEndpoints();
+
+        // 清单快照端点（ROADMAP Phase 2）
+        apiGroup.MapSnapshotEndpoints();
+
+        // 受保护目录（只读保护）端点（ROADMAP Phase 2）
+        apiGroup.MapProtectedDirectoryEndpoints();
         
         // 公开分享访问端点（无需登录）
         app.MapPublicShareEndpoints();

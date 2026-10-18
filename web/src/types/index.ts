@@ -137,6 +137,60 @@ export interface VersionComparison {
   timeDifference: string
 }
 
+// 清单快照（ROADMAP Phase 2）
+export interface Snapshot {
+  id: string
+  name: string
+  rootPath: string
+  status: number // 0=Running, 1=Completed, 2=Failed
+  fileCount: number
+  folderCount: number
+  totalSizeBytes: number
+  createdByUserId: string
+  error?: string
+  createdAt: string
+}
+
+export interface SnapshotEntry {
+  relativePath: string
+  isFolder: boolean
+  sizeBytes: number
+  contentHash?: string
+  lastModified: string
+}
+
+// diff 条目类别：0=Added, 1=Removed, 2=Modified, 3=Unchanged
+export type SnapshotDiffKind = 0 | 1 | 2 | 3
+
+export interface SnapshotDiffItem {
+  relativePath: string
+  isFolder: boolean
+  kind: SnapshotDiffKind
+  baseSizeBytes: number
+  targetSizeBytes: number
+  baseHash?: string
+  targetHash?: string
+}
+
+export interface SnapshotDiff {
+  items: SnapshotDiffItem[]
+  totalCount: number
+  addedCount: number
+  removedCount: number
+  modifiedCount: number
+  unchangedCount: number
+}
+
+// 受保护目录（ROADMAP Phase 2 只读保护）
+export interface ProtectedDirectory {
+  fileItemId: string
+  path: string
+  name: string
+  note?: string
+  markedByUserId: string
+  createdAt: string
+}
+
 // 媒体库（ROADMAP Phase 3）
 export interface MediaItem {
   id: string
@@ -155,7 +209,7 @@ export type MediaType = 'image' | 'video' | 'audio'
 export interface SystemConfigItem {
   key: string
   labelKey: string
-  type: number // 0=Int, 1=Bool（与后端 ConfigValueType 对齐）
+  type: number // 0=Int, 1=Bool, 2=String（与后端 ConfigValueType 对齐）
   value: string
   defaultValue: string
   min?: number

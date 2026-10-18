@@ -20,6 +20,9 @@ public static class ConfigDescriptors
         public const string OcrAutoRecognize = "ocr.auto-recognize";
         public const string WebDavEnabled = "webdav.enabled";
         public const string WebDavAllowHttp = "webdav.allow-http";
+        public const string SnapshotEnabled = "snapshot.enabled";
+        public const string SnapshotSchedule = "snapshot.schedule";
+        public const string SnapshotKeepCount = "snapshot.keep-count";
     }
 
     public static IReadOnlyList<ConfigDescriptor> All { get; } =
@@ -43,7 +46,21 @@ public static class ConfigDescriptors
             DescriptionKey: "config.webdavEnabledDesc"),
         new(Keys.WebDavAllowHttp, "webdav", "config.webdavAllowHttp",
             ConfigValueType.Bool, "false",
-            DescriptionKey: "config.webdavAllowHttpDesc")
+            DescriptionKey: "config.webdavAllowHttpDesc"),
+
+        // ─── 清单快照（ROADMAP Phase 2）───
+        // schedule 是五段 cron（分 时 日 月 周），默认每日 03:00。
+        // String 类型的长度界复用 Min/Max（cron 五段最短 9 字符如 "0 0 * * *"，
+        // 最长含空格与星号约 40 字符）
+        new(Keys.SnapshotEnabled, "snapshot", "config.snapshotEnabled",
+            ConfigValueType.Bool, "false",
+            DescriptionKey: "config.snapshotEnabledDesc"),
+        new(Keys.SnapshotSchedule, "snapshot", "config.snapshotSchedule",
+            ConfigValueType.String, "0 3 * * *", Min: 9, Max: 64,
+            DescriptionKey: "config.snapshotScheduleDesc"),
+        new(Keys.SnapshotKeepCount, "snapshot", "config.snapshotKeepCount",
+            ConfigValueType.Int, "10", Min: 1, Max: 100,
+            DescriptionKey: "config.snapshotKeepCountDesc")
 
         // 缩略图参数不在此表：ThumbnailService 是单例 + IOptions 构造期读取，
         // 动态化要么改生命周期要么每请求读库，与"低频调整的基础设施参数"
@@ -55,7 +72,8 @@ public static class ConfigDescriptors
     [
         ("version", "config.groupVersion"),
         ("ocr", "config.groupOcr"),
-        ("webdav", "config.groupWebdav")
+        ("webdav", "config.groupWebdav"),
+        ("snapshot", "config.groupSnapshot")
     ];
 
     /// <summary>按键取 descriptor。未知键返回 null（调用方按"不可配置"处理）</summary>
@@ -69,4 +87,8 @@ public static class ConfigDescriptors
     /// <summary>取布尔 descriptor 的默认值</summary>
     public static bool BoolDefault(string key) =>
         bool.TryParse(Find(key)?.DefaultValue, out var value) && value;
+
+    /// <summary>取字符串 descriptor 的默认值（无匹配回落空串）</summary>
+    public static string StringDefault(string key) =>
+        Find(key)?.DefaultValue ?? string.Empty;
 }

@@ -25,6 +25,8 @@
     <!-- MTP 模式覆盖率扩展：VSTest 的 collect 参数在 MTP 模式不可用，改由该包提供 -->
     <PackageReference Include="coverlet.MTP" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <!-- sqlite-vec：引擎能力探针（FTS5/sqlite-vec 共存实测，见 SqliteExtensionCapabilityTests） -->
+    <PackageReference Include="HiraokaHyperTools.sqlite-vec" />
   </ItemGroup>
 
   <!-- 版本收敛至 Directory.Build.props 单一真源（原 csproj 覆盖条目会把版本钉低于中央） -->

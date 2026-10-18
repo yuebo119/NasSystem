@@ -73,6 +73,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '系统设置', icon: 'Setting' }
       },
       {
+        path: 'snapshots',
+        name: 'Snapshots',
+        component: () => import('@/views/Snapshots.vue'),
+        meta: { title: '清单快照', icon: 'Camera', requiresAdmin: true }
+      },
+      {
         path: 'system-config',
         name: 'SystemConfig',
         component: () => import('@/views/SystemConfig.vue'),

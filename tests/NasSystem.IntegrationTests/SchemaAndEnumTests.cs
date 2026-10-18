@@ -110,6 +110,16 @@ public class SchemaAndEnumTests : IDisposable
             ],
             ["StoragePools"] = ["IX_StoragePools_IsDefault", "IX_StoragePools_MountPath", "IX_StoragePools_Name"],
             ["Users"] = ["IX_Users_Email", "IX_Users_IsEnabled", "IX_Users_Username"],
+            // 2026-10-18 ROADMAP Phase 2 前五张之后新增的表补进全集断言：
+            // BackupDevices/FileOcrTexts/SystemSettings 此前只在新表落地时
+            // 各自加测试，没进这个全集字典，索引回归会从缝隙里漏过去
+            ["BackupDevices"] = ["IX_BackupDevices_UserId", "IX_BackupDevices_UserId_Name"],
+            ["FileOcrTexts"] = ["IX_FileOcrTexts_FileItemId"],
+            ["SystemSettings"] = ["IX_SystemSettings_Key"],
+            // Phase 2 清单快照与只读保护三张
+            ["DirectorySnapshots"] = ["IX_DirectorySnapshots_CreatedAt"],
+            ["SnapshotEntries"] = ["IX_SnapshotEntries_SnapshotId"],
+            ["ProtectedDirectories"] = ["IX_ProtectedDirectories_FileItemId"],
         };
 
         using var connection = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly");

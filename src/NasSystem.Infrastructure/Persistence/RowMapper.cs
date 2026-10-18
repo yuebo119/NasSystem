@@ -194,4 +194,59 @@ public static class RowMapper
             Value = entity.Value,
             UpdatedAt = entity.UpdatedAt,
         };
+
+    public static DirectorySnapshot ToDomain(this DirectorySnapshotRow row) =>
+        DirectorySnapshot.Restore(
+            row.Id, row.Name, row.RootPath, (NasSystem.Domain.Enums.SnapshotStatus)row.Status,
+            row.FileCount, row.FolderCount, row.TotalSizeBytes,
+            row.CreatedByUserId, row.Error, row.CreatedAt, row.UpdatedAt);
+
+    public static DirectorySnapshotRow ToRow(this DirectorySnapshot entity) =>
+        new()
+        {
+            Id = entity.Id,
+            Name = entity.Name,
+            RootPath = entity.RootPath,
+            Status = (int)entity.Status,
+            FileCount = entity.FileCount,
+            FolderCount = entity.FolderCount,
+            TotalSizeBytes = entity.TotalSizeBytes,
+            CreatedByUserId = entity.CreatedByUserId,
+            Error = entity.Error,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt,
+        };
+
+    public static SnapshotEntry ToDomain(this SnapshotEntryRow row) =>
+        SnapshotEntry.Restore(
+            row.Id, row.SnapshotId, row.RelativePath,
+            row.IsFolder, row.SizeBytes, row.ContentHash, row.LastModified);
+
+    public static SnapshotEntryRow ToRow(this SnapshotEntry entity) =>
+        new()
+        {
+            Id = entity.Id,
+            SnapshotId = entity.SnapshotId,
+            RelativePath = entity.RelativePath,
+            IsFolder = entity.IsFolder,
+            SizeBytes = entity.SizeBytes,
+            ContentHash = entity.ContentHash,
+            LastModified = entity.LastModified,
+        };
+
+    public static ProtectedDirectory ToDomain(this ProtectedDirectoryRow row) =>
+        ProtectedDirectory.Restore(
+            row.Id, row.FileItemId, row.MarkedByUserId, row.Note,
+            row.CreatedAt, row.UpdatedAt);
+
+    public static ProtectedDirectoryRow ToRow(this ProtectedDirectory entity) =>
+        new()
+        {
+            Id = entity.Id,
+            FileItemId = entity.FileItemId,
+            MarkedByUserId = entity.MarkedByUserId,
+            Note = entity.Note,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt,
+        };
 }

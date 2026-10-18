@@ -119,6 +119,17 @@ public sealed class SystemConfigService(
         return ConfigDescriptors.BoolDefault(key);
     }
 
+    public async Task<string> GetStringAsync(string key, CancellationToken cancellationToken = default)
+    {
+        var stored = await settingRepository.GetByKeyAsync(key, cancellationToken);
+        // 空值不当合法配置：库里有空串按未配置处理，回落默认值
+        if (stored is not null && !string.IsNullOrWhiteSpace(stored.Value))
+        {
+            return stored.Value;
+        }
+        return ConfigDescriptors.StringDefault(key);
+    }
+
     // -------------------------------------------------------------------------
     // 辅助
     // -------------------------------------------------------------------------
@@ -151,12 +162,22 @@ public sealed class SystemConfigService(
                     return $"{descriptor.Key} 不能大于 {max}";
                 return null;
 
+            case ConfigValueType.String:
+                // 字符串界用 Min/Max 表达长度界（cron 表达式等定长文本）
+                if (string.IsNullOrWhiteSpace(rawValue))
+                    return $"{descriptor.Key} 不能为空";
+                if (descriptor.Min is { } minLen && rawValue.Trim().Length < minLen)
+                    return $"{descriptor.Key} 长度不能小于 {minLen}";
+                if (descriptor.Max is { } maxLen && rawValue.Trim().Length > maxLen)
+                    return $"{descriptor.Key} 长度不能大于 {maxLen}";
+                return null;
+
             default:
                 return $"{descriptor.Key} 类型不支持";
         }
     }
 
-    /// <summary>归一化存储形态：bool 统一小写 true/false，int 去空白</summary>
+    /// <summary>归一化存储形态：bool 统一小写 true/false，其余去空白</summary>
     private static string Normalize(string key, string rawValue)
     {
         var descriptor = ConfigDescriptors.Find(key);
