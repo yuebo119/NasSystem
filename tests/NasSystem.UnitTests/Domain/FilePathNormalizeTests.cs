@@ -92,6 +92,8 @@ public class FilePathNormalizeTests
             new Moq.Mock<NasSystem.Application.Notifications.IHubNotificationService>().Object,
             new Microsoft.Extensions.Caching.Memory.MemoryCache(
                 new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
-            new Moq.Mock<IThumbnailService>().Object);
+            new Moq.Mock<IThumbnailService>().Object,
+            // ROADMAP Phase 1：版本服务注入，本测试类不覆盖版本路径
+            new Moq.Mock<NasSystem.Application.FileVersions.IFileVersionService>().Object);
     }
 }

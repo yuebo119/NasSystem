@@ -410,12 +410,12 @@ public sealed class FileItemRepository(
         var prefix = EscapeLike(rootPath) + "/%";
         var rows = await db.QueryAsync<FileItemEntryRow>(
             System.Runtime.CompilerServices.FormattableStringFactory.Create(
-                "SELECT Path, ItemType FROM FileItems WHERE Path = {0} OR Path LIKE {1} ESCAPE '#'",
+                "SELECT Path, ItemType, SizeBytes FROM FileItems WHERE Path = {0} OR Path LIKE {1} ESCAPE '#'",
                 rootPath, prefix),
             false,
             cancellationToken);
 
-        return rows.Select(r => new FileItemEntry(r.Path, r.ItemType)).ToList();
+        return rows.Select(r => new FileItemEntry(r.Path, r.ItemType, r.SizeBytes)).ToList();
     }
 
     public Task SoftDeleteSubtreeAsync(

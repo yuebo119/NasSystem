@@ -50,6 +50,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IFileItemRepository, FileItemRepository>();
         services.AddScoped<IFileVersionRepository, FileVersionRepository>();
+        services.AddScoped<IBackupDeviceRepository, BackupDeviceRepository>();
         services.AddScoped<IStoragePoolRepository, StoragePoolRepository>();
         services.AddScoped<IFileShareRepository, FileShareRepository>();
 
@@ -255,6 +256,7 @@ public static class DependencyInjection
         drift.AddRange(await db.ValidateSchemaAsync<StoragePoolRow>());
         drift.AddRange(await db.ValidateSchemaAsync<FileShareRow>());
         drift.AddRange(await db.ValidateSchemaAsync<FileVersionRow>());
+        drift.AddRange(await db.ValidateSchemaAsync<BackupDeviceRow>());
 
         if (drift.Count == 0)
         {

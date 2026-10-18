@@ -271,10 +271,12 @@ public sealed record FileSearchResult
 }
 
 /// <summary>
-/// 子树条目的轻量投影：路径 + 类型。子树批量操作的副作用处理用，
+/// 子树条目的轻量投影：路径 + 类型 + 大小。子树批量操作的副作用处理用，
 /// 不物化完整实体（万级子树下实体化是纯浪费）。
+/// 大小 2026-10-18 加入：备份计划 diff 按体积判断文件是否变化
+/// （ROADMAP Phase 1），软删链路只消费路径与类型，不受影响
 /// </summary>
-public sealed record FileItemEntry(string Path, Enums.FileItemType ItemType);
+public sealed record FileItemEntry(string Path, Enums.FileItemType ItemType, long SizeBytes);
 
 /// <summary>
 /// 扫描同步的轻量投影：路径 + 类型 + 大小 + 父 + 删除态 + Id。

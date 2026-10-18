@@ -38,3 +38,12 @@ app.mount('#app')
 
 const userStore = useUserStore()
 void userStore.checkAuth()
+
+// Service Worker 注册（ROADMAP Phase 1 PWA 入口）：仅生产构建。
+// 开发期注册会让 HMR 与 SW 缓存互相打架（改一个文件看到旧页面），
+// 测试环境（vitest）没有 window 也没有注册必要
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js')
+  })
+}

@@ -5,9 +5,10 @@
 
 namespace NasSystem.Application;
 
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using NasSystem.Application.Files;
+    using Microsoft.Extensions.Configuration;
+    using Microsoft.Extensions.DependencyInjection;
+    using NasSystem.Application.Backups;
+    using NasSystem.Application.Files;
 using NasSystem.Application.FileShares;
 using NasSystem.Application.FileVersions;
 using NasSystem.Application.Storage;
@@ -40,6 +41,7 @@ public static class DependencyInjection
         services.AddScoped<IFileVersionService, FileVersionService>();
         services.AddScoped<IStorageService, StorageService>();
         services.AddScoped<IFileShareService, FileShareService>();
+        services.AddScoped<IBackupService, BackupService>();
 
         // 版本保留策略（ROADMAP Phase 1）：未配置时取 FileVersionOptions 默认值。
         // 显式读键而非 Bind：Bind/GetValue 在 Configuration.Binder 包里，

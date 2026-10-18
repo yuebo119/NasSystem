@@ -55,7 +55,10 @@ public class FileServiceTests
                 new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
             // S3：子树软删改批量 SQL 后缩略图缓存清理由服务显式调用，
             // 本测试类不覆盖删除路径，mock 即可
-            new Mock<IThumbnailService>().Object);
+            new Mock<IThumbnailService>().Object,
+            // ROADMAP Phase 1：版本服务注入（覆盖上传/永久删除前自动产版本）。
+            // 本测试类不覆盖版本路径，mock 即可
+            new Mock<NasSystem.Application.FileVersions.IFileVersionService>().Object);
     }
 
     #region GetDirectoryContentsAsync Tests
@@ -406,7 +409,7 @@ public class FileServiceTests
             .Setup(x => x.GetSubtreeEntriesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FileItemEntry>
             {
-                new("/documents/test.txt", FileItemType.File),
+                new("/documents/test.txt", FileItemType.File, 1024),
             });
 
         _fileRepositoryMock
@@ -781,7 +784,7 @@ public class FileServiceTests
             .Setup(x => x.GetSubtreeEntriesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FileItemEntry>
             {
-                new("/documents/deleted.txt", FileItemType.File),
+                new("/documents/deleted.txt", FileItemType.File, 2048),
             });
 
         // Act

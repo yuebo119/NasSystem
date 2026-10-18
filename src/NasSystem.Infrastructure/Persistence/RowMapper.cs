@@ -145,4 +145,24 @@ public static class RowMapper
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
         };
+
+    public static BackupDevice ToDomain(this BackupDeviceRow row) =>
+        BackupDevice.Restore(
+            row.Id, row.UserId, row.Name, row.DeviceModel,
+            row.LastSyncAt, row.LastSyncFileCount, row.IsRevoked,
+            row.CreatedAt, row.UpdatedAt);
+
+    public static BackupDeviceRow ToRow(this BackupDevice entity) =>
+        new()
+        {
+            Id = entity.Id,
+            UserId = entity.UserId,
+            Name = entity.Name,
+            DeviceModel = entity.DeviceModel,
+            LastSyncAt = entity.LastSyncAt,
+            LastSyncFileCount = entity.LastSyncFileCount,
+            IsRevoked = entity.IsRevoked,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt,
+        };
 }

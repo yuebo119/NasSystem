@@ -43,6 +43,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '共享管理', icon: 'Share' }
       },
       {
+        path: 'backup',
+        name: 'Backup',
+        component: () => import('@/views/Backup.vue'),
+        meta: { title: '移动备份', icon: 'Iphone' }
+      },
+      {
         path: 'storage',
         name: 'Storage',
         component: () => import('@/views/Storage.vue'),

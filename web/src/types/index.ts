@@ -97,6 +97,28 @@ export interface FileVersion {
   createdAt: string
 }
 
+// 移动备份（ROADMAP Phase 1）
+export interface BackupDevice {
+  id: string
+  name: string
+  deviceModel?: string
+  backupPath: string
+  lastSyncAt?: string
+  lastSyncFileCount: number
+  isRevoked: boolean
+  createdAt: string
+}
+
+// 同步计划：toUpload 由客户端逐条走标准上传端点，
+// orphanedOnServer 只上报（服务端有、客户端清单没有的文件）
+export interface BackupSyncPlan {
+  deviceId: string
+  backupPath: string
+  toUpload: { relativePath: string; sizeBytes: number }[]
+  upToDateCount: number
+  orphanedOnServer: string[]
+}
+
 export interface DirectoryContent {
   path: string
   name: string
