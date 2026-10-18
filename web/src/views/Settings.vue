@@ -19,6 +19,12 @@ const changingPassword = ref(false)
 const systemInfo = ref<any>(null)
 const systemStatus = ref<any>(null)
 
+// 外网访问配置（ROADMAP Phase 3，仅管理员）
+const remoteProvider = ref('cloudflare')
+const remoteHostname = ref('')
+const remoteConfig = ref<{ provider: string; fileName: string; config: string; steps: string[] } | null>(null)
+const remoteLoading = ref(false)
+
 // 个人设置表单
 const profileForm = ref({
   displayName: '',
@@ -68,6 +74,39 @@ const loadSystemInfo = async () => {
     console.error('Failed to load system info', e)
   } finally {
     loading.value = false
+  }
+}
+
+// 生成外网访问配置（ROADMAP Phase 3）
+const generateRemoteConfig = async () => {
+  remoteLoading.value = true
+  try {
+    const res = await http.get('/system/remote-access/config', {
+      params: {
+        provider: remoteProvider.value,
+        hostname: remoteHostname.value || undefined
+      }
+    }) as any
+    if (res.success) {
+      remoteConfig.value = res.data
+    } else {
+      ElMessage.error(res.error?.message || t('remoteAccess.generateFailed'))
+    }
+  } catch {
+    ElMessage.error(t('remoteAccess.generateFailed'))
+  } finally {
+    remoteLoading.value = false
+  }
+}
+
+// 复制配置到剪贴板
+const copyRemoteConfig = async () => {
+  if (!remoteConfig.value) return
+  try {
+    await navigator.clipboard.writeText(remoteConfig.value.config)
+    ElMessage.success(t('remoteAccess.copied'))
+  } catch {
+    ElMessage.error(t('remoteAccess.copyFailed'))
   }
 }
 
@@ -358,6 +397,40 @@ const roleDisplay = computed(() => {
           </div>
         </div>
 
+        <!-- 外网访问配置卡片（ROADMAP Phase 3，仅管理员） -->
+        <div class="settings-card remote-access-card" v-if="userStore.isAdmin">
+          <h3>{{ t('remoteAccess.title') }}</h3>
+          <p class="card-desc">{{ t('remoteAccess.desc') }}</p>
+          <div class="remote-form">
+            <el-select v-model="remoteProvider" style="width: 180px">
+              <el-option value="cloudflare" :label="t('remoteAccess.providerCloudflare')" />
+              <el-option value="frp" :label="t('remoteAccess.providerFrp')" />
+              <el-option value="tailscale" :label="t('remoteAccess.providerTailscale')" />
+            </el-select>
+            <el-input
+              v-model="remoteHostname"
+              :placeholder="t('remoteAccess.hostnamePlaceholder')"
+              style="flex: 1; min-width: 200px"
+            />
+            <el-button type="primary" :loading="remoteLoading" @click="generateRemoteConfig">
+              {{ t('remoteAccess.generate') }}
+            </el-button>
+          </div>
+
+          <div v-if="remoteConfig" class="remote-result">
+            <div class="remote-config-header">
+              <span class="remote-file-name">{{ remoteConfig.fileName }}</span>
+              <el-button link type="primary" @click="copyRemoteConfig">
+                {{ t('remoteAccess.copy') }}
+              </el-button>
+            </div>
+            <pre class="remote-config-body">{{ remoteConfig.config }}</pre>
+            <ol class="remote-steps">
+              <li v-for="(step, index) in remoteConfig.steps" :key="index">{{ step }}</li>
+            </ol>
+          </div>
+        </div>
+
         <!-- 关于卡片 -->
         <div class="settings-card about-card">
           <div class="about-content">
@@ -385,6 +458,65 @@ const roleDisplay = computed(() => {
 
 <style lang="scss" scoped>
 .settings-page { padding: 0; }
+
+.remote-access-card {
+  grid-column: 1 / -1;
+
+  .card-desc {
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .remote-form {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+
+  .remote-result {
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .remote-config-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+
+    .remote-file-name {
+      font-family: monospace;
+      font-size: 13px;
+      color: var(--el-text-color-primary);
+    }
+  }
+
+  .remote-config-body {
+    margin: 0 0 12px;
+    padding: 12px;
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .remote-steps {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 13px;
+    color: var(--el-text-color-regular);
+
+    li {
+      margin-bottom: 6px;
+      word-break: break-all;
+    }
+  }
+}
 
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;
   .header-left { h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; } p { margin: 0; color: var(--el-text-color-secondary); font-size: 14px; } }

@@ -75,6 +75,20 @@ export default {
     loadFailed: '加载设备列表失败'
   },
 
+  remoteAccess: {
+    title: '外网访问',
+    desc: '免公网 IP 也能从外网访问 NAS。选择方案生成配置与操作步骤，按步骤在你自己的基础设施上完成最后一公里。',
+    providerCloudflare: 'Cloudflare Tunnel（推荐）',
+    providerFrp: 'frp 自建中继',
+    providerTailscale: 'Tailscale 组网',
+    hostnamePlaceholder: '域名（cloudflare/frp 需要），如 nas.example.com',
+    generate: '生成配置',
+    generateFailed: '配置生成失败',
+    copy: '复制配置',
+    copied: '配置已复制',
+    copyFailed: '复制失败'
+  },
+
   // 登录页
   login: {
     defaultAdmin: '默认管理员: admin / admin123',
@@ -362,8 +376,7 @@ export default {
     appearance: '界面设置',
     appearanceDesc: '自定义界面外观',
     system: '系统信息',
-    systemDesc: '查看系统运行状态',
-    darkMode: '暗色模式',
+    systemDesc: '查看系统运行状态',    darkMode: '暗色模式',
     darkModeDesc: '切换深色/浅色主题',
     lightMode: '亮色模式',
     language: '语言',

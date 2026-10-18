@@ -237,7 +237,8 @@ OCR 用 PaddleOCR 的 ONNX 导出模型（中文场景识别率高于 Tesseract�
 | Phase 1 | 文件版本闭环（自动产版本 + 保留策略 + 恢复同步 + FK 迁移 + 前端抽屉） | 完成 | cf83e2e |
 | Phase 1 | 移动备份 API + PWA 入口 | 完成 | 待提交 |
 | Phase 2 | 快照 + OCR（含语义搜图探针门） | 未开始 | - |
-| Phase 3 | 外网访问配置器 + 媒体库 | 未开始 | - |
+| Phase 3 | 外网访问配置器（Cloudflare/frp/Tailscale 配置生成 + Settings 区块） | 完成 | 待提交 |
+| Phase 3 | 媒体库（FFmpeg 元数据 + 时间线） | 未开始 | - |
 
 ### 已落地能力摘要
 
@@ -245,4 +246,6 @@ OCR 用 PaddleOCR 的 ONNX 导出模型（中文场景识别率高于 Tesseract�
 
 版本与备份：覆盖上传与单文件永久删除前自动产版本（硬链接快照，默认 10 个/30 天）；恢复版本同步库中体积；版本在文件永久删除后仍可下载（FileItemId 级联外键已移除，存量库自动迁移）。备份设备注册/枚举/吊销 + 清单 diff 计划，文件传输走标准上传管道（备份文件就是 `/Backups/{设备名}/` 下的普通文件）；PWA 可安装 + 网络优先 Service Worker + 移动优先备份页（选文件/整夹 → 计划 → 增量上传）。
 
-验证基线：集成 132 + 单元 162 + 前端 127 全绿；oxlint 0 警告；vue-tsc 与生产构建通过。真实客户端挂载（Windows/macOS Finder/iOS 文件 App）与手机端到端备份需在部署环境人工验收。
+外网访问：设置页按 Cloudflare Tunnel / frp / Tailscale 生成配置与操作步骤（不自建中继云），未知方案回 400。
+
+验证基线：集成 134 + 单元 170 + 前端 127 全绿；oxlint 0 警告；vue-tsc 与生产构建通过。真实客户端挂载（Windows/macOS Finder/iOS 文件 App）、手机端到端备份与外网访问需在部署环境人工验收。

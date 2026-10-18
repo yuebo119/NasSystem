@@ -80,6 +80,13 @@ public static class SystemEndpoints
               .WithSummary("获取系统驱动器列表")
               .RequireAuthorization("RequireAdmin");
 
+        // 生成外网访问配置（ROADMAP Phase 3）
+        system.MapGet("/remote-access/config", GetRemoteAccessConfig)
+              .WithName("GetRemoteAccessConfig")
+              .WithSummary("生成外网访问配置")
+              .WithDescription("按方案（cloudflare/frp/tailscale）生成配置文件与操作步骤，免公网 IP 也能外网访问")
+              .RequireAuthorization("RequireAdmin");
+
         return group;
     }
 
@@ -187,6 +194,25 @@ public static class SystemEndpoints
         catch (Exception ex)
         {
             return Results.Ok(ApiResponse<object>.Fail("System.Error", $"获取驱动器列表失败: {ex.Message}"));
+        }
+    }
+
+    /// <summary>
+    /// 外网访问配置生成（ROADMAP Phase 3）。provider 非法时回 400——
+    /// 生成器对未知方案抛 ArgumentException，这里转成客户端错误
+    /// </summary>
+    private static IResult GetRemoteAccessConfig(string provider, string? hostname, int localPort = 6050)
+    {
+        try
+        {
+            var config = NasSystem.Application.SystemInfo.RemoteAccessConfigGenerator.Generate(
+                provider, hostname, localPort);
+            return Results.Ok(ApiResponse<object>.Ok(config));
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(ApiResponse<object>.Fail(
+                "System.InvalidProvider", ex.Message));
         }
     }
 

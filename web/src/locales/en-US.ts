@@ -75,6 +75,20 @@ export default {
     loadFailed: 'Failed to load devices'
   },
 
+  remoteAccess: {
+    title: 'Remote Access',
+    desc: 'Reach your NAS from outside without a public IP. Pick a provider to generate the config and steps, then finish the last mile on your own infrastructure.',
+    providerCloudflare: 'Cloudflare Tunnel (recommended)',
+    providerFrp: 'frp self-hosted relay',
+    providerTailscale: 'Tailscale mesh',
+    hostnamePlaceholder: 'Domain (required for cloudflare/frp), e.g. nas.example.com',
+    generate: 'Generate Config',
+    generateFailed: 'Failed to generate config',
+    copy: 'Copy Config',
+    copied: 'Config copied',
+    copyFailed: 'Copy failed'
+  },
+
   // Login
   login: {
     defaultAdmin: 'Default admin: admin / admin123',
