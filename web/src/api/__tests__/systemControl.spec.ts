@@ -56,4 +56,13 @@ describe('thumbnailApi', () => {
 
     expect(mockDelete).toHaveBeenCalledWith('/thumbnails/cache/photos/a b.jpg')
   })
+
+  it('clearAllCache 用 DELETE 打 /thumbnails/cache（无路径段才是全局清理）', async () => {
+    mockDelete.mockResolvedValue({ success: true } as never)
+
+    await thumbnailApi.clearAllCache()
+
+    // 与单文件清理的区分就在路径段：少了它后端按全局处理（管理员）
+    expect(mockDelete).toHaveBeenCalledWith('/thumbnails/cache')
+  })
 })

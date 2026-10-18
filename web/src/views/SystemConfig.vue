@@ -15,6 +15,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link, CopyDocument, FolderOpened, Monitor, Warning } from '@element-plus/icons-vue'
 import { systemConfigApi } from '@/api/systemConfig'
 import { systemControlApi } from '@/api/systemControl'
+import { thumbnailApi } from '@/api/thumbnail'
 import http from '@/api/http'
 import type { SystemConfigSnapshot, SystemConfigItem } from '@/types'
 
@@ -29,6 +30,35 @@ const saving = ref(false)
 const maxUploadMB = ref<number | null>(null)
 // 危险区：重启/关机进行中
 const controlRunning = ref(false)
+// 维护区：清空全部缩略图缓存进行中
+const thumbClearingAll = ref(false)
+
+// 清空全部缩略图缓存：下次访问全量重新生成（CPU 与磁盘压力），
+// 确认文案说明代价。失败只提示不阻断（缓存清了大不了再生成）
+async function clearAllThumbnails() {
+  try {
+    await ElMessageBox.confirm(
+      t('config.clearAllThumbnailsConfirm'),
+      t('config.clearAllThumbnails'),
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  thumbClearingAll.value = true
+  try {
+    const result = await thumbnailApi.clearAllCache()
+    if (result.success) {
+      ElMessage.success(t('config.clearAllThumbnailsDone'))
+    } else {
+      ElMessage.error(result.error?.message || t('common.failed'))
+    }
+  } catch {
+    ElMessage.error(t('common.failed'))
+  } finally {
+    thumbClearingAll.value = false
+  }
+}
 
 const davUrl = computed(() => `${window.location.origin}/dav`)
 
@@ -247,7 +277,18 @@ function statusOf(key: string): boolean {
       </ul>
     </div>
 
-    <!-- ④ 危险区：重启/关机（真实调度，非计划消息） -->
+    <!-- ④ 维护操作 -->
+    <div class="config-card">
+      <h3 class="card-title">{{ $t('config.maintenanceTitle') }}</h3>
+      <p class="readonly-desc">{{ $t('config.maintenanceDesc') }}</p>
+      <div class="danger-actions">
+        <el-button :loading="thumbClearingAll" @click="clearAllThumbnails">
+          {{ $t('config.clearAllThumbnails') }}
+        </el-button>
+      </div>
+    </div>
+
+    <!-- ⑤ 危险区：重启/关机（真实调度，非计划消息） -->
     <div class="config-card danger-card">
       <h3 class="card-title">
         <el-icon style="vertical-align: -2px; margin-right: 4px"><Warning /></el-icon>
