@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api/file'
 import { fileVersionApi } from '@/api/fileVersion'
+import { ocrApi } from '@/api/ocr'
 import { fileShareApi, ShareAccessType, PermissionLevel, type FileShareDto, type CreateFileShareRequest } from '@/api/fileShare'
 import { storageApi } from '@/api/storage'
 import { ElMessage, ElMessageBox, ElCheckbox } from 'element-plus'
@@ -15,9 +16,9 @@ import {
   Refresh, Upload, Delete, Download, 
   CopyDocument, Rank, FolderAdd, Search,
   Grid, List, View, Hide, DeleteFilled, Back,
-  Document, Folder, HomeFilled, Share, Link
+  Document, Folder, HomeFilled, Share, Link, Loading
 } from '@element-plus/icons-vue'
-import type { FileItem, FileVersion } from '@/types'
+import type { FileItem, FileVersion, OcrText } from '@/types'
 import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
 import { createPreviewUrlManager } from '@/utils/previewUrl'
 import { useDrawerSize } from '@/utils/useIsMobile'
@@ -556,6 +557,12 @@ function removeUploadFile(file: UploadFile) {
 // 打开预览
 async function openPreview(item: FileItem) {
   previewItem.value = item
+  // OCR 状态随预览重置：换文件预览时上一条的识别结果不残留
+  ocrText.value = null
+  // 图片打开时顺带取已有识别结果（首次打开就有，不用用户先点识别）
+  if (isImage(item)) {
+    void loadExistingOcrText(item)
+  }
   // 如果是文本文件，先加载内容
   if (isTextFile(item)) {
     textContent.value = t('filesView.loadingText')
@@ -584,6 +591,47 @@ async function openPreview(item: FileItem) {
 
 // el-table 插槽的 row 是 DefaultRow 未定型，与 Shares.vue 的 asShare 同款收窄
 const asVersion = (row: any): FileVersion => row as FileVersion
+
+// ─── 图片 OCR（ROADMAP Phase 2）───
+
+const ocrText = ref<OcrText | null>(null)
+const ocrLoading = ref(false)
+
+// 打开图片预览时取已有识别结果（失败静默：没识别过就是没有，不是错误）
+async function loadExistingOcrText(item: FileItem) {
+  try {
+    const result = await ocrApi.getText(item.path)
+    if (result.success) {
+      ocrText.value = result.data ?? null
+    }
+  } catch {
+    // 查询失败不影响预览主流程
+  }
+}
+
+// 执行识别。首次含模型加载（秒级），loading 态必须显式，
+// 否则用户以为按钮没响应会重复点
+async function runOcr(item: FileItem) {
+  if (item.isFolder) return
+  ocrLoading.value = true
+  try {
+    const result = await ocrApi.recognize(item.path)
+    if (result.success && result.data) {
+      ocrText.value = result.data
+      if (result.data.charCount === 0) {
+        ElMessage.info(t('filesView.ocrNoText'))
+      } else {
+        ElMessage.success(t('filesView.ocrDone', { count: result.data.charCount }))
+      }
+    } else {
+      ElMessage.error(result.error?.message || t('filesView.ocrFailed'))
+    }
+  } catch {
+    ElMessage.error(t('filesView.ocrFailed'))
+  } finally {
+    ocrLoading.value = false
+  }
+}
 
 // 打开版本历史抽屉：仅文件有版本（文件夹的软删除走回收站，不产版本）
 async function openVersionHistory(item: FileItem) {
@@ -1619,6 +1667,32 @@ onUnmounted(() => {
           <p>{{ $t('filesView.unsupportedPreview') }}</p>
           <el-button type="primary" @click="downloadFile(previewItem)">{{ $t('filesView.downloadFileText') }}</el-button>
         </div>
+
+        <!-- 图片 OCR（ROADMAP Phase 2）：识别图内文字，结果可被全站搜索命中 -->
+        <div class="ocr-section" v-if="isImage(previewItem)">
+          <div class="ocr-header">
+            <span class="ocr-title">{{ $t('filesView.ocrTitle') }}</span>
+            <el-button
+              size="small"
+              :loading="ocrLoading"
+              @click="runOcr(previewItem!)"
+            >
+              {{ ocrText ? $t('filesView.ocrReRecognize') : $t('filesView.ocrRecognize') }}
+            </el-button>
+          </div>
+          <div v-if="ocrLoading" class="ocr-loading">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            {{ $t('filesView.ocrRunning') }}
+          </div>
+          <div v-else-if="ocrText && ocrText.charCount > 0" class="ocr-text">
+            <pre>{{ ocrText.text }}</pre>
+            <div class="ocr-meta">
+              {{ $t('filesView.ocrMeta', { count: ocrText.charCount, ms: ocrText.elapsedMs }) }}
+            </div>
+          </div>
+          <div v-else-if="ocrText" class="ocr-empty">{{ $t('filesView.ocrNoText') }}</div>
+          <div v-else class="ocr-empty">{{ $t('filesView.ocrHint') }}</div>
+        </div>
       </div>
       <template #footer>
         <el-button @click="previewDialogVisible = false">{{ $t('filesView.close') }}</el-button>
@@ -2234,6 +2308,59 @@ onUnmounted(() => {
     
     p {
       margin: 16px 0;
+    }
+  }
+
+  .ocr-section {
+    width: 100%;
+    margin-top: 16px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    padding: 12px;
+
+    .ocr-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+
+      .ocr-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--el-text-color-primary);
+      }
+    }
+
+    .ocr-loading {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--el-text-color-secondary);
+    }
+
+    .ocr-text {
+      pre {
+        margin: 0;
+        max-height: 200px;
+        overflow: auto;
+        font-size: 13px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-all;
+        color: var(--el-text-color-regular);
+      }
+
+      .ocr-meta {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+      }
+    }
+
+    .ocr-empty {
+      font-size: 13px;
+      color: var(--el-text-color-secondary);
     }
   }
 }

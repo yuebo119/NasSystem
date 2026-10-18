@@ -39,6 +39,13 @@
   <ItemGroup>
     <!-- 版本收敛至 Directory.Build.props 单一真源（原 csproj 覆盖条目会把版本钉低于中央） -->
     <PackageReference Include="SkiaSharp" />
+
+    <!-- OCR（ROADMAP Phase 2）：SimdPaddleOCR 纯 C# PP-OCRv6 推理 +
+         ChineseV6Tiny 模型（内嵌 Assembly 资源，不落临时文件）。
+         图像解码复用已有 SkiaSharp（README 的 SkiaSharp 集成路径），
+         不引 ImageSharp（Split License，且项目已有解码器） -->
+    <PackageReference Include="Sdcb.SimdPaddleOCR" />
+    <PackageReference Include="Sdcb.SimdPaddleOCR.Models.ChineseV6Tiny" />
   </ItemGroup>
 
 </Project>

@@ -51,6 +51,7 @@ public static class DependencyInjection
         services.AddScoped<IFileItemRepository, FileItemRepository>();
         services.AddScoped<IFileVersionRepository, FileVersionRepository>();
         services.AddScoped<IBackupDeviceRepository, BackupDeviceRepository>();
+        services.AddScoped<IFileOcrTextRepository, FileOcrTextRepository>();
         services.AddScoped<IStoragePoolRepository, StoragePoolRepository>();
         services.AddScoped<IFileShareRepository, FileShareRepository>();
 
@@ -76,6 +77,12 @@ public static class DependencyInjection
         services.Configure<Application.Files.ThumbnailOptions>(
             configuration.GetSection("Thumbnails"));
         services.AddSingleton<Application.Files.IThumbnailService, Files.ThumbnailService>();
+
+        // OCR（ROADMAP Phase 2）。引擎单例：模型从 Assembly 嵌入资源解析，
+        // 首次加载一两秒，每请求新建等于每次识别都付这个成本；引擎无状态可重入。
+        // 识别服务 Scoped：走仓储与工作单元，与请求同生命周期
+        services.AddSingleton<Ocr.PaddleOcrEngineHolder>();
+        services.AddScoped<Application.Ocr.IOcrService, Ocr.OcrService>();
 
         // 内存缓存
         services.AddMemoryCache();
@@ -257,6 +264,7 @@ public static class DependencyInjection
         drift.AddRange(await db.ValidateSchemaAsync<FileShareRow>());
         drift.AddRange(await db.ValidateSchemaAsync<FileVersionRow>());
         drift.AddRange(await db.ValidateSchemaAsync<BackupDeviceRow>());
+        drift.AddRange(await db.ValidateSchemaAsync<FileOcrTextRow>());
 
         if (drift.Count == 0)
         {

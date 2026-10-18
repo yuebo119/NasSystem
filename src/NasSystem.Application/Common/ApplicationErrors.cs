@@ -53,6 +53,9 @@ public static class FileErrors
 
     public static Error IsNotFile(string path) =>
         new("File.NotFile", $"'{path}' 不是文件");
+
+    public static Error IsNotFolder(string path) =>
+        new("File.NotFolder", $"'{path}' 不是文件夹");
 }
 
 /// <summary>

@@ -109,6 +109,17 @@ export interface BackupDevice {
   createdAt: string
 }
 
+// 图片 OCR 文本（ROADMAP Phase 2）
+export interface OcrText {
+  fileItemId: string
+  path: string
+  text: string
+  charCount: number
+  model: string
+  elapsedMs: number
+  createdAt: string
+}
+
 // 同步计划：toUpload 由客户端逐条走标准上传端点，
 // orphanedOnServer 只上报（服务端有、客户端清单没有的文件）
 export interface BackupSyncPlan {

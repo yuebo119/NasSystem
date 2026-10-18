@@ -9,6 +9,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.WebUtilities;
 using NasSystem.Application.Files;
 using NasSystem.Application.Files.Dtos;
+using NasSystem.Application.Ocr;
 using NasSystem.Shared;
 
 /// <summary>
@@ -133,6 +134,27 @@ public static class FileEndpoints
              .WithName("ScanAndSync")
              .WithSummary("扫描并同步文件")
              .WithDescription("扫描存储目录下的物理文件，并同步到数据库。以物理文件为准，数据库为辅。")
+             .RequireAuthorization();
+
+        // 识别图片文字（ROADMAP Phase 2）
+        files.MapPost("/ocr/{*path}", RecognizeImage)
+             .WithName("RecognizeImageText")
+             .WithSummary("识别图片文字")
+             .WithDescription("对图片执行 OCR 并落库，识别结果可被搜索命中。重复识别覆盖旧结果")
+             .RequireAuthorization();
+
+        // 查询已识别的文字
+        files.MapGet("/ocr/{*path}", GetImageText)
+             .WithName("GetImageText")
+             .WithSummary("查询图片识别文字")
+             .WithDescription("取图片已识别的文字；未识别过返回 data 为 null")
+             .RequireAuthorization();
+
+        // 批量识别目录
+        files.MapPost("/ocr-batch", RecognizeDirectory)
+             .WithName("RecognizeDirectoryText")
+             .WithSummary("批量识别目录图片")
+             .WithDescription("识别目录下全部图片。已有文字的文件默认跳过，force=true 强制重识别")
              .RequireAuthorization();
 
         return group;
@@ -433,6 +455,43 @@ public static class FileEndpoints
         var result = await fileService.ScanAndSyncAsync(userId);
         return result.ToHttpResult();
     }
+
+    private static async Task<IResult> RecognizeImage(
+        string path,
+        IOcrService ocrService,
+        ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetUserId(user);
+        var result = await ocrService.RecognizeAsync(path, userId, cancellationToken);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> GetImageText(
+        string path,
+        IOcrService ocrService,
+        ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetUserId(user);
+        var result = await ocrService.GetTextAsync(path, userId, cancellationToken);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> RecognizeDirectory(
+        OcrBatchRequest request,
+        IOcrService ocrService,
+        ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetUserId(user);
+        var result = await ocrService.RecognizeDirectoryAsync(
+            request.Path, userId, request.Force, cancellationToken);
+        return result.ToHttpResult();
+    }
+
+    /// <summary>批量识别请求</summary>
+    private sealed record OcrBatchRequest(string Path, bool Force = false);
 
     private static Guid GetUserId(ClaimsPrincipal user)
     {

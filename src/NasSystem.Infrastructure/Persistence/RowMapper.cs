@@ -165,4 +165,21 @@ public static class RowMapper
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
         };
+
+    public static FileOcrText ToDomain(this FileOcrTextRow row) =>
+        FileOcrText.Restore(
+            row.Id, row.FileItemId, row.Text, row.CharCount,
+            row.Model, row.ElapsedMs, row.CreatedAt);
+
+    public static FileOcrTextRow ToRow(this FileOcrText entity) =>
+        new()
+        {
+            Id = entity.Id,
+            FileItemId = entity.FileItemId,
+            Text = entity.Text,
+            CharCount = entity.CharCount,
+            Model = entity.Model,
+            ElapsedMs = entity.ElapsedMs,
+            CreatedAt = entity.CreatedAt,
+        };
 }

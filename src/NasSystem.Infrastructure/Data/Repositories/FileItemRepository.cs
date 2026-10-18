@@ -178,7 +178,14 @@ public sealed class FileItemRepository(
 
         string Slot() => "{" + args.Count + "}";
 
-        conditions.Add($"IsDeleted = 0 AND Name LIKE {Slot()} ESCAPE '#'");
+        // 文件名命中或图片内文字命中（ROADMAP Phase 2 OCR）。
+        // 子查询而不是 JOIN：FileOcrTexts 是稀疏表（只有识别过的图片有行），
+        // JOIN 会把未识别的文件从结果里挤出去。两个 LIKE 各自一个绑定参数，
+        // 转义规则与文件名一致（EscapeLike 同一函数）
+        conditions.Add(
+            $"IsDeleted = 0 AND (Name LIKE {Slot()} ESCAPE '#' " +
+            $"OR Id IN (SELECT FileItemId FROM FileOcrTexts WHERE Text LIKE {Slot()} ESCAPE '#'))");
+        args.Add("%" + EscapeLike(searchTerm) + "%");
         args.Add("%" + EscapeLike(searchTerm) + "%");
 
         if (ownerId.HasValue)
