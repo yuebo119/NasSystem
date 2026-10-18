@@ -56,3 +56,15 @@ export const protectedDirectoryApi = {
     return http.delete(`/protected-directories/${fileItemId}`)
   }
 }
+
+// 3-2-1 导出（ROADMAP Phase 2）：目录边扫边压直接写入响应体。
+// responseType blob：http 拦截器成功路径返回 response.data，此处即 Blob。
+// 错误响应（400/404）经拦截器统一弹消息，调用方 catch 后无需重复提示
+export const exportApi = {
+  async exportDirectory(rootPath: string, password?: string): Promise<Blob> {
+    return http.post('/exports', { rootPath, password: password || undefined }, {
+      responseType: 'blob',
+      timeout: 0 // 大目录导出不设客户端超时，靠服务端流式与用户取消
+    }) as unknown as Promise<Blob>
+  }
+}

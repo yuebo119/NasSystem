@@ -37,10 +37,15 @@ internal sealed class ZipDirectoryResult : IResult
         response.Headers[HeaderNames.ContentDisposition] =
             new ContentDispositionHeaderValue("attachment") { FileName = _fileName }.ToString();
 
-        // leaveOpen: ZipArchive 释放时不关闭响应体，后续中间件仍可写入
-        using var archive = new ZipArchive(response.Body, ZipArchiveMode.Create, leaveOpen: true);
+        // leaveOpen: ZipArchive 释放时不关闭响应体，后续中间件仍可写入。
+        // ZipArchive 的同步 Write（entries dispose + central directory）经
+        // AsyncPumpStream 泵送——Kestrel 禁同步 IO（.NET 6+ 无开关），
+        // 直接写响应体抛 "Synchronous operations are disallowed"（实测）
+        await using var pump = new AsyncPumpStream(response.Body);
+        using var archive = new ZipArchive(pump, ZipArchiveMode.Create, leaveOpen: true);
         await AddDirectoryToZipAsync(archive, _directory, entryPrefix: "", httpContext.RequestAborted);
-        await response.Body.FlushAsync(httpContext.RequestAborted);
+        archive.Dispose();
+        await pump.FlushAsync(httpContext.RequestAborted);
     }
 
     private static async Task AddDirectoryToZipAsync(
@@ -59,6 +64,8 @@ internal sealed class ZipDirectoryResult : IResult
             var entryName = string.IsNullOrEmpty(entryPrefix) ? fileName : $"{entryPrefix}/{fileName}";
 
             var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
+            // await using：条目流 dispose 时 flush deflate 缓冲也必须走异步
+            // Write（同步写被 Kestrel 禁同步 IO 策略拒绝）
             await using var entryStream = entry.Open();
             await using var fileStream = new FileStream(
                 filePath, FileMode.Open, FileAccess.Read, FileShare.Read,

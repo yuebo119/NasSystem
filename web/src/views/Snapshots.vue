@@ -4,7 +4,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Right } from '@element-plus/icons-vue'
-import { snapshotApi, protectedDirectoryApi } from '@/api/snapshot'
+import { snapshotApi, protectedDirectoryApi, exportApi } from '@/api/snapshot'
 import { fileApi } from '@/api/file'
 import { formatSize, formatDate } from '@/utils/format'
 import type { Snapshot, SnapshotEntry, SnapshotDiff, SnapshotDiffItem, ProtectedDirectory } from '@/types'
@@ -150,6 +150,39 @@ async function removeSnapshot(snapshot: Snapshot) {
   }
 }
 
+// ---- 3-2-1 导出 ----
+const exportDialogVisible = ref(false)
+const exportForm = reactive({ rootPath: '/', password: '' })
+const exporting = ref(false)
+
+async function submitExport() {
+  const path = exportForm.rootPath.trim()
+  if (!path) {
+    ElMessage.warning(t('snapshot.rootPathRequired'))
+    return
+  }
+  exporting.value = true
+  try {
+    const blob = await exportApi.exportDirectory(path, exportForm.password)
+    const suffix = exportForm.password ? '.zip.enc' : '.zip'
+    const baseName = path === '/' ? 'all' : path.split('/').filter(Boolean).pop() ?? 'export'
+    const fileName = `${baseName}-${Date.now()}${suffix}`
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = fileName
+    anchor.click()
+    URL.revokeObjectURL(url)
+    exportDialogVisible.value = false
+    exportForm.password = ''
+    ElMessage.success(t('snapshot.exportDone'))
+  } catch {
+    // 错误消息由 http 拦截器统一弹出（400/404/500 分支）
+  } finally {
+    exporting.value = false
+  }
+}
+
 // ---- 只读保护 ----
 const protectedDirs = ref<ProtectedDirectory[]>([])
 const protectedLoading = ref(false)
@@ -282,6 +315,9 @@ onMounted(() => {
           </el-button>
           <el-button :disabled="snapshots.length < 2" @click="openDiff">
             {{ $t('snapshot.compare') }}
+          </el-button>
+          <el-button @click="exportDialogVisible = true">
+            {{ $t('snapshot.export') }}
           </el-button>
           <el-button :loading="snapshotsLoading" @click="loadSnapshots">
             {{ $t('common.refresh') }}
@@ -478,6 +514,31 @@ onMounted(() => {
             </template>
           </el-table-column>
         </el-table>
+      </template>
+    </el-dialog>
+
+    <!-- 3-2-1 导出对话框 -->
+    <el-dialog v-model="exportDialogVisible" :title="$t('snapshot.export')" width="480px">
+      <el-form label-position="top">
+        <el-form-item :label="$t('snapshot.rootPath')" required>
+          <el-input v-model="exportForm.rootPath" placeholder="/" />
+          <div class="form-hint">{{ $t('snapshot.exportHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="$t('snapshot.exportPassword')">
+          <el-input
+            v-model="exportForm.password"
+            type="password"
+            show-password
+            :placeholder="$t('snapshot.exportPasswordPlaceholder')"
+          />
+          <div class="form-hint">{{ $t('snapshot.exportPasswordHint') }}</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="exporting" @click="submitExport">
+          {{ $t('common.confirm') }}
+        </el-button>
       </template>
     </el-dialog>
 
