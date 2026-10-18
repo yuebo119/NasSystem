@@ -84,6 +84,9 @@ public static class DependencyInjection
         services.AddSingleton<Ocr.PaddleOcrEngineHolder>();
         services.AddScoped<Application.Ocr.IOcrService, Ocr.OcrService>();
 
+        // 媒体库（ROADMAP Phase 3）。无状态提取器 + 走仓储的聚合服务
+        services.AddScoped<Application.Media.IMediaService, Media.MediaService>();
+
         // 内存缓存
         services.AddMemoryCache();
 

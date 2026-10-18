@@ -277,6 +277,9 @@ public static class ServiceCollectionExtensions
 
         // 移动备份端点（ROADMAP Phase 1）
         apiGroup.MapBackupEndpoints();
+
+        // 媒体库端点（ROADMAP Phase 3）
+        apiGroup.MapMediaEndpoints();
         
         // 公开分享访问端点（无需登录）
         app.MapPublicShareEndpoints();

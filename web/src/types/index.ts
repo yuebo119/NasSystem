@@ -120,6 +120,28 @@ export interface OcrText {
   createdAt: string
 }
 
+// 媒体库（ROADMAP Phase 3）
+export interface MediaItem {
+  id: string
+  name: string
+  path: string
+  extension: string
+  sizeBytes: number
+  mediaType: MediaType
+  dateGroup: string
+  createdAt: string
+}
+
+export type MediaType = 'image' | 'video' | 'audio'
+
+// 元数据按需提取，未取到的字段缺席（后端 WhenWritingNull）
+export interface MediaMetadata {
+  path: string
+  width?: number
+  height?: number
+  durationSeconds?: number
+}
+
 // 同步计划：toUpload 由客户端逐条走标准上传端点，
 // orphanedOnServer 只上报（服务端有、客户端清单没有的文件）
 export interface BackupSyncPlan {

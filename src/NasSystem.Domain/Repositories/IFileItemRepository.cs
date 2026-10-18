@@ -78,6 +78,20 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 媒体聚合查询（ROADMAP Phase 3）：按扩展名集合取文件，
+    /// 按创建时间倒序，可选月份过滤。与 SearchAsync 的差别是
+    /// 无关键词条件（媒体库是浏览不是搜索），月份用
+    /// strftime 在 SQL 侧过滤（不在内存里筛）
+    /// </summary>
+    Task<FileSearchResult> GetMediaAsync(
+        IReadOnlyList<string> extensions,
+        Guid ownerId,
+        string? month = null,
+        int page = 1,
+        int pageSize = 60,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 获取文件统计信息
     /// </summary>
     Task<FileStatistics> GetStatisticsAsync(

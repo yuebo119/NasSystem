@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { UserFilled, SwitchButton, Box, Moon, Sunny, Fold, Expand, Odometer, Folder, Share, Setting as SettingIcon, User as UserIcon, Iphone } from '@element-plus/icons-vue'
+import { UserFilled, SwitchButton, Box, Moon, Sunny, Fold, Expand, Odometer, Folder, Share, Setting as SettingIcon, User as UserIcon, Iphone, Picture } from '@element-plus/icons-vue'
 import { getCurrentTheme, type ThemeType, setTheme } from '@/utils/theme'
 import { useIsMobile } from '@/utils/useIsMobile'
 
@@ -20,6 +20,7 @@ const isDarkMode = ref(false)
 const menuItems = [
   { path: '/dashboard', titleKey: 'nav.dashboard', icon: Odometer },
   { path: '/files', titleKey: 'nav.files', icon: Folder },
+  { path: '/media', titleKey: 'nav.media', icon: Picture },
   { path: '/backup', titleKey: 'nav.backup', icon: Iphone },
   { path: '/shares', titleKey: 'nav.shares', icon: Share },
   { path: '/storage', titleKey: 'nav.storage', icon: Box },

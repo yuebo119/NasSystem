@@ -232,13 +232,16 @@ OCR 用 PaddleOCR 的 ONNX 导出模型（中文场景识别率高于 Tesseract�
 | 阶段 | 项 | 状态 | 提交 |
 |---|---|---|---|
 | Phase 0 | WebDAV 最小子集 + Basic 认证 + 507 配额映射 | 完成 | 47633dc |
-| Phase 0 | SMB sidecar（compose + UID 对齐 + PROTOCOL_ACCESS.md） | 完成 | 47633dc |
+| Phase 0 | SMB sidecar（compose + smb.conf 模板 + UID 对齐 + 文档） | 完成 | 47633dc |
 | Phase 0 | 文档债务清理（README/REQUIREMENTS/DESIGN） | 完成 | 47633dc |
 | Phase 1 | 文件版本闭环（自动产版本 + 保留策略 + 恢复同步 + FK 迁移 + 前端抽屉） | 完成 | cf83e2e |
-| Phase 1 | 移动备份 API + PWA 入口 | 完成 | 待提交 |
-| Phase 2 | 快照 + OCR（含语义搜图探针门） | 未开始 | - |
-| Phase 3 | 外网访问配置器（Cloudflare/frp/Tailscale 配置生成 + Settings 区块） | 完成 | 待提交 |
-| Phase 3 | 媒体库（FFmpeg 元数据 + 时间线） | 未开始 | - |
+| Phase 1 | 移动备份 API + PWA 入口 | 完成 | 97eca93 |
+| Phase 2 | 图片 OCR（SimdPaddleOCR PP-OCRv6 + 搜索双通道） | 完成 | 8ba0af7 |
+| Phase 2 | 快照备份（清单快照 + 只读保护） | 未开始 | - |
+| Phase 2 | 语义搜图（探针门：CPU 延迟/sqlite-vec 共存/建索引耗时） | 未开始（探针未跑） | - |
+| Phase 3 | 外网访问配置器（Cloudflare/frp/Tailscale） | 完成 | e69ae73 |
+| Phase 3 | 媒体库（聚合 + 托管元数据解析 + 时间线） | 完成 | 待提交 |
+| Phase 3 | 视频转码（FFmpeg HLS，需重估镜像体积） | 未开始 | - |
 
 ### 已落地能力摘要
 
@@ -248,4 +251,6 @@ OCR 用 PaddleOCR 的 ONNX 导出模型（中文场景识别率高于 Tesseract�
 
 外网访问：设置页按 Cloudflare Tunnel / frp / Tailscale 生成配置与操作步骤（不自建中继云），未知方案回 400。
 
-验证基线：集成 134 + 单元 170 + 前端 127 全绿；oxlint 0 警告；vue-tsc 与生产构建通过。真实客户端挂载（Windows/macOS Finder/iOS 文件 App）、手机端到端备份与外网访问需在部署环境人工验收。
+OCR 与媒体库：SimdPaddleOCR PP-OCRv6（纯 C# 推理，无 ONNX Runtime/OpenCV 原生依赖，AOT 友好），SkiaSharp 解码 + 引擎单例懒加载 + 并发闸；识别文本落稀疏表，搜索改「文件名 OR 图内文字」双通道。媒体库按类型聚合 + 时间线，元数据托管解析（图片尺寸 SkiaSharp、MP4/MKV 盒与 EBML、MP3 帧头/Xing），列表与元数据分离避免滚动触发解码。
+
+验证基线：集成 148 + 单元 170 + 前端 130 全绿；oxlint 0 警告；vue-tsc 与生产构建通过。真实客户端挂载（Windows/macOS Finder/iOS 文件 App）、手机端到端备份、外网连通与中文扫描件识别率需在部署环境人工验收。

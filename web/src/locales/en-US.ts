@@ -28,6 +28,7 @@ export default {
   nav: {
     dashboard: 'Dashboard',
     files: 'Files',
+    media: 'Media',
     backup: 'Backup',
     shares: 'Shares',
     storage: 'Storage',
@@ -36,6 +37,16 @@ export default {
     logout: 'Logout',
     collapse: 'Collapse',
     menu: 'Menu'
+  },
+
+  media: {
+    title: 'Media Library',
+    tabImage: 'Photos',
+    tabVideo: 'Videos',
+    tabAudio: 'Music',
+    empty: 'No media files yet',
+    loadMore: 'Load more',
+    loadFailed: 'Failed to load'
   },
 
   backup: {

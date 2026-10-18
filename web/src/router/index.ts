@@ -49,6 +49,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '移动备份', icon: 'Iphone' }
       },
       {
+        path: 'media',
+        name: 'Media',
+        component: () => import('@/views/Media.vue'),
+        meta: { title: '媒体库', icon: 'Picture' }
+      },
+      {
         path: 'storage',
         name: 'Storage',
         component: () => import('@/views/Storage.vue'),

@@ -28,6 +28,7 @@ export default {
   nav: {
     dashboard: '仪表盘',
     files: '文件管理',
+    media: '媒体库',
     backup: '移动备份',
     shares: '分享管理',
     storage: '存储管理',
@@ -36,6 +37,16 @@ export default {
     logout: '退出登录',
     collapse: '收起菜单',
     menu: '菜单'
+  },
+
+  media: {
+    title: '媒体库',
+    tabImage: '图片',
+    tabVideo: '视频',
+    tabAudio: '音频',
+    empty: '暂无媒体文件',
+    loadMore: '加载更多',
+    loadFailed: '加载失败'
   },
 
   backup: {

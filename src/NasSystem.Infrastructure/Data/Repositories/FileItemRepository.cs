@@ -257,6 +257,77 @@ public sealed class FileItemRepository(
         };
     }
 
+    /// <summary>
+    /// 媒体聚合查询（ROADMAP Phase 3）。与 SearchAsync 共用 Slot 绑定模式，
+    /// 差别：无关键词条件（媒体库是浏览语义），扩展名 IN 下推，
+    /// 月份用 strftime 在 SQL 侧过滤（CreatedAt 是 ISO 文本时间戳，
+    /// strftime 直接可解析；不在内存里筛是为了分页总数正确）
+    /// </summary>
+    public async Task<FileSearchResult> GetMediaAsync(
+        IReadOnlyList<string> extensions,
+        Guid ownerId,
+        string? month = null,
+        int page = 1,
+        int pageSize = 60,
+        CancellationToken cancellationToken = default)
+    {
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 60;
+        if (pageSize > 200) pageSize = 200;
+
+        var db = await sessions.GetAsync(cancellationToken);
+
+        var conditions = new List<string> { "IsDeleted = 0" };
+        var args = new List<object>();
+        string Slot() => "{" + args.Count + "}";
+
+        conditions.Add($"ItemType = {(int)FileItemType.File}");
+        conditions.Add($"OwnerId = {Slot()}");
+        args.Add(ownerId);
+
+        // 扩展名 IN：占位符连续编号，与 extensions 顺序一一对应
+        var normalized = extensions
+            .Select(e => e.ToLowerInvariant())
+            .Where(e => e.Length > 0)
+            .Distinct()
+            .ToList();
+        if (normalized.Count == 0)
+        {
+            return new FileSearchResult { Items = [], TotalCount = 0 };
+        }
+
+        var start = args.Count;
+        var placeholders = string.Join(", ", normalized.Select((_, i) => $"{{{start + i}}}"));
+        conditions.Add($"Extension IS NOT NULL AND lower(Extension) IN ({placeholders})");
+        args.AddRange(normalized.Cast<object>());
+
+        if (!string.IsNullOrWhiteSpace(month))
+        {
+            conditions.Add($"strftime('%Y-%m', CreatedAt) = {Slot()}");
+            args.Add(month);
+        }
+
+        var where = "WHERE " + string.Join(" AND ", conditions);
+        // 时间线语义：新的在前。Id 作次序键兜底全序确定（同秒创建的批量文件）
+        var orderAndPage = $" ORDER BY CreatedAt DESC, Id LIMIT {pageSize} OFFSET {(long)(page - 1) * pageSize}";
+
+        var totalCount = await db.ScalarAsync<long>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create($"SELECT COUNT(*) FROM FileItems {where}", args.ToArray()),
+            false,
+            cancellationToken);
+
+        var rows = await db.QueryAsync<FileItemRow>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create($"SELECT * FROM FileItems {where}{orderAndPage}", args.ToArray()),
+            false,
+            cancellationToken);
+
+        return new FileSearchResult
+        {
+            Items = rows.ConvertAll(r => r.ToDomain()),
+            TotalCount = (int)totalCount
+        };
+    }
+
     public async Task<IReadOnlyList<FileItem>> GetRecentAsync(
         Guid ownerId,
         int count,

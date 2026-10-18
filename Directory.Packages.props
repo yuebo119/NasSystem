@@ -14,5 +14,11 @@
     <PackageVersion Include="Microsoft.Data.Sqlite.Core" Version="11.0.0-rc.2.26504.105" />
     <PackageVersion Include="SkiaSharp" Version="4.153.1" />
     <PackageVersion Include="coverlet.MTP" Version="10.1.0" />
+    <!-- OCR（ROADMAP Phase 2）：SimdPaddleOCR 纯 C# PP-OCRv6 推理，
+         无 ONNX Runtime / OpenCV 原生依赖，AOT 友好。模型包经
+         ModelProvider 契约与核心包版本解耦（ChineseV6Tiny 1.0.0 传
+         ModelProvider 1.0.0，与核心 2.0.0 的同名依赖不冲突） -->
+    <PackageVersion Include="Sdcb.SimdPaddleOCR" Version="2.0.0" />
+    <PackageVersion Include="Sdcb.SimdPaddleOCR.Models.ChineseV6Tiny" Version="1.0.0" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,21 @@
+import http from './http'
+import type { ApiResponse, PagedResult, MediaItem, MediaMetadata } from '@/types'
+
+export type MediaType = 'image' | 'video' | 'audio'
+
+export const mediaApi = {
+  // 媒体列表：按类型聚合，创建时间倒序，可选月份过滤
+  async getList(
+    type: MediaType,
+    options?: { month?: string; page?: number; pageSize?: number }
+  ): Promise<ApiResponse<PagedResult<MediaItem>>> {
+    return http.get('/media', {
+      params: { type, ...options }
+    })
+  },
+
+  // 批量元数据（一次一页）：图片尺寸、视频/音频时长
+  async getMetadata(paths: string[]): Promise<ApiResponse<MediaMetadata[]>> {
+    return http.post('/media/metadata', { paths })
+  }
+}
