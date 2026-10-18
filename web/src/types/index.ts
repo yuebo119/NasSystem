@@ -120,6 +120,23 @@ export interface OcrText {
   createdAt: string
 }
 
+// 目录批量 OCR 结果
+export interface OcrBatchResult {
+  total: number
+  recognized: number
+  skipped: number
+  failed: number
+}
+
+// 版本对比结果
+export interface VersionComparison {
+  version1: FileVersion
+  version2: FileVersion
+  sizeDifference: number
+  hashDiffers: boolean
+  timeDifference: string
+}
+
 // 媒体库（ROADMAP Phase 3）
 export interface MediaItem {
   id: string

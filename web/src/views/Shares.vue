@@ -221,6 +221,40 @@ const openEditDialog = (share: FileShareDto) => {
   editDialogVisible.value = true
 }
 
+// 重新生成分享码：旧码立即失效（已发出的链接打不开），
+// 用于链接泄露后止损。确认文案必须点明"旧链接失效"，
+// 这是个用户容易低估后果的操作。
+// 本文件的 http 封装是裸 AxiosInstance + 响应拦截器（错误转 reject），
+// 沿用邻近代码的风格：不检查 result.success，靠 try/catch 收错误
+const regenerating = ref(false)
+const handleRegenerateCode = async () => {
+  if (!editTarget.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('shares.regenerateConfirm'),
+      t('shares.regenerateCode'),
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  regenerating.value = true
+  const targetId = editTarget.value.id
+  try {
+    await fileShareApi.regenerateCode(targetId)
+    // 刷新列表后把编辑目标换成同 id 的新记录：抽屉里显示的分享码
+    // 必须换成新的，否则用户复制到的还是已失效的旧码
+    await loadData()
+    const refreshed = shares.value.find(s => s.id === targetId)
+    if (refreshed) editTarget.value = refreshed
+    ElMessage.success(t('shares.regenerateSuccess'))
+  } catch (e: any) {
+    ElMessage.error(e.message || t('common.failed'))
+  } finally {
+    regenerating.value = false
+  }
+}
+
 const handleSaveEdit = async () => {
   if (!editTarget.value) return
   try {
@@ -531,6 +565,15 @@ onMounted(() => loadData())
         </el-form-item>
         <el-form-item :label="t('common.status')">
           <el-switch v-model="editForm.isEnabled" :active-text="t('common.enabled')" :inactive-text="t('common.disabled')" />
+        </el-form-item>
+        <!-- 重新生成分享码：旧链接立即失效，用于泄露后止损 -->
+        <el-form-item :label="t('shares.shareCode')">
+          <div class="regenerate-row">
+            <el-tag class="code-tag">{{ editTarget.shareCode }}</el-tag>
+            <el-button size="small" :loading="regenerating" @click="handleRegenerateCode">
+              {{ t('shares.regenerateCode') }}
+            </el-button>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>

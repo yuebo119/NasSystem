@@ -50,6 +50,17 @@ public class NasSystemWebApplicationFactory : WebApplicationFactory<Program>
             {
                 ConnectionString = $"Data Source={_dbPath}",
             }));
+
+            // 系统控制服务换 no-op：真实的 ScheduleRestart/Shutdown 会在
+            // 数秒后调用 StopApplication 停掉测试宿主，同一程序集里其他
+            // 测试类虽各有工厂，但停宿主是不可逆副作用，测试环境一律禁真
+            var controlDescriptors = services
+                .Where(d => d.ServiceType == typeof(NasSystem.Application.SystemInfo.ISystemControlService))
+                .ToList();
+            foreach (var descriptor in controlDescriptors)
+                services.Remove(descriptor);
+            services.AddSingleton<NasSystem.Application.SystemInfo.ISystemControlService>(
+                new NoOpSystemControlService());
         });
 
         builder.ConfigureAppConfiguration((_, config) =>
@@ -114,4 +125,18 @@ public class NasSystemWebApplicationFactory : WebApplicationFactory<Program>
             }
         }
     }
+}
+
+/// <summary>
+/// 测试用 no-op 系统控制：记录调用但不停进程。
+/// 单独计数供断言"端点确实调度了"（比 mock 框架轻）
+/// </summary>
+public sealed class NoOpSystemControlService : NasSystem.Application.SystemInfo.ISystemControlService
+{
+    public int RestartCalls { get; private set; }
+    public int ShutdownCalls { get; private set; }
+
+    public void ScheduleRestart() => RestartCalls++;
+
+    public void ScheduleShutdown() => ShutdownCalls++;
 }

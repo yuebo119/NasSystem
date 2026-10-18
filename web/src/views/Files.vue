@@ -7,6 +7,7 @@ import { useFileStore } from '@/stores/file'
 import { fileApi } from '@/api/file'
 import { fileVersionApi } from '@/api/fileVersion'
 import { ocrApi } from '@/api/ocr'
+import { thumbnailApi } from '@/api/thumbnail'
 import { fileShareApi, ShareAccessType, PermissionLevel, type FileShareDto, type CreateFileShareRequest } from '@/api/fileShare'
 import { storageApi } from '@/api/storage'
 import { ElMessage, ElMessageBox, ElCheckbox } from 'element-plus'
@@ -16,9 +17,9 @@ import {
   Refresh, Upload, Delete, Download, 
   CopyDocument, Rank, FolderAdd, Search,
   Grid, List, View, Hide, DeleteFilled, Back,
-  Document, Folder, HomeFilled, Share, Link, Loading
+  Document, Folder, HomeFilled, Share, Link, Loading, Reading
 } from '@element-plus/icons-vue'
-import type { FileItem, FileVersion, OcrText } from '@/types'
+import type { FileItem, FileVersion, OcrText, VersionComparison } from '@/types'
 import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
 import { createPreviewUrlManager } from '@/utils/previewUrl'
 import { useDrawerSize } from '@/utils/useIsMobile'
@@ -592,10 +593,68 @@ async function openPreview(item: FileItem) {
 // el-table 插槽的 row 是 DefaultRow 未定型，与 Shares.vue 的 asShare 同款收窄
 const asVersion = (row: any): FileVersion => row as FileVersion
 
+// 版本对比：勾选两个版本后可用（el-table selection-change 回传选中行）
+const versionSelected = ref<FileVersion[]>([])
+const versionComparing = ref(false)
+const versionCompareVisible = ref(false)
+const versionCompareResult = ref<VersionComparison | null>(null)
+
+function onVersionSelectionChange(rows: FileVersion[]) {
+  versionSelected.value = rows
+}
+
+async function runVersionCompare() {
+  if (versionSelected.value.length !== 2 || !versionTarget.value) return
+  // 按版本号排序传参：v1 旧 v2 新，SizeDifference 方向才对得上
+  const [a, b] = [...versionSelected.value].sort((x, y) => x.versionNumber - y.versionNumber)
+  versionComparing.value = true
+  try {
+    const result = await fileVersionApi.compare(versionTarget.value.id, a.versionNumber, b.versionNumber)
+    if (result.success && result.data) {
+      versionCompareResult.value = result.data
+      versionCompareVisible.value = true
+    } else {
+      ElMessage.error(result.error?.message || t('filesView.versionCompareFailed'))
+    }
+  } catch {
+    ElMessage.error(t('filesView.versionCompareFailed'))
+  } finally {
+    versionComparing.value = false
+  }
+}
+
 // ─── 图片 OCR（ROADMAP Phase 2）───
 
 const ocrText = ref<OcrText | null>(null)
 const ocrLoading = ref(false)
+// 目录批量 OCR：进行中状态与可用条件（恰好选中一个文件夹）
+const ocrBatchRunning = ref(false)
+const canBatchOcr = computed(() =>
+  fileStore.selectedItems.length === 1 && fileStore.selectedItems[0].isFolder)
+// 预览抽屉的缩略图缓存清理（换源文件/显示异常时用）
+const thumbClearing = ref(false)
+
+// 清除当前预览图片的缩略图缓存：下次访问重新生成。
+// 失败只提示不阻断预览（缓存是增强，清了大不了再生成）
+async function clearThumbnailCache() {
+  if (!previewItem.value) return
+  thumbClearing.value = true
+  try {
+    const result = await thumbnailApi.clearCache(previewItem.value.path)
+    if (result.success) {
+      ElMessage.success(t('filesView.thumbCleared'))
+      // 缓存清了要重取预览：旧的 objectURL 还挂着旧内容
+      revokePreviewUrl()
+      await ensurePreviewUrl(previewItem.value)
+    } else {
+      ElMessage.error(result.error?.message || t('filesView.thumbClearFailed'))
+    }
+  } catch {
+    ElMessage.error(t('filesView.thumbClearFailed'))
+  } finally {
+    thumbClearing.value = false
+  }
+}
 
 // 打开图片预览时取已有识别结果（失败静默：没识别过就是没有，不是错误）
 async function loadExistingOcrText(item: FileItem) {
@@ -633,11 +692,53 @@ async function runOcr(item: FileItem) {
   }
 }
 
+// 目录批量 OCR：对选中的文件夹跑全量识别（已有文字的默认跳过）。
+// 批量可能持续数十秒（每张百毫秒级），按钮 loading 常驻，
+// 结果用汇总消息报告（成功/跳过/失败各自计数）
+async function runBatchOcr() {
+  if (!canBatchOcr.value) return
+  const folder = fileStore.selectedItems[0]
+  try {
+    await ElMessageBox.confirm(
+      t('filesView.ocrBatchConfirm', { name: folder.name }),
+      t('filesView.ocrBatchTitle'),
+      { type: 'info' }
+    )
+  } catch {
+    return // 用户取消
+  }
+  ocrBatchRunning.value = true
+  try {
+    const result = await ocrApi.recognizeDirectory(folder.path)
+    if (result.success && result.data) {
+      const r = result.data
+      if (r.total === 0) {
+        ElMessage.info(t('filesView.ocrBatchNoImages'))
+      } else {
+        ElMessage.success(t('filesView.ocrBatchDone', {
+          recognized: r.recognized,
+          skipped: r.skipped,
+          failed: r.failed
+        }))
+      }
+      // 识别结果进了搜索索引，刷新当前目录让状态可见
+      await fileStore.loadDirectory(fileStore.currentPath)
+    } else {
+      ElMessage.error(result.error?.message || t('filesView.ocrFailed'))
+    }
+  } catch {
+    ElMessage.error(t('filesView.ocrFailed'))
+  } finally {
+    ocrBatchRunning.value = false
+  }
+}
+
 // 打开版本历史抽屉：仅文件有版本（文件夹的软删除走回收站，不产版本）
 async function openVersionHistory(item: FileItem) {
   if (item.isFolder) return
   versionTarget.value = item
   versionDialogVisible.value = true
+  versionSelected.value = []
   versionLoading.value = true
   try {
     const result = await fileVersionApi.getVersions(item.id)
@@ -1372,6 +1473,16 @@ onUnmounted(() => {
             <el-icon><Share /></el-icon>
           </el-button>
         </el-tooltip>
+        <!-- 目录批量 OCR（ROADMAP Phase 2）：选中单个文件夹时可用 -->
+        <el-tooltip :content="$t('filesView.ocrBatchTip')" placement="bottom">
+          <el-button
+            @click="runBatchOcr"
+            :disabled="!canBatchOcr"
+            :loading="ocrBatchRunning"
+          >
+            <el-icon><Reading /></el-icon>
+          </el-button>
+        </el-tooltip>
         <el-tooltip :content="$t('filesView.delete')" placement="bottom">
           <el-button type="danger" @click="handleDelete(false)" :disabled="!fileStore.hasSelection">
             <el-icon><Delete /></el-icon>
@@ -1696,6 +1807,13 @@ onUnmounted(() => {
       </div>
       <template #footer>
         <el-button @click="previewDialogVisible = false">{{ $t('filesView.close') }}</el-button>
+        <el-button
+          v-if="previewItem && isImage(previewItem)"
+          :loading="thumbClearing"
+          @click="clearThumbnailCache"
+        >
+          {{ $t('filesView.thumbClear') }}
+        </el-button>
         <el-button @click="openVersionHistory(previewItem!)" v-if="previewItem && !previewItem.isFolder">
           {{ $t('filesView.versionHistoryBtn') }}
         </el-button>
@@ -1709,6 +1827,17 @@ onUnmounted(() => {
       :title="$t('filesView.versionHistoryTitle')"
       :size="drawerSize('420px', '38vw', '560px')"
     >
+      <div class="version-toolbar">
+        <span class="version-hint">{{ $t('filesView.versionCompareHint') }}</span>
+        <el-button
+          size="small"
+          :disabled="versionSelected.length !== 2"
+          :loading="versionComparing"
+          @click="runVersionCompare"
+        >
+          {{ $t('filesView.versionCompare') }}
+        </el-button>
+      </div>
       <div class="version-target" v-if="versionTarget">
         <el-icon :size="20" :color="getFileIconColor(versionTarget)">
           <component :is="getFileIcon(versionTarget)" />
@@ -1724,7 +1853,9 @@ onUnmounted(() => {
         :data="versionList"
         :empty-text="$t('filesView.versionEmpty')"
         style="width: 100%"
+        @selection-change="onVersionSelectionChange"
       >
+        <el-table-column type="selection" width="42" :selectable="() => true" />
         <el-table-column :label="$t('filesView.versionNumberCol')" width="90">
           <template #default="{ row }">
             <span>v{{ row.versionNumber }}</span>
@@ -1761,7 +1892,43 @@ onUnmounted(() => {
       </el-table>
     </el-drawer>
 
-    <!-- 分享抽屉 -->
+    <!-- 版本对比对话框（ROADMAP Phase 1） -->
+    <el-dialog
+      v-model="versionCompareVisible"
+      :title="$t('filesView.versionCompareTitle')"
+      width="420px"
+    >
+      <div v-if="versionCompareResult" class="compare-body">
+        <div class="compare-row">
+          <span class="compare-label">{{ $t('filesView.versionComparePair') }}</span>
+          <span class="compare-value">
+            v{{ versionCompareResult.version1.versionNumber }} ↔ v{{ versionCompareResult.version2.versionNumber }}
+          </span>
+        </div>
+        <div class="compare-row">
+          <span class="compare-label">{{ $t('filesView.versionCompareSize') }}</span>
+          <span class="compare-value">
+            {{ formatSize(versionCompareResult.version1.fileSize) }} → {{ formatSize(versionCompareResult.version2.fileSize) }}
+            （{{ versionCompareResult.sizeDifference >= 0 ? '+' : '' }}{{ formatSize(Math.abs(versionCompareResult.sizeDifference)) }}）
+          </span>
+        </div>
+        <div class="compare-row">
+          <span class="compare-label">{{ $t('filesView.versionCompareHash') }}</span>
+          <span class="compare-value">
+            {{ versionCompareResult.hashDiffers ? $t('filesView.versionCompareHashDiffers') : $t('filesView.versionCompareHashSame') }}
+          </span>
+        </div>
+        <div class="compare-row">
+          <span class="compare-label">{{ $t('filesView.versionCompareTime') }}</span>
+          <span class="compare-value">
+            {{ formatDate(versionCompareResult.version1.createdAt) }} → {{ formatDate(versionCompareResult.version2.createdAt) }}
+          </span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="versionCompareVisible = false">{{ $t('filesView.close') }}</el-button>
+      </template>
+    </el-dialog>
     <el-drawer v-model="shareDialogVisible" :title="$t('filesView.shareDialogTitle')" :size="drawerSize('420px', '38vw', '560px')" :mask-closable="false">
       <div class="share-target" v-if="shareTarget">
         <el-icon :size="24" :color="getFileIconColor(shareTarget)">
@@ -2403,7 +2570,7 @@ onUnmounted(() => {
   padding: 16px;
   background: var(--el-fill-color-light);
   border-radius: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   border: 1px solid var(--el-border-color-lighter);
 
   .version-target-info {
@@ -2423,6 +2590,47 @@ onUnmounted(() => {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+  }
+}
+
+// 版本抽屉工具栏：对比提示 + 按钮（version-target 的兄弟节点）
+.version-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+
+  .version-hint {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+}
+
+// 版本对比对话框
+.compare-body {
+  .compare-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+    font-size: 13px;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .compare-label {
+      color: var(--el-text-color-secondary);
+      white-space: nowrap;
+    }
+
+    .compare-value {
+      color: var(--el-text-color-primary);
+      text-align: right;
+      word-break: break-all;
     }
   }
 }

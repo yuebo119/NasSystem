@@ -74,6 +74,9 @@ public static class DependencyInjection
         // Scoped：内部用 PalormSessionHolder 查 SQLite 版本，与仓储同生命周期
         services.AddScoped<Application.SystemInfo.ISystemInfoService, SystemInfoService>();
 
+        // 系统控制（重启/关机）：单例，内部只依赖 IHostApplicationLifetime
+        services.AddSingleton<Application.SystemInfo.ISystemControlService, SystemInfo.SystemControlService>();
+
         // 注册缩略图服务
         services.Configure<Application.Files.ThumbnailOptions>(
             configuration.GetSection("Thumbnails"));

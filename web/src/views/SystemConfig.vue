@@ -11,9 +11,11 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
-import { Link, CopyDocument, FolderOpened, Monitor } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Link, CopyDocument, FolderOpened, Monitor, Warning } from '@element-plus/icons-vue'
 import { systemConfigApi } from '@/api/systemConfig'
+import { systemControlApi } from '@/api/systemControl'
+import http from '@/api/http'
 import type { SystemConfigSnapshot, SystemConfigItem } from '@/types'
 
 const { t } = useI18n()
@@ -23,6 +25,10 @@ const snapshot = ref<SystemConfigSnapshot | null>(null)
 const draft = ref<Record<string, string>>({})
 const loading = ref(false)
 const saving = ref(false)
+// 只读环境信息：上传上限取 /system/settings 的真实值（Kestrel 同源）
+const maxUploadMB = ref<number | null>(null)
+// 危险区：重启/关机进行中
+const controlRunning = ref(false)
 
 const davUrl = computed(() => `${window.location.origin}/dav`)
 
@@ -31,22 +37,64 @@ onMounted(loadConfig)
 async function loadConfig() {
   loading.value = true
   try {
-    const result = await systemConfigApi.get()
-    if (result.success && result.data) {
-      snapshot.value = result.data
+    const [configResult, settingsResult] = await Promise.all([
+      systemConfigApi.get(),
+      http.get('/system/settings') as Promise<any>
+    ])
+    if (configResult.success && configResult.data) {
+      snapshot.value = configResult.data
       draft.value = {}
-      for (const group of result.data.groups) {
+      for (const group of configResult.data.groups) {
         for (const item of group.items) {
           draft.value[item.key] = item.value
         }
       }
     } else {
-      ElMessage.error(result.error?.message || t('config.loadFailed'))
+      ElMessage.error(configResult.error?.message || t('config.loadFailed'))
+    }
+    if (settingsResult?.success) {
+      maxUploadMB.value = settingsResult.data.maxUploadSizeMB ?? null
     }
   } catch {
     ElMessage.error(t('config.loadFailed'))
   } finally {
     loading.value = false
+  }
+}
+
+// 重启/关机：确认后调度，页面提示"服务即将断开"。
+// 重启后 Docker 的 restart 策略会拉回进程（约数秒），
+// 页面不自动跳转，用户手动刷新即可
+async function runControl(action: 'restart' | 'shutdown') {
+  const isRestart = action === 'restart'
+  try {
+    await ElMessageBox.confirm(
+      isRestart ? t('config.restartConfirm') : t('config.shutdownConfirm'),
+      isRestart ? t('config.restart') : t('config.shutdown'),
+      { type: 'warning', confirmButtonClass: 'el-button--danger' }
+    )
+  } catch {
+    return
+  }
+  controlRunning.value = true
+  try {
+    const result = isRestart
+      ? await systemControlApi.restart()
+      : await systemControlApi.shutdown()
+    if (result.success) {
+      ElMessage.warning(
+        isRestart ? t('config.restartScheduled') : t('config.shutdownScheduled')
+      )
+    } else {
+      ElMessage.error(result.error?.message || t('common.failed'))
+    }
+  } catch {
+    // 连接被预期断开：进程已开始关停，这个错误本身就是成功信号
+    ElMessage.warning(
+      isRestart ? t('config.restartScheduled') : t('config.shutdownScheduled')
+    )
+  } finally {
+    controlRunning.value = false
   }
 }
 
@@ -190,11 +238,30 @@ function statusOf(key: string): boolean {
       </h3>
       <p class="readonly-desc">{{ $t('config.readonlyDesc') }}</p>
       <ul class="readonly-list">
-        <li>{{ $t('config.readonlyUploadLimit') }}</li>
+        <li v-if="maxUploadMB !== null">
+          {{ $t('config.readonlyUploadLimit', { size: maxUploadMB }) }}
+        </li>
         <li>{{ $t('config.readonlyJwt') }}</li>
         <li>{{ $t('config.readonlyCors') }}</li>
         <li>{{ $t('config.readonlyThumbnail') }}</li>
       </ul>
+    </div>
+
+    <!-- ④ 危险区：重启/关机（真实调度，非计划消息） -->
+    <div class="config-card danger-card">
+      <h3 class="card-title">
+        <el-icon style="vertical-align: -2px; margin-right: 4px"><Warning /></el-icon>
+        {{ $t('config.dangerTitle') }}
+      </h3>
+      <p class="readonly-desc">{{ $t('config.dangerDesc') }}</p>
+      <div class="danger-actions">
+        <el-button :loading="controlRunning" @click="runControl('restart')">
+          {{ $t('config.restart') }}
+        </el-button>
+        <el-button type="danger" :loading="controlRunning" @click="runControl('shutdown')">
+          {{ $t('config.shutdown') }}
+        </el-button>
+      </div>
     </div>
 
     <!-- 保存栏：有改动才亮 -->
@@ -324,6 +391,19 @@ function statusOf(key: string): boolean {
 
     li {
       margin-bottom: 4px;
+    }
+  }
+
+  .danger-card {
+    border-color: var(--el-color-danger-light-5);
+
+    .card-title {
+      color: var(--el-color-danger);
+    }
+
+    .danger-actions {
+      display: flex;
+      gap: 12px;
     }
   }
 

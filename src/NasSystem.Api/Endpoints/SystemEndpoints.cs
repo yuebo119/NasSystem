@@ -5,6 +5,7 @@
 
 namespace NasSystem.Api.Extensions;
 
+using NasSystem.Application.SystemInfo;
 using NasSystem.Shared;
 using static NasSystem.Shared.ByteSizeFormatter;
 
@@ -151,23 +152,25 @@ public static class SystemEndpoints
             statusCode: StatusCodes.Status501NotImplemented);
     }
 
-    private static IResult RestartSystem()
+    private static IResult RestartSystem(ISystemControlService controlService)
     {
-        // 在实际应用中，这里会触发服务重启
-        return Results.Accepted(null, ApiResponse<object>.Ok(new
+        // 真实调度：响应先返回，3 秒后进程停止。Docker 的
+        // restart: unless-stopped 会把它拉起来；裸进程需外部守护
+        controlService.ScheduleRestart();
+        return Results.Accepted($"/api/v1/system/status", ApiResponse<object>.Ok(new
         {
-            Message = "系统将在 5 秒后重启",
-            ScheduledTime = DateTime.UtcNow.AddSeconds(5)
+            Message = "系统正在重启，约 3 秒后停止进程",
+            ScheduledTime = DateTime.UtcNow.AddSeconds(3)
         }));
     }
 
-    private static IResult ShutdownSystem()
+    private static IResult ShutdownSystem(ISystemControlService controlService)
     {
-        // 在实际应用中，这里会触发服务关闭
-        return Results.Accepted(null, ApiResponse<object>.Ok(new
+        controlService.ScheduleShutdown();
+        return Results.Accepted($"/api/v1/system/status", ApiResponse<object>.Ok(new
         {
-            Message = "系统将在 5 秒后关闭",
-            ScheduledTime = DateTime.UtcNow.AddSeconds(5)
+            Message = "系统正在关机，约 3 秒后停止进程",
+            ScheduledTime = DateTime.UtcNow.AddSeconds(3)
         }));
     }
 
