@@ -20,6 +20,8 @@ public static class ConfigDescriptors
         public const string OcrAutoRecognize = "ocr.auto-recognize";
         public const string WebDavEnabled = "webdav.enabled";
         public const string WebDavAllowHttp = "webdav.allow-http";
+        public const string WebDavAuthMaxFailures = "webdav.auth-max-failures";
+        public const string WebDavAuthWindowMinutes = "webdav.auth-window-minutes";
         public const string SnapshotEnabled = "snapshot.enabled";
         public const string SnapshotSchedule = "snapshot.schedule";
         public const string SnapshotKeepCount = "snapshot.keep-count";
@@ -49,6 +51,15 @@ public static class ConfigDescriptors
         new(Keys.WebDavAllowHttp, "webdav", "config.webdavAllowHttp",
             ConfigValueType.Bool, "false",
             DescriptionKey: "config.webdavAllowHttpDesc"),
+        // 认证失败锁定：同源 IP 在窗口期内失败达阈值即锁。原为 Api 层
+        // 硬编码（10 次 / 5 分钟），随挂载服务独立页开放为可配置项，
+        // WebDavAuthGuard 按 key 读（改完即生效，重启不恢复默认）
+        new(Keys.WebDavAuthMaxFailures, "webdav", "config.webdavAuthMaxFailures",
+            ConfigValueType.Int, "10", Min: 1, Max: 100,
+            DescriptionKey: "config.webdavAuthMaxFailuresDesc"),
+        new(Keys.WebDavAuthWindowMinutes, "webdav", "config.webdavAuthWindowMinutes",
+            ConfigValueType.Int, "5", Min: 1, Max: 60,
+            DescriptionKey: "config.webdavAuthWindowMinutesDesc"),
 
         // ─── 清单快照（ROADMAP Phase 2）───
         // schedule 是五段 cron（分 时 日 月 周），默认每日 03:00。

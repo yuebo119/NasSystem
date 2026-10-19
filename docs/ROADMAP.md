@@ -303,3 +303,13 @@ Phase 2/3-a 收口（2026-10-19）：快照与只读保护独立页（/snapshots
 API-only 判定不变：/system/health（Docker healthcheck 消费）、thumbnails/supported、GET /users/{id} 与 GET /storage/pools/{id}（列表数据已全量，编辑用列表快照）、/system/logs 与 PUT /system/settings（诚实 501）。
 
 验证：前端 159 例/21 spec 全绿（基线 136/16），oxlint 0 警告，vue-tsc 与生产构建通过；浏览器端到端验收过分组菜单（管理员 5 组/普通用户 3 组）、四个新页面、Settings 拆分效果、Internal 分享已登录访问与认证下载（200 实测），测试分享已清理。
+
+第五轮收口（2026-10-19，功能页拆分）：把埋在系统配置页里的三个协议/能力功能提为独立页，各自补全真实可配置项：
+
+- /webdav（WebDAV 挂载，admin）：原系统配置页只有挂载地址加两个开关，缺客户端挂载步骤与认证参数。补四端挂载指南（Windows 资源管理器/macOS Finder/Linux davfs2/iOS 文件 App）、约束说明（配额/回收/实时推送生效、/dav 无体积上限）、SMB 直通强告警卡（旁路配额与回收站，compose --profile smb 启用）。新增两条 descriptor：webdav.auth-max-failures（默认 10 次）与 webdav.auth-window-minutes（默认 5 分钟），替换 WebDavAuthGuard 的硬编码；Guard 是单例不能直接消费 scoped 配置服务（DI 校验不过，且 ValidateOnBuild 只在 Development 开，集成测试环境不暴露），改为阈值由端点读一次后作参数传入，Guard 保持纯内存态。
+- /ocr（文字识别，所有人；自动识别开关仅管理员）：批量识别从文件管理工具栏（恰好选中一个文件夹才可用）提为常规入口，路径输入加 force 选项加四态结果计数；说明卡写清引擎（SimdPaddleOCR PP-OCRv6）与索引（FTS5 trigram 双通道搜索）。
+- SMB 不单独成页：零运行时配置（compose profile 环境变量），独立页只能是纯文档，并入 /webdav 作强告警卡。
+- 系统配置页相应瘦身：webdav 与 ocr 两组 descriptor 不再渲染（同一份值两个入口必然漂移），服务状态卡换成指向 /webdav 的导航卡；draft 只收本页渲染的组，保存不带拆走的键。
+- 菜单：WebDAV 挂载入系统管理组（admin），文字识别入文件与媒体组（批量工具对所有人开放）。
+
+验证：前端 166 例/23 spec 全绿，oxlint 0 警告，构建通过；后端单测 178 + 集成 223 全绿；浏览器验收 /webdav（阈值实时值 10/5、配置改 15 读回再还原）、/system-config（webdav/ocr 组消失、链接卡在位）、/ocr（批量工具与管理员开关）、批量识别端点 200 实测。踩坑记录：单例 Guard 注入 scoped 配置服务本机 dotnet build 通过但启动即崩，集成测试因测试环境不跑 ValidateOnBuild 全绿——DI 生命周期改动必须真实起一次进程。

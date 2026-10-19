@@ -99,7 +99,7 @@ public static class WebDavEndpoints
         }
 
         var (principal, authFailure) = await AuthenticateAsync(
-            context, userRepository, passwordHasher, unitOfWork, authGuard, cancellationToken);
+            context, userRepository, passwordHasher, unitOfWork, authGuard, configService, cancellationToken);
         if (authFailure is not null)
         {
             return authFailure;
@@ -138,12 +138,20 @@ public static class WebDavEndpoints
         IPasswordHasher passwordHasher,
         IUnitOfWork unitOfWork,
         IWebDavAuthGuard authGuard,
+        ISystemConfigService configService,
         CancellationToken cancellationToken)
     {
         // 测试与反代场景下 RemoteIpAddress 可能为空，统一归到 unknown 键
         var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
-        if (authGuard.IsLockedOut(ip))
+        // 锁定策略读配置（webdav.auth-max-failures / auth-window-minutes，
+        // 挂载服务页可调）：Guard 是单例不能自己读 scoped 配置服务，
+        // 由本方法读一次随调用传入，与启用开关同口径
+        var maxFailures = await configService.GetIntAsync(ConfigDescriptors.Keys.WebDavAuthMaxFailures, cancellationToken);
+        var failureWindow = TimeSpan.FromMinutes(
+            await configService.GetIntAsync(ConfigDescriptors.Keys.WebDavAuthWindowMinutes, cancellationToken));
+
+        if (authGuard.IsLockedOut(ip, maxFailures, failureWindow))
         {
             return (null, Results.StatusCode(StatusCodes.Status429TooManyRequests));
         }
@@ -179,7 +187,7 @@ public static class WebDavEndpoints
         if (user is null || !user.IsEnabled
             || !passwordHasher.VerifyPassword(password, user.PasswordHash, user.PasswordSalt))
         {
-            authGuard.RecordFailure(ip);
+            authGuard.RecordFailure(ip, failureWindow);
             return (null, Challenge());
         }
 

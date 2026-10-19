@@ -103,10 +103,22 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '系统配置', icon: 'Tools', requiresAdmin: true }
       },
       {
+        path: 'webdav',
+        name: 'WebDav',
+        component: () => import('@/views/WebDav.vue'),
+        meta: { title: 'WebDAV 挂载', icon: 'Link', requiresAdmin: true }
+      },
+      {
         path: 'system-info',
         name: 'SystemInfo',
         component: () => import('@/views/SystemInfo.vue'),
         meta: { title: '系统信息', icon: 'Monitor', requiresAdmin: true }
+      },
+      {
+        path: 'ocr',
+        name: 'Ocr',
+        component: () => import('@/views/Ocr.vue'),
+        meta: { title: '文字识别', icon: 'Picture' }
       }
     ]
   },

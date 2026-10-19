@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { UserFilled, SwitchButton, Box, Moon, Sunny, Fold, Expand, Odometer, Folder, Share, Setting as SettingIcon, User as UserIcon, Iphone, Picture, Tools, Camera, Delete, Lock, Download, Monitor } from '@element-plus/icons-vue'
+import { UserFilled, SwitchButton, Box, Moon, Sunny, Fold, Expand, Odometer, Folder, Share, Setting as SettingIcon, User as UserIcon, Iphone, Picture, Tools, Camera, Delete, Lock, Download, Monitor, Link, EditPen } from '@element-plus/icons-vue'
 import { getCurrentTheme, type ThemeType, setTheme } from '@/utils/theme'
 import { useIsMobile } from '@/utils/useIsMobile'
 
@@ -27,6 +27,7 @@ const menuGroups: { key: string; titleKey: string; admin?: boolean; items: { pat
       { path: '/dashboard', titleKey: 'nav.dashboard', icon: Odometer },
       { path: '/files', titleKey: 'nav.files', icon: Folder },
       { path: '/media', titleKey: 'nav.media', icon: Picture },
+      { path: '/ocr', titleKey: 'nav.ocr', icon: EditPen },
       { path: '/recycle-bin', titleKey: 'nav.recycleBin', icon: Delete }
     ]
   },
@@ -55,6 +56,7 @@ const menuGroups: { key: string; titleKey: string; admin?: boolean; items: { pat
     items: [
       { path: '/users', titleKey: 'nav.users', icon: UserIcon },
       { path: '/storage', titleKey: 'nav.storage', icon: Box },
+      { path: '/webdav', titleKey: 'nav.webdav', icon: Link },
       { path: '/system-config', titleKey: 'nav.systemConfig', icon: Tools },
       { path: '/system-info', titleKey: 'nav.systemInfo', icon: Monitor }
     ]

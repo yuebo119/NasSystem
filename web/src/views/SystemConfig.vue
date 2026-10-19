@@ -3,8 +3,10 @@
  * 系统配置页（ROADMAP Phase 0-3 配置收口）。
  *
  * 三块内容：
- * ① 服务状态卡（WebDAV / SMB）：挂载地址、当前状态、使用方式。
- *    只读信息 + 复制按钮，可调项统一走下方表单（不在两处放同一份状态）
+ * ① 协议接入入口卡：WebDAV/SMB 2026-10-19 拆到独立页（/webdav，
+ *    含四端挂载指南、认证锁定阈值、SMB 强告警），此处只留导航。
+ *    webdav 与 ocr 两组 descriptor 也不再在本页渲染——同一份值
+ *    两个入口必然漂移，各组只在自己的页面出现
  * ② 配置表单：按后端 descriptor 分组渲染（int → 数字框，bool → 开关），
  *    新增配置项后端加一条 descriptor 即自动出现，前端零改动
  * ③ 只读环境信息：上传上限等启动期定死的项（appsettings 管）
@@ -12,7 +14,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Link, CopyDocument, FolderOpened, Monitor, Warning, Picture } from '@element-plus/icons-vue'
+import { Link, ArrowRight, Monitor, Warning, Picture } from '@element-plus/icons-vue'
 import { formatSize } from '@/utils/format'
 import { systemConfigApi } from '@/api/systemConfig'
 import { systemControlApi } from '@/api/systemControl'
@@ -95,7 +97,11 @@ async function clearAllThumbnails() {
   }
 }
 
-const davUrl = computed(() => `${window.location.origin}/dav`)
+// 本页只渲染未拆分的组。webdav 与 ocr 两组 2026-10-19 拆到独立页
+// （/webdav、/ocr），同一份值两个渲染入口必然漂移，这里不再重复渲染
+const visibleGroups = computed(() =>
+  snapshot.value?.groups.filter(g => g.group !== 'webdav' && g.group !== 'ocr') ?? []
+)
 
 onMounted(loadConfig)
 
@@ -109,7 +115,9 @@ async function loadConfig() {
     if (configResult.success && configResult.data) {
       snapshot.value = configResult.data
       draft.value = {}
-      for (const group of configResult.data.groups) {
+      // draft 只收本页渲染的组：拆走的组不在 draft 里，
+      // 本页保存不会顺带改写它们的值
+      for (const group of visibleGroups.value) {
         for (const item of group.items) {
           draft.value[item.key] = item.value
         }
@@ -163,10 +171,10 @@ async function runControl(action: 'restart' | 'shutdown') {
   }
 }
 
-// 有改动才亮保存按钮：整份 draft 与快照生效值逐键比对
+// 有改动才亮保存按钮：整份 draft 与快照生效值逐键比对（只覆盖本页渲染的组）
 const dirty = computed(() => {
   if (!snapshot.value) return false
-  return snapshot.value.groups.some(group =>
+  return visibleGroups.value.some(group =>
     group.items.some(item => draft.value[item.key] !== item.value))
 })
 
@@ -189,19 +197,10 @@ async function save() {
 
 function reset() {
   if (!snapshot.value) return
-  for (const group of snapshot.value.groups) {
+  for (const group of visibleGroups.value) {
     for (const item of group.items) {
       draft.value[item.key] = item.value
     }
-  }
-}
-
-async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success(t('config.copied'))
-  } catch {
-    ElMessage.error(t('config.copyFailed'))
   }
 }
 
@@ -228,53 +227,26 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
   if (value === undefined) return
   draft.value[item.key] = String(value)
 }
-
-function statusOf(key: string): boolean {
-  return draft.value[key] === 'true'
-}
 </script>
 
 <template>
   <div class="config-page" v-loading="loading">
     <h2 class="page-title">{{ $t('config.title') }}</h2>
 
-    <!-- ① 服务状态卡 -->
-    <div class="service-row">
-      <div class="service-card">
+    <!-- ① 协议接入入口：WebDAV/SMB 已拆独立页（/webdav），此处只留导航 -->
+    <router-link to="/webdav" class="service-row-link">
+      <div class="service-card link-card">
         <div class="service-head">
           <el-icon :size="20"><Link /></el-icon>
           <span class="service-name">{{ $t('config.webdavService') }}</span>
-          <el-tag :type="statusOf('webdav.enabled') ? 'success' : 'info'" size="small">
-            {{ statusOf('webdav.enabled') ? $t('config.statusEnabled') : $t('config.statusDisabled') }}
-          </el-tag>
+          <el-icon class="link-arrow"><ArrowRight /></el-icon>
         </div>
-        <div class="service-url">
-          <code>{{ davUrl }}</code>
-          <el-button link type="primary" @click="copyText(davUrl)">
-            <el-icon><CopyDocument /></el-icon>{{ $t('config.copyUrl') }}
-          </el-button>
-        </div>
-        <p class="service-desc">{{ $t('config.webdavDesc') }}</p>
+        <p class="service-desc">{{ $t('config.serviceEntryHint') }}</p>
       </div>
-
-      <div class="service-card">
-        <div class="service-head">
-          <el-icon :size="20"><FolderOpened /></el-icon>
-          <span class="service-name">{{ $t('config.smbService') }}</span>
-          <el-tag type="info" size="small">{{ $t('config.smbOptional') }}</el-tag>
-        </div>
-        <div class="service-url">
-          <code>\\{{ $t('config.hostPlaceholder') }}\nas</code>
-          <el-button link type="primary" @click="copyText('nas')">
-            <el-icon><CopyDocument /></el-icon>{{ $t('config.copyShareName') }}
-          </el-button>
-        </div>
-        <p class="service-desc">{{ $t('config.smbDesc') }}</p>
-      </div>
-    </div>
+    </router-link>
 
     <!-- ② 配置表单（descriptor 驱动） -->
-    <div v-for="group in snapshot?.groups ?? []" :key="group.group" class="config-card">
+    <div v-for="group in visibleGroups" :key="group.group" class="config-card">
       <h3 class="card-title">{{ $t(group.titleKey) }}</h3>
       <el-form label-position="top" class="config-form">
         <el-form-item
@@ -429,15 +401,10 @@ function statusOf(key: string): boolean {
     color: var(--el-text-color-primary);
   }
 
-  .service-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
+  .service-row-link {
+    display: block;
     margin-bottom: 16px;
-
-    @media (max-width: 768px) {
-      grid-template-columns: 1fr;
-    }
+    text-decoration: none;
   }
 
   .service-card {
@@ -445,6 +412,18 @@ function statusOf(key: string): boolean {
     border-radius: 12px;
     padding: 14px;
     background: var(--el-bg-color);
+
+    &.link-card {
+      transition: border-color 0.15s ease;
+
+      &:hover {
+        border-color: var(--el-color-primary);
+      }
+    }
+
+    .link-arrow {
+      color: var(--el-text-color-secondary);
+    }
 
     .service-head {
       display: flex;
