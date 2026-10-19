@@ -10,7 +10,7 @@ import {
   Files, User, Box, Share,
   Monitor, Timer, Cpu, Connection, Refresh,
   Picture, VideoPlay, Headset, Document, FolderOpened, Warning, InfoFilled, Pointer,
-  Upload, FolderAdd, Delete, Search, Download
+  Upload, FolderAdd, Delete, Search, Download, Camera
 } from '@element-plus/icons-vue'
 import { formatSize, getPoolStatusInfo, getFileIcon, getFileIconColor, formatDate } from '@/utils/format'
 import { useIsMobile } from '@/utils/useIsMobile'
@@ -464,7 +464,7 @@ onUnmounted(() => {
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ formatUptime(systemStatus.uptime) }}</div>
-              <div class="stat-label">{{ t('settings.uptime') }}</div>
+              <div class="stat-label">{{ t('systemInfo.uptime') }}</div>
             </div>
           </div>
         </el-card>
@@ -477,7 +477,7 @@ onUnmounted(() => {
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ systemStatus.memoryUsageMB }} MB</div>
-              <div class="stat-label">{{ t('settings.memoryUsage') }}</div>
+              <div class="stat-label">{{ t('systemInfo.memoryUsage') }}</div>
             </div>
           </div>
         </el-card>
@@ -816,7 +816,7 @@ onUnmounted(() => {
         <el-card class="recycle-card">
           <template #header>
             <div class="card-header">
-              <span><el-icon><Delete /></el-icon> {{ t('filesView.recycleBinTitle') }}</span>
+              <span><el-icon><Delete /></el-icon> {{ t('recycle.title') }}</span>
             </div>
           </template>
           <div class="recycle-main">
@@ -826,7 +826,7 @@ onUnmounted(() => {
               <div class="recycle-hint">{{ t('dashboard.recycleHint') }}</div>
             </div>
           </div>
-          <router-link to="/files?recycle=1">
+          <router-link to="/recycle-bin">
             <el-button type="primary" plain class="recycle-btn">{{ t('dashboard.manageRecycle') }}</el-button>
           </router-link>
         </el-card>
@@ -959,11 +959,25 @@ onUnmounted(() => {
             <span class="action-desc">{{ t('dashboard.actionScanSyncDesc') }}</span>
           </div>
         </div>
-        <router-link to="/files?recycle=1" class="action-item">
+        <router-link to="/recycle-bin" class="action-item">
           <div class="action-icon icon-badge icon-badge--md recycle"><el-icon :size="22"><Delete /></el-icon></div>
           <div class="action-text">
-            <span class="action-name">{{ t('dashboard.actionRecycle') }}</span>
+            <span class="action-name">{{ t('recycle.title') }}</span>
             <span class="action-desc">{{ t('dashboard.actionRecycleDesc') }}</span>
+          </div>
+        </router-link>
+        <router-link to="/snapshots" class="action-item" v-if="userStore.isAdmin">
+          <div class="action-icon icon-badge icon-badge--md snapshot"><el-icon :size="22"><Camera /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('nav.snapshots') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionSnapshotDesc') }}</span>
+          </div>
+        </router-link>
+        <router-link to="/export" class="action-item" v-if="userStore.isAdmin">
+          <div class="action-icon icon-badge icon-badge--md export"><el-icon :size="22"><Download /></el-icon></div>
+          <div class="action-text">
+            <span class="action-name">{{ t('nav.export') }}</span>
+            <span class="action-desc">{{ t('dashboard.actionExportDesc') }}</span>
           </div>
         </router-link>
       </div>
@@ -981,8 +995,8 @@ onUnmounted(() => {
         <!-- 应用 -->
         <div class="sys-group">
           <div class="group-title">{{ t('dashboard.sysApp') }}</div>
-          <div class="group-row"><span class="row-label">{{ t('settings.systemName') }}</span><span class="row-value">{{ systemInfo.name }}</span></div>
-          <div class="group-row"><span class="row-label">{{ t('settings.version') }}</span><span class="row-value">v{{ systemInfo.version }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('systemInfo.systemName') }}</span><span class="row-value">{{ systemInfo.name }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('systemInfo.version') }}</span><span class="row-value">v{{ systemInfo.version }}</span></div>
           <div class="group-row"><span class="row-label">{{ t('dashboard.sysRunEnv') }}</span><span class="row-value">{{ systemInfo.runningInContainer ? t('dashboard.sysContainer') : t('dashboard.sysBareMetal') }}</span></div>
           <div class="group-row"><span class="row-label">{{ t('dashboard.sysStartTime') }}</span><span class="row-value">{{ formatDateTime(systemInfo.startTime) }}</span></div>
         </div>
@@ -999,7 +1013,7 @@ onUnmounted(() => {
         <!-- 操作系统 -->
         <div class="sys-group">
           <div class="group-title">{{ t('dashboard.sysOs') }}</div>
-          <div class="group-row"><span class="row-label">{{ t('settings.os') }}</span><span class="row-value" :title="systemInfo.operatingSystem.description">{{ systemInfo.operatingSystem.description || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('systemInfo.os') }}</span><span class="row-value" :title="systemInfo.operatingSystem.description">{{ systemInfo.operatingSystem.description || '-' }}</span></div>
           <div class="group-row"><span class="row-label">{{ t('dashboard.sysArch') }}</span><span class="row-value">{{ systemInfo.operatingSystem.architecture }} · {{ systemInfo.operatingSystem.is64Bit ? '64-bit' : '32-bit' }}</span></div>
           <div class="group-row"><span class="row-label">{{ t('dashboard.sysTimezone') }}</span><span class="row-value" :title="systemInfo.operatingSystem.timeZone">{{ systemInfo.operatingSystem.timeZone || '-' }}</span></div>
           <div class="group-row"><span class="row-label">{{ t('dashboard.sysUser') }}</span><span class="row-value">{{ systemInfo.operatingSystem.userName || '-' }}</span></div>

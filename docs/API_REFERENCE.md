@@ -692,6 +692,18 @@
 
 需要认证
 
+### 5.7 认证用户下载分享文件
+
+**GET** `/api/v1/file-shares/{shareCode}/download`
+
+需要认证。Internal（仅内部用户）型分享的唯一合法下载通道：公开匿名端点对 Internal 返回需要登录，此处 isAuthenticated=true 放行。密码型分享仍要求 accessToken（认证身份不豁免密码校验）。单文件走 Range 流式响应，文件夹走 ZIP 边扫边压。
+
+### 5.8 认证用户浏览分享文件夹
+
+**GET** `/api/v1/file-shares/{shareCode}/files/{*subPath}`
+
+需要认证。Internal 型分享的认证浏览通道，语义同 5.7。
+
 ---
 
 ## 6. 公开分享访问 API

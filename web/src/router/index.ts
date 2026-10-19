@@ -37,6 +37,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '文件管理', icon: 'Folder' }
       },
       {
+        path: 'recycle-bin',
+        name: 'RecycleBin',
+        component: () => import('@/views/RecycleBin.vue'),
+        meta: { title: '回收站', icon: 'Delete' }
+      },
+      {
         path: 'shares',
         name: 'Shares',
         component: () => import('@/views/Shares.vue'),
@@ -70,7 +76,7 @@ const routes: RouteRecordRaw[] = [
         path: 'settings',
         name: 'Settings',
         component: () => import('@/views/Settings.vue'),
-        meta: { title: '系统设置', icon: 'Setting' }
+        meta: { title: '个人设置', icon: 'Setting' }
       },
       {
         path: 'snapshots',
@@ -79,10 +85,28 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '清单快照', icon: 'Camera', requiresAdmin: true }
       },
       {
+        path: 'protected-directories',
+        name: 'ProtectedDirectories',
+        component: () => import('@/views/ProtectedDirectories.vue'),
+        meta: { title: '只读保护', icon: 'Lock', requiresAdmin: true }
+      },
+      {
+        path: 'export',
+        name: 'Export',
+        component: () => import('@/views/Export.vue'),
+        meta: { title: '3-2-1 导出', icon: 'Download', requiresAdmin: true }
+      },
+      {
         path: 'system-config',
         name: 'SystemConfig',
         component: () => import('@/views/SystemConfig.vue'),
         meta: { title: '系统配置', icon: 'Tools', requiresAdmin: true }
+      },
+      {
+        path: 'system-info',
+        name: 'SystemInfo',
+        component: () => import('@/views/SystemInfo.vue'),
+        meta: { title: '系统信息', icon: 'Monitor', requiresAdmin: true }
       }
     ]
   },

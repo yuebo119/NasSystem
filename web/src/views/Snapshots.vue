@@ -1,18 +1,22 @@
 <script setup lang="ts">
-// 清单快照与只读保护管理页（ROADMAP Phase 2）
+/**
+ * 清单快照管理页（ROADMAP Phase 2）。
+ *
+ * 2026-10-19 拆分：只读保护提升为独立菜单页 /protected-directories，
+ * 3-2-1 导出提升为独立菜单页 /export。本页只负责快照的
+ * 创建/列表/详情/对比/删除。
+ */
 import { ref, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Right } from '@element-plus/icons-vue'
-import { snapshotApi, protectedDirectoryApi, exportApi } from '@/api/snapshot'
-import { fileApi } from '@/api/file'
+import { snapshotApi } from '@/api/snapshot'
 import { formatSize, formatDate } from '@/utils/format'
-import type { Snapshot, SnapshotEntry, SnapshotDiff, SnapshotDiffItem, ProtectedDirectory } from '@/types'
+import type { Snapshot, SnapshotEntry, SnapshotDiff, SnapshotDiffItem } from '@/types'
 
 const { t } = useI18n()
 
 // ---- 快照列表 ----
-const activeTab = ref('snapshots')
 const snapshots = ref<Snapshot[]>([])
 const snapshotsTotal = ref(0)
 const snapshotsPage = ref(1)
@@ -150,109 +154,10 @@ async function removeSnapshot(snapshot: Snapshot) {
   }
 }
 
-// ---- 3-2-1 导出 ----
-const exportDialogVisible = ref(false)
-const exportForm = reactive({ rootPath: '/', password: '' })
-const exporting = ref(false)
-
-async function submitExport() {
-  const path = exportForm.rootPath.trim()
-  if (!path) {
-    ElMessage.warning(t('snapshot.rootPathRequired'))
-    return
-  }
-  exporting.value = true
-  try {
-    const blob = await exportApi.exportDirectory(path, exportForm.password)
-    const suffix = exportForm.password ? '.zip.enc' : '.zip'
-    const baseName = path === '/' ? 'all' : path.split('/').filter(Boolean).pop() ?? 'export'
-    const fileName = `${baseName}-${Date.now()}${suffix}`
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = fileName
-    anchor.click()
-    URL.revokeObjectURL(url)
-    exportDialogVisible.value = false
-    exportForm.password = ''
-    ElMessage.success(t('snapshot.exportDone'))
-  } catch {
-    // 错误消息由 http 拦截器统一弹出（400/404/500 分支）
-  } finally {
-    exporting.value = false
-  }
-}
-
-// ---- 只读保护 ----
-const protectedDirs = ref<ProtectedDirectory[]>([])
-const protectedLoading = ref(false)
-const markDialogVisible = ref(false)
-const markForm = reactive({ path: '', note: '' })
-const marking = ref(false)
-
-async function loadProtected() {
-  protectedLoading.value = true
-  try {
-    const resp = await protectedDirectoryApi.list()
-    if (resp.success && resp.data) {
-      protectedDirs.value = resp.data
-    }
-  } finally {
-    protectedLoading.value = false
-  }
-}
-
-async function submitMark() {
-  const path = markForm.path.trim()
-  if (!path) {
-    ElMessage.warning(t('snapshot.protectedPathRequired'))
-    return
-  }
-  marking.value = true
-  try {
-    // 路径 → FileItemId：getFileInfo 按虚拟路径查（不存在即报错由后端文案覆盖）
-    const info = await fileApi.getFileInfo(path)
-    if (!info.success || !info.data) {
-      ElMessage.error(t('snapshot.pathNotFound'))
-      return
-    }
-    const resp = await protectedDirectoryApi.mark(
-      info.data.id,
-      markForm.note.trim() || undefined
-    )
-    if (resp.success) {
-      ElMessage.success(t('common.success'))
-      markDialogVisible.value = false
-      markForm.path = ''
-      markForm.note = ''
-      await loadProtected()
-    } else {
-      ElMessage.error(resp.error?.message || t('common.failed'))
-    }
-  } finally {
-    marking.value = false
-  }
-}
-
-async function unmark(dir: ProtectedDirectory) {
-  await ElMessageBox.confirm(t('snapshot.unmarkConfirm', { path: dir.path }), {
-    type: 'warning',
-    confirmButtonClass: 'el-button--danger'
-  })
-  const resp = await protectedDirectoryApi.unmark(dir.fileItemId)
-  if (resp.success) {
-    ElMessage.success(t('common.success'))
-    await loadProtected()
-  } else {
-    ElMessage.error(resp.error?.message || t('common.failed'))
-  }
-}
-
 // ---- 展示辅助 ----
 // el-table 插槽的 row 是框架的 DefaultRow（无字段类型），统一收敛成具体
-// DTO 再用，避免每处 TemplateRef 断言散落（对齐 Shares.vue 的 asShare）
+// DTO 再用，避免每处 TemplateRef 断言散落
 const asSnapshot = (row: any): Snapshot => row as Snapshot
-const asProtected = (row: any): ProtectedDirectory => row as ProtectedDirectory
 const asDiffItem = (row: any): SnapshotDiffItem => row as SnapshotDiffItem
 const asEntry = (row: any): SnapshotEntry => row as SnapshotEntry
 
@@ -298,111 +203,75 @@ const visibleDiffItems = () => {
     : diffResult.value.items
 }
 
-onMounted(() => {
-  loadSnapshots()
-  loadProtected()
-})
+onMounted(loadSnapshots)
 </script>
 
 <template>
   <div class="snapshots-page">
-    <el-tabs v-model="activeTab">
-      <!-- ═══ Tab 1：清单快照 ═══ -->
-      <el-tab-pane :label="$t('snapshot.title')" name="snapshots">
-        <div class="toolbar">
-          <el-button type="primary" @click="createDialogVisible = true">
-            {{ $t('snapshot.create') }}
-          </el-button>
-          <el-button :disabled="snapshots.length < 2" @click="openDiff">
-            {{ $t('snapshot.compare') }}
-          </el-button>
-          <el-button @click="exportDialogVisible = true">
-            {{ $t('snapshot.export') }}
-          </el-button>
-          <el-button :loading="snapshotsLoading" @click="loadSnapshots">
-            {{ $t('common.refresh') }}
-          </el-button>
-        </div>
+    <div class="page-header">
+      <div class="header-left">
+        <h2>{{ $t('snapshot.title') }}</h2>
+        <p>{{ $t('snapshot.subtitle') }}</p>
+      </div>
+    </div>
 
-        <el-table :data="snapshots" v-loading="snapshotsLoading" border>
-          <el-table-column :label="$t('snapshot.name')" min-width="160">
-            <template #default="{ row }">
-              {{ snapshotLabel(asSnapshot(row)) }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="rootPath" :label="$t('snapshot.rootPath')" min-width="140" />
-          <el-table-column :label="$t('common.status')" width="90">
-            <template #default="{ row }">
-              <el-tag :type="statusTagType(asSnapshot(row).status)" size="small">
-                {{ statusText(asSnapshot(row).status) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column :label="$t('snapshot.fileCount')" width="90">
-            <template #default="{ row }">{{ row.fileCount }}</template>
-          </el-table-column>
-          <el-table-column :label="$t('snapshot.folderCount')" width="90">
-            <template #default="{ row }">{{ row.folderCount }}</template>
-          </el-table-column>
-          <el-table-column :label="$t('snapshot.totalSize')" width="110">
-            <template #default="{ row }">{{ formatSize(row.totalSizeBytes) }}</template>
-          </el-table-column>
-          <el-table-column :label="$t('snapshot.createdAt')" width="170">
-            <template #default="{ row }">{{ formatDate(asProtected(row).createdAt) }}</template>
-          </el-table-column>
-          <el-table-column :label="$t('common.none')" width="200" fixed="right">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="openDetail(asSnapshot(row))">
-                {{ $t('snapshot.detail') }}
-              </el-button>
-              <el-button link type="danger" @click="removeSnapshot(asSnapshot(row))">
-                {{ $t('common.delete') }}
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+    <div class="toolbar">
+      <el-button type="primary" @click="createDialogVisible = true">
+        {{ $t('snapshot.create') }}
+      </el-button>
+      <el-button :disabled="snapshots.length < 2" @click="openDiff">
+        {{ $t('snapshot.compare') }}
+      </el-button>
+      <el-button :loading="snapshotsLoading" @click="loadSnapshots">
+        {{ $t('common.refresh') }}
+      </el-button>
+    </div>
 
-        <el-pagination
-          v-model:current-page="snapshotsPage"
-          :page-size="snapshotsPageSize"
-          :total="snapshotsTotal"
-          layout="total, prev, pager, next"
-          @current-change="loadSnapshots"
-        />
-      </el-tab-pane>
-
-      <!-- ═══ Tab 2：只读保护 ═══ -->
-      <el-tab-pane :label="$t('snapshot.protectedTitle')" name="protected">
-        <div class="toolbar">
-          <el-button type="primary" @click="markDialogVisible = true">
-            {{ $t('snapshot.markProtected') }}
+    <el-table :data="snapshots" v-loading="snapshotsLoading" border>
+      <el-table-column :label="$t('snapshot.name')" min-width="160">
+        <template #default="{ row }">
+          {{ snapshotLabel(asSnapshot(row)) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="rootPath" :label="$t('snapshot.rootPath')" min-width="140" />
+      <el-table-column :label="$t('common.status')" width="90">
+        <template #default="{ row }">
+          <el-tag :type="statusTagType(asSnapshot(row).status)" size="small">
+            {{ statusText(asSnapshot(row).status) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column :label="$t('snapshot.fileCount')" width="90">
+        <template #default="{ row }">{{ row.fileCount }}</template>
+      </el-table-column>
+      <el-table-column :label="$t('snapshot.folderCount')" width="90">
+        <template #default="{ row }">{{ row.folderCount }}</template>
+      </el-table-column>
+      <el-table-column :label="$t('snapshot.totalSize')" width="110">
+        <template #default="{ row }">{{ formatSize(row.totalSizeBytes) }}</template>
+      </el-table-column>
+      <el-table-column :label="$t('snapshot.createdAt')" width="170">
+        <template #default="{ row }">{{ formatDate(asSnapshot(row).createdAt) }}</template>
+      </el-table-column>
+      <el-table-column :label="$t('common.none')" width="200" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openDetail(asSnapshot(row))">
+            {{ $t('snapshot.detail') }}
           </el-button>
-          <el-button :loading="protectedLoading" @click="loadProtected">
-            {{ $t('common.refresh') }}
+          <el-button link type="danger" @click="removeSnapshot(asSnapshot(row))">
+            {{ $t('common.delete') }}
           </el-button>
-        </div>
+        </template>
+      </el-table-column>
+    </el-table>
 
-        <el-alert type="info" :closable="false" show-icon
-          :title="$t('snapshot.protectedDesc')" class="protected-alert" />
-
-        <el-table :data="protectedDirs" v-loading="protectedLoading" border>
-          <el-table-column prop="path" :label="$t('snapshot.protectedPath')" min-width="200" />
-          <el-table-column prop="note" :label="$t('snapshot.protectedNote')" min-width="140">
-            <template #default="{ row }">{{ asProtected(row).note || $t('common.none') }}</template>
-          </el-table-column>
-          <el-table-column :label="$t('snapshot.createdAt')" width="170">
-            <template #default="{ row }">{{ formatDate(asProtected(row).createdAt) }}</template>
-          </el-table-column>
-          <el-table-column :label="$t('common.none')" width="120" fixed="right">
-            <template #default="{ row }">
-              <el-button link type="danger" @click="unmark(asProtected(row))">
-                {{ $t('snapshot.unmark') }}
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-tab-pane>
-    </el-tabs>
+    <el-pagination
+      v-model:current-page="snapshotsPage"
+      :page-size="snapshotsPageSize"
+      :total="snapshotsTotal"
+      layout="total, prev, pager, next"
+      @current-change="loadSnapshots"
+    />
 
     <!-- 创建快照对话框 -->
     <el-dialog v-model="createDialogVisible" :title="$t('snapshot.create')" width="480px">
@@ -516,56 +385,35 @@ onMounted(() => {
         </el-table>
       </template>
     </el-dialog>
-
-    <!-- 3-2-1 导出对话框 -->
-    <el-dialog v-model="exportDialogVisible" :title="$t('snapshot.export')" width="480px">
-      <el-form label-position="top">
-        <el-form-item :label="$t('snapshot.rootPath')" required>
-          <el-input v-model="exportForm.rootPath" placeholder="/" />
-          <div class="form-hint">{{ $t('snapshot.exportHint') }}</div>
-        </el-form-item>
-        <el-form-item :label="$t('snapshot.exportPassword')">
-          <el-input
-            v-model="exportForm.password"
-            type="password"
-            show-password
-            :placeholder="$t('snapshot.exportPasswordPlaceholder')"
-          />
-          <div class="form-hint">{{ $t('snapshot.exportPasswordHint') }}</div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="exportDialogVisible = false">{{ $t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="exporting" @click="submitExport">
-          {{ $t('common.confirm') }}
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 标记保护对话框 -->
-    <el-dialog v-model="markDialogVisible" :title="$t('snapshot.markProtected')" width="480px">
-      <el-form label-position="top">
-        <el-form-item :label="$t('snapshot.protectedPath')" required>
-          <el-input v-model="markForm.path" placeholder="/Docs" />
-          <div class="form-hint">{{ $t('snapshot.markPathHint') }}</div>
-        </el-form-item>
-        <el-form-item :label="$t('snapshot.protectedNote')">
-          <el-input v-model="markForm.note" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="markDialogVisible = false">{{ $t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="marking" @click="submitMark">
-          {{ $t('common.confirm') }}
-        </el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .snapshots-page {
   padding: 16px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+
+  .header-left {
+    h2 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+    }
+    p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--el-text-color-secondary);
+    }
+  }
 }
 
 .toolbar {
@@ -577,10 +425,6 @@ onMounted(() => {
 .el-pagination {
   margin-top: 16px;
   justify-content: flex-end;
-}
-
-.protected-alert {
-  margin-bottom: 16px;
 }
 
 .form-hint {

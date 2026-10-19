@@ -288,3 +288,18 @@ Phase 2/3-a 收口（2026-10-19）：快照与只读保护独立页（/snapshots
 动态配置架构：`ConfigDescriptors` 注册表是前后端单一事实源（键/类型/范围/默认值/i18n 键），配置页按 descriptor 渲染表单；值存 `SystemSettings` 键值表，改完即生效不重启。appsettings 保留给启动期定死项（连接串/JWT/CORS/上传上限/缩略图），配置页明示为只读，不留"声明了但不生效"的死键。
 
 第二轮收口（2026-10-18 晚）：五个"有后端无前端"的缺口（批量 OCR、缩略图清理、版本对比、分享码重生成、重启/关机）全部补齐；其中重启/关机原为假动作端点（只返回计划消息），已用 IHostApplicationLifetime 真实化，测试工厂注册 no-op 替身防止测试停宿主。全量审计的剩余端点（/system/logs 与 PUT /system/settings 为诚实 501）保持未实现状态，不做假 UI。
+
+第四轮收口（2026-10-19）：前端信息架构重排 + 入口补全。对全部 16 个端点文件逐路由机械核对前端调用方，结论分三类：
+
+缺口（本轮修复）：
+- Internal 型分享的认证访问断裂：`GET /file-shares/{shareCode}/download` 与 `/files/{*subPath}`（ITM-N23，RequireAuthorization）零调用方；ShareAccess 的 canAccess 对 Internal 恒 false，已登录用户点开内部分享链接也落"需要登录"引导。已接认证端点（下载走 fetch + Bearer 头，浏览走 http 实例），登录态分支补上。
+- 回收站只是 Files 页抽屉，且缺单条永久删除（fileApi.delete(paths, true) 后端一直支持，UI 无入口）。提升为独立菜单页 /recycle-bin。
+- 3-2-1 导出只是快照页工具栏对话框。提升为独立菜单页 /export。
+- 只读保护只是快照页第二个 tab。提升为独立菜单页 /protected-directories。
+- "系统设置"页个人设置与系统管理混排（系统信息/外网访问与资料/密码/外观同页）。拆分为 /settings（个人，所有人）与 /system-info（系统信息+外网访问，管理员）；重启/关机留在系统配置页危险区（配置改完顺手重启，语义连贯）。
+
+菜单重排（10 项扁平 → 5 分组）：文件与媒体（仪表盘/文件/媒体库/回收站）、数据保护（快照/只读保护/导出，admin）、共享与备份（移动备份/分享管理）、系统管理（用户/存储/系统配置/系统信息，admin）、个人（个人设置）。非管理员侧栏剩 7 项 3 组。高亮匹配改为精确 + 最长前缀（/files/子路径 不再不高亮）。
+
+API-only 判定不变：/system/health（Docker healthcheck 消费）、thumbnails/supported、GET /users/{id} 与 GET /storage/pools/{id}（列表数据已全量，编辑用列表快照）、/system/logs 与 PUT /system/settings（诚实 501）。
+
+验证：前端 159 例/21 spec 全绿（基线 136/16），oxlint 0 警告，vue-tsc 与生产构建通过；浏览器端到端验收过分组菜单（管理员 5 组/普通用户 3 组）、四个新页面、Settings 拆分效果、Internal 分享已登录访问与认证下载（200 实测），测试分享已清理。

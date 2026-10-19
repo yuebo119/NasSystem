@@ -1,29 +1,24 @@
 <script setup lang="ts">
+/**
+ * 个人设置页（2026-10-19 从"系统设置"拆分后只保留个人项）。
+ *
+ * 原页面把个人设置与系统管理（系统信息/外网访问）混在一列，
+ * 系统项已迁至 /system-info（仅管理员）。本页对所有登录用户开放：
+ * 个人资料、登录密码、界面外观、关于。
+ */
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { User, Lock, Monitor, Setting, Refresh, InfoFilled } from '@element-plus/icons-vue'
+import { User, Lock, Monitor, Setting } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
-import http from '@/api/http'
 import { getCurrentTheme, type ThemeType, setTheme } from '@/utils/theme'
 import { setLocale, getLocale, localeOptions, type LocaleType } from '@/locales'
 
 const { t } = useI18n()
 const userStore = useUserStore()
-const loading = ref(false)
 const saving = ref(false)
 const changingPassword = ref(false)
-
-// 系统信息
-const systemInfo = ref<any>(null)
-const systemStatus = ref<any>(null)
-
-// 外网访问配置（ROADMAP Phase 3，仅管理员）
-const remoteProvider = ref('cloudflare')
-const remoteHostname = ref('')
-const remoteConfig = ref<{ provider: string; fileName: string; config: string; steps: string[] } | null>(null)
-const remoteLoading = ref(false)
 
 // 个人设置表单
 const profileForm = ref({
@@ -43,84 +38,31 @@ const isDarkMode = ref(false)
 const currentLocale = ref<LocaleType>('zh-CN')
 
 // 初始化
-onMounted(async () => {
+onMounted(() => {
   // 初始化个人信息
   profileForm.value = {
     displayName: userStore.displayName || '',
     email: userStore.user?.email || ''
   }
-  
+
   // 初始化主题状态
   isDarkMode.value = getCurrentTheme() === 'dark'
-  
+
   // 初始化语言
   currentLocale.value = getLocale()
-  
-  // 加载系统信息
-  await loadSystemInfo()
 })
-
-const loadSystemInfo = async () => {
-  loading.value = true
-  try {
-    const [infoRes, statusRes] = await Promise.all([
-      http.get('/system/info'),
-      http.get('/system/status')
-    ]) as any[]
-    
-    if (infoRes.success) systemInfo.value = infoRes.data
-    if (statusRes.success) systemStatus.value = statusRes.data
-  } catch (e) {
-    console.error('Failed to load system info', e)
-  } finally {
-    loading.value = false
-  }
-}
-
-// 生成外网访问配置（ROADMAP Phase 3）
-const generateRemoteConfig = async () => {
-  remoteLoading.value = true
-  try {
-    const res = await http.get('/system/remote-access/config', {
-      params: {
-        provider: remoteProvider.value,
-        hostname: remoteHostname.value || undefined
-      }
-    }) as any
-    if (res.success) {
-      remoteConfig.value = res.data
-    } else {
-      ElMessage.error(res.error?.message || t('remoteAccess.generateFailed'))
-    }
-  } catch {
-    ElMessage.error(t('remoteAccess.generateFailed'))
-  } finally {
-    remoteLoading.value = false
-  }
-}
-
-// 复制配置到剪贴板
-const copyRemoteConfig = async () => {
-  if (!remoteConfig.value) return
-  try {
-    await navigator.clipboard.writeText(remoteConfig.value.config)
-    ElMessage.success(t('remoteAccess.copied'))
-  } catch {
-    ElMessage.error(t('remoteAccess.copyFailed'))
-  }
-}
 
 // 保存个人信息
 const saveProfile = async () => {
   if (!userStore.user) return
-  
+
   saving.value = true
   try {
     const response = await userApi.updateUser(userStore.user.id, {
       displayName: profileForm.value.displayName.trim() || undefined,
       email: profileForm.value.email.trim() || undefined
     })
-    
+
     if (response.success && response.data) {
       userStore.updateUser(response.data)
       ElMessage.success(t('settings.profileSaved'))
@@ -152,16 +94,16 @@ const changePassword = async () => {
     ElMessage.warning(t('users.passwordMismatch'))
     return
   }
-  
+
   if (!userStore.user) return
-  
+
   changingPassword.value = true
   try {
     const response = await userApi.changePassword(userStore.user.id, {
       currentPassword: passwordForm.value.currentPassword,
       newPassword: passwordForm.value.newPassword
     })
-    
+
     if (response.success) {
       ElMessage.success(t('settings.passwordChanged'))
       passwordForm.value = { currentPassword: '', newPassword: '', confirmPassword: '' }
@@ -190,19 +132,6 @@ const handleLocaleChange = (locale: LocaleType) => {
   ElMessage.success(t('common.success'))
 }
 
-// 格式化运行时间
-const formatUptime = (uptime: string) => {
-  if (!uptime) return '-'
-  return uptime
-}
-
-// 格式化内存
-const formatMemory = (mb: number) => {
-  if (!mb) return '-'
-  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`
-  return `${mb} MB`
-}
-
 // 当前用户角色
 const roleDisplay = computed(() => {
   const role = userStore.user?.role
@@ -222,13 +151,10 @@ const roleDisplay = computed(() => {
         <h1>{{ t('settings.title') }}</h1>
         <p>{{ t('settings.subtitle') }}</p>
       </div>
-      <div class="header-actions">
-        <el-button :icon="Refresh" @click="loadSystemInfo" :loading="loading">{{ t('common.refresh') }}</el-button>
-      </div>
     </div>
 
     <div class="settings-grid">
-      <!-- 左侧：个人设置 -->
+      <!-- 左列：账号 -->
       <div class="settings-column">
         <!-- 个人信息卡片 -->
         <div class="settings-card">
@@ -292,7 +218,7 @@ const roleDisplay = computed(() => {
         </div>
       </div>
 
-      <!-- 右侧：系统设置 -->
+      <!-- 右列：偏好与关于 -->
       <div class="settings-column">
         <!-- 界面设置卡片 -->
         <div class="settings-card">
@@ -323,114 +249,6 @@ const roleDisplay = computed(() => {
           </div>
         </div>
 
-        <!-- 系统信息卡片 -->
-        <div class="settings-card">
-          <div class="card-header">
-            <div class="card-icon system"><el-icon :size="20"><Setting /></el-icon></div>
-            <div class="card-title">
-              <h3>{{ t('settings.system') }}</h3>
-              <p>{{ t('settings.systemDesc') }}</p>
-            </div>
-          </div>
-          <div class="card-content" v-loading="loading">
-            <!-- 字段跟随 /system/info 的分组结构（2026-10-17 扩容）；
-                 Dashboard 有完整八组模块，这里保留最常看的六项 -->
-            <div class="info-grid" v-if="systemInfo">
-              <div class="info-item">
-                <span class="info-label">{{ t('settings.systemName') }}</span>
-                <span class="info-value">{{ systemInfo.name }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">{{ t('settings.version') }}</span>
-                <span class="info-value">{{ systemInfo.version }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">{{ t('settings.os') }}</span>
-                <span class="info-value">{{ systemInfo.operatingSystem?.description || '-' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">{{ t('settings.hostname') }}</span>
-                <span class="info-value">{{ systemInfo.machineName }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">{{ t('settings.cpuCores') }}</span>
-                <span class="info-value">{{ systemInfo.cpu?.logicalCores }} {{ t('dashboard.cores') }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">{{ t('settings.dotnetVersion') }}</span>
-                <span class="info-value">.NET {{ systemInfo.runtime?.version }}</span>
-              </div>
-            </div>
-            
-            <el-divider v-if="systemStatus" />
-            
-            <div class="status-grid" v-if="systemStatus">
-              <div class="status-item">
-                <div class="status-icon running"><el-icon><InfoFilled /></el-icon></div>
-                <div class="status-info">
-                  <span class="status-label">{{ t('settings.runningStatus') }}</span>
-                  <span class="status-value success">{{ t('settings.running') }}</span>
-                </div>
-              </div>
-              <div class="status-item">
-                <div class="status-icon time"><el-icon><InfoFilled /></el-icon></div>
-                <div class="status-info">
-                  <span class="status-label">{{ t('settings.uptime') }}</span>
-                  <span class="status-value">{{ formatUptime(systemStatus.uptime) }}</span>
-                </div>
-              </div>
-              <div class="status-item">
-                <div class="status-icon memory"><el-icon><InfoFilled /></el-icon></div>
-                <div class="status-info">
-                  <span class="status-label">{{ t('settings.memoryUsage') }}</span>
-                  <span class="status-value">{{ formatMemory(systemStatus.memoryUsageMB) }}</span>
-                </div>
-              </div>
-              <div class="status-item">
-                <div class="status-icon threads"><el-icon><InfoFilled /></el-icon></div>
-                <div class="status-info">
-                  <span class="status-label">{{ t('settings.threadCount') }}</span>
-                  <span class="status-value">{{ systemStatus.threadCount }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 外网访问配置卡片（ROADMAP Phase 3，仅管理员） -->
-        <div class="settings-card remote-access-card" v-if="userStore.isAdmin">
-          <h3>{{ t('remoteAccess.title') }}</h3>
-          <p class="card-desc">{{ t('remoteAccess.desc') }}</p>
-          <div class="remote-form">
-            <el-select v-model="remoteProvider" style="width: 180px">
-              <el-option value="cloudflare" :label="t('remoteAccess.providerCloudflare')" />
-              <el-option value="frp" :label="t('remoteAccess.providerFrp')" />
-              <el-option value="tailscale" :label="t('remoteAccess.providerTailscale')" />
-            </el-select>
-            <el-input
-              v-model="remoteHostname"
-              :placeholder="t('remoteAccess.hostnamePlaceholder')"
-              style="flex: 1; min-width: 200px"
-            />
-            <el-button type="primary" :loading="remoteLoading" @click="generateRemoteConfig">
-              {{ t('remoteAccess.generate') }}
-            </el-button>
-          </div>
-
-          <div v-if="remoteConfig" class="remote-result">
-            <div class="remote-config-header">
-              <span class="remote-file-name">{{ remoteConfig.fileName }}</span>
-              <el-button link type="primary" @click="copyRemoteConfig">
-                {{ t('remoteAccess.copy') }}
-              </el-button>
-            </div>
-            <pre class="remote-config-body">{{ remoteConfig.config }}</pre>
-            <ol class="remote-steps">
-              <li v-for="(step, index) in remoteConfig.steps" :key="index">{{ step }}</li>
-            </ol>
-          </div>
-        </div>
-
         <!-- 关于卡片 -->
         <div class="settings-card about-card">
           <div class="about-content">
@@ -443,8 +261,7 @@ const roleDisplay = computed(() => {
               <div class="about-meta">
                 <span>v1.0.0</span>
                 <span>•</span>
-                <!-- 版本取运行时真实值：原硬编码 ".NET 10" 与实际 net11.0 不符 -->
-                <span>.NET {{ systemInfo?.dotNetVersion || '11' }}</span>
+                <span>.NET 11</span>
                 <span>•</span>
                 <span>Vue 3</span>
               </div>
@@ -458,65 +275,6 @@ const roleDisplay = computed(() => {
 
 <style lang="scss" scoped>
 .settings-page { padding: 0; }
-
-.remote-access-card {
-  grid-column: 1 / -1;
-
-  .card-desc {
-    margin: 0 0 16px;
-    font-size: 13px;
-    color: var(--el-text-color-secondary);
-  }
-
-  .remote-form {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-bottom: 16px;
-  }
-
-  .remote-result {
-    border: 1px solid var(--el-border-color-lighter);
-    border-radius: 8px;
-    padding: 12px;
-  }
-
-  .remote-config-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-
-    .remote-file-name {
-      font-family: monospace;
-      font-size: 13px;
-      color: var(--el-text-color-primary);
-    }
-  }
-
-  .remote-config-body {
-    margin: 0 0 12px;
-    padding: 12px;
-    background: var(--el-fill-color-light);
-    border-radius: 6px;
-    font-size: 12px;
-    line-height: 1.5;
-    overflow-x: auto;
-    white-space: pre;
-  }
-
-  .remote-steps {
-    margin: 0;
-    padding-left: 20px;
-    font-size: 13px;
-    color: var(--el-text-color-regular);
-
-    li {
-      margin-bottom: 6px;
-      word-break: break-all;
-    }
-  }
-}
 
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;
   .header-left { h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; } p { margin: 0; color: var(--el-text-color-secondary); font-size: 14px; } }
@@ -532,7 +290,6 @@ const roleDisplay = computed(() => {
       &.profile { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
       &.security { background: linear-gradient(135deg, #ef4444, #f87171); }
       &.appearance { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
-      &.system { background: linear-gradient(135deg, #10b981, #34d399); }
     }
     .card-title { h3 { margin: 0; font-size: 16px; font-weight: 600; } p { margin: 4px 0 0; font-size: 13px; color: var(--el-text-color-secondary); } }
   }
@@ -543,23 +300,6 @@ const roleDisplay = computed(() => {
   &:last-child { border-bottom: none; padding-bottom: 0; }
   &:first-child { padding-top: 0; }
   .setting-info { .setting-label { display: block; font-size: 14px; font-weight: 500; } .setting-desc { display: block; font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; } }
-}
-
-.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.info-item { display: flex; flex-direction: column; gap: 4px;
-  .info-label { font-size: 12px; color: var(--el-text-color-secondary); }
-  .info-value { font-size: 14px; font-weight: 500; word-break: break-all; }
-}
-
-.status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.status-item { display: flex; align-items: center; gap: 12px;
-  .status-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
-    &.running { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-    &.time { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-    &.memory { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-    &.threads { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
-  }
-  .status-info { .status-label { display: block; font-size: 12px; color: var(--el-text-color-secondary); } .status-value { display: block; font-size: 14px; font-weight: 500; &.success { color: #10b981; } } }
 }
 
 .about-card {

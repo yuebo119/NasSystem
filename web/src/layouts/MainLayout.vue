@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { UserFilled, SwitchButton, Box, Moon, Sunny, Fold, Expand, Odometer, Folder, Share, Setting as SettingIcon, User as UserIcon, Iphone, Picture, Tools, Camera } from '@element-plus/icons-vue'
+import { UserFilled, SwitchButton, Box, Moon, Sunny, Fold, Expand, Odometer, Folder, Share, Setting as SettingIcon, User as UserIcon, Iphone, Picture, Tools, Camera, Delete, Lock, Download, Monitor } from '@element-plus/icons-vue'
 import { getCurrentTheme, type ThemeType, setTheme } from '@/utils/theme'
 import { useIsMobile } from '@/utils/useIsMobile'
 
@@ -16,34 +16,82 @@ const userStore = useUserStore()
 // 主题状态
 const isDarkMode = ref(false)
 
-// 侧边栏菜单
-const menuItems = [
-  { path: '/dashboard', titleKey: 'nav.dashboard', icon: Odometer },
-  { path: '/files', titleKey: 'nav.files', icon: Folder },
-  { path: '/media', titleKey: 'nav.media', icon: Picture },
-  { path: '/backup', titleKey: 'nav.backup', icon: Iphone },
-  { path: '/shares', titleKey: 'nav.shares', icon: Share },
-  { path: '/storage', titleKey: 'nav.storage', icon: Box },
-  { path: '/users', titleKey: 'nav.users', icon: UserIcon, admin: true },
-  { path: '/snapshots', titleKey: 'nav.snapshots', icon: Camera, admin: true },
-  { path: '/system-config', titleKey: 'nav.systemConfig', icon: Tools, admin: true },
-  { path: '/settings', titleKey: 'nav.settings', icon: SettingIcon }
+// 侧边栏分组菜单（2026-10-19 重排）：日常功能在前，管理功能按域分组，
+// admin 组对非管理员整体隐藏。原 10 项扁平列表把用户级与管理级混排，
+// 且回收站/只读保护/3-2-1 导出埋在页面内部，达不到菜单级入口
+const menuGroups: { key: string; titleKey: string; admin?: boolean; items: { path: string; titleKey: string; icon: unknown }[] }[] = [
+  {
+    key: 'files',
+    titleKey: 'nav.groupFiles',
+    items: [
+      { path: '/dashboard', titleKey: 'nav.dashboard', icon: Odometer },
+      { path: '/files', titleKey: 'nav.files', icon: Folder },
+      { path: '/media', titleKey: 'nav.media', icon: Picture },
+      { path: '/recycle-bin', titleKey: 'nav.recycleBin', icon: Delete }
+    ]
+  },
+  {
+    key: 'protection',
+    titleKey: 'nav.groupProtection',
+    admin: true,
+    items: [
+      { path: '/snapshots', titleKey: 'nav.snapshots', icon: Camera },
+      { path: '/protected-directories', titleKey: 'nav.protectedDirs', icon: Lock },
+      { path: '/export', titleKey: 'nav.export', icon: Download }
+    ]
+  },
+  {
+    key: 'sharing',
+    titleKey: 'nav.groupSharing',
+    items: [
+      { path: '/backup', titleKey: 'nav.backup', icon: Iphone },
+      { path: '/shares', titleKey: 'nav.shares', icon: Share }
+    ]
+  },
+  {
+    key: 'system',
+    titleKey: 'nav.groupSystem',
+    admin: true,
+    items: [
+      { path: '/users', titleKey: 'nav.users', icon: UserIcon },
+      { path: '/storage', titleKey: 'nav.storage', icon: Box },
+      { path: '/system-config', titleKey: 'nav.systemConfig', icon: Tools },
+      { path: '/system-info', titleKey: 'nav.systemInfo', icon: Monitor }
+    ]
+  },
+  {
+    key: 'personal',
+    titleKey: 'nav.groupPersonal',
+    items: [
+      { path: '/settings', titleKey: 'nav.settings', icon: SettingIcon }
+    ]
+  }
 ]
 
-// 过滤管理员菜单
-const visibleMenuItems = computed(() =>
-  menuItems.filter(item => !item.admin || userStore.isAdmin)
+// 过滤管理员分组
+const visibleMenuGroups = computed(() =>
+  menuGroups.filter(group => !group.admin || userStore.isAdmin)
 )
 
-// 当前选中的菜单
-const activeMenu = computed(() => route.path)
+// 扁平化全部可见菜单项：高亮匹配与窄屏标题都从这里找
+const visibleMenuItems = computed(() =>
+  visibleMenuGroups.value.flatMap(group => group.items)
+)
 
-// 窄屏顶栏标题：当前路由对应的菜单标题键（含 /files/子路径 前缀匹配），
-// 分享访问页等非菜单路由回落仪表盘
-const activeTitleKey = computed(() => {
-  const item = menuItems.find(i => route.path === i.path || route.path.startsWith(i.path + '/'))
-  return item?.titleKey ?? 'nav.dashboard'
+// 当前选中的菜单：精确匹配优先，其次最长前缀匹配（/files/子路径 高亮文件管理）
+const activeMenu = computed(() => {
+  const exact = visibleMenuItems.value.find(i => route.path === i.path)
+  if (exact) return exact.path
+  const prefix = visibleMenuItems.value
+    .filter(i => route.path.startsWith(i.path + '/'))
+    .sort((a, b) => b.path.length - a.path.length)[0]
+  return prefix?.path ?? route.path
 })
+
+// 窄屏顶栏标题：当前路由对应的菜单标题键，分享访问页等非菜单路由回落仪表盘
+const activeTitleKey = computed(() =>
+  visibleMenuItems.value.find(i => activeMenu.value === i.path)?.titleKey ?? 'nav.dashboard'
+)
 
 // 侧边栏折叠
 const isCollapsed = ref(false)
@@ -135,17 +183,26 @@ async function handleLogout() {
           class="sidebar-menu"
           @select="onMenuSelect"
         >
-          <el-menu-item
-            v-for="item in visibleMenuItems"
-            :key="item.path"
-            :index="item.path"
-            class="menu-item"
+          <el-sub-menu
+            v-for="group in visibleMenuGroups"
+            :key="group.key"
+            :index="group.key"
           >
-            <el-icon class="menu-icon"><component :is="item.icon" /></el-icon>
             <template #title>
-              <span class="menu-title">{{ t(item.titleKey) }}</span>
+              <span class="group-title">{{ t(group.titleKey) }}</span>
             </template>
-          </el-menu-item>
+            <el-menu-item
+              v-for="item in group.items"
+              :key="item.path"
+              :index="item.path"
+              class="menu-item"
+            >
+              <el-icon class="menu-icon"><component :is="item.icon" /></el-icon>
+              <template #title>
+                <span class="menu-title">{{ t(item.titleKey) }}</span>
+              </template>
+            </el-menu-item>
+          </el-sub-menu>
         </el-menu>
       </div>
 
@@ -294,6 +351,26 @@ async function handleLogout() {
 .sidebar-menu {
   border-right: none;
   background: transparent;
+
+  // 分组标题：小号大写感弱化色，与可点菜单项拉开层级
+  :deep(.el-sub-menu__title) {
+    height: 36px;
+    line-height: 36px;
+    margin: 2px 0;
+    border-radius: var(--mac-radius-control);
+    color: var(--el-text-color-secondary);
+
+    &:hover {
+      background: var(--el-fill-color-light);
+      color: var(--el-text-color-primary);
+    }
+  }
+
+  .group-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
 
   :deep(.el-menu-item) {
     height: 40px;

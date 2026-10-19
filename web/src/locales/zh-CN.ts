@@ -28,17 +28,26 @@ export default {
   nav: {
     dashboard: '仪表盘',
     files: '文件管理',
-    snapshots: '清单快照',
     media: '媒体库',
+    recycleBin: '回收站',
+    snapshots: '清单快照',
+    protectedDirs: '只读保护',
+    export: '3-2-1 导出',
     backup: '移动备份',
     shares: '分享管理',
     storage: '存储管理',
     users: '用户管理',
     systemConfig: '系统配置',
-    settings: '系统设置',
+    systemInfo: '系统信息',
+    settings: '个人设置',
     logout: '退出登录',
     collapse: '收起菜单',
-    menu: '菜单'
+    menu: '菜单',
+    groupFiles: '文件与媒体',
+    groupProtection: '数据保护',
+    groupSharing: '共享与备份',
+    groupSystem: '系统管理',
+    groupPersonal: '个人'
   },
 
   config: {
@@ -114,9 +123,11 @@ export default {
     shutdownScheduled: '关机已调度，服务约 3 秒后停止'
   },
 
-  // 清单快照与只读保护（ROADMAP Phase 2）
+  // 清单快照（ROADMAP Phase 2）。只读保护 2026-10-19 拆到 protected 段、
+  // 3-2-1 导出拆到 export 段，各自独立菜单页
   snapshot: {
     title: '清单快照',
+    subtitle: '记录目录树在时间点的形态，支持对比与恢复参考',
     create: '创建快照',
     compare: '对比快照',
     detail: '快照详情',
@@ -149,23 +160,69 @@ export default {
     file: '文件',
     change: '变化',
     sizeChange: '大小变化',
-    deleteConfirm: '确定删除快照「{name}」？快照条目将一并删除，此操作不可恢复。',
-    export: '导出目录',
-    exportHint: '把目录子树边扫边压打包下载。大目录是流式产出，不占服务端磁盘；下载时长取决于目录体积',
-    exportPassword: '加密密码（可选）',
-    exportPasswordPlaceholder: '留空则不加密',
-    exportPasswordHint: '提供密码时产出 AES-256-CBC 加密包（.zip.enc）。解密命令：openssl enc -d -aes-256-cbc -pbkdf2 -in 文件名.zip.enc -out 文件名.zip',
-    exportDone: '导出完成，下载已开始',
-    protectedTitle: '只读保护',
-    protectedDesc: '被标记的目录及其全部子孙在应用层禁止覆盖与删除（网页端与 WebDAV 同时生效），防勒索软件篡改。SMB 直通模式不受此约束。',
-    markProtected: '标记保护',
+    deleteConfirm: '确定删除快照「{name}」？快照条目将一并删除，此操作不可恢复。'
+  },
+
+  // 回收站（2026-10-19 从文件管理抽屉提升为独立菜单页）
+  recycle: {
+    title: '回收站',
+    subtitle: '已删除的文件在此临时存放，可恢复原路径，也可永久删除',
+    hint: '从文件管理器删除会进入回收站；在此永久删除或清空后不可恢复。',
+    colName: '名称',
+    colOriginalPath: '原路径',
+    colSize: '大小',
+    colDeletedAt: '删除时间',
+    colActions: '操作',
+    restore: '恢复',
+    restoreSuccess: '已恢复到原路径',
+    restoreFailed: '恢复失败',
+    permanentDelete: '永久删除',
+    permanentDeleteConfirm: '确定永久删除「{name}」？此操作不可恢复。',
+    deleteDone: '已永久删除',
+    deleteFailed: '永久删除失败',
+    empty: '清空回收站',
+    emptyConfirm: '确定清空回收站？全部文件将被永久删除，不可恢复。',
+    emptyDone: '回收站已清空',
+    emptyFailed: '清空失败',
+    emptyState: '回收站为空',
+    loadFailed: '加载回收站失败'
+  },
+
+  // 3-2-1 导出（ROADMAP Phase 2，2026-10-19 从快照页工具栏提升为独立菜单页）
+  export: {
+    title: '3-2-1 导出',
+    subtitle: '把目录打包下载到外部存储，完成 3-2-1 备份原则的最后一公里',
+    rootPath: '根路径',
+    rootPathHint: '把目录子树边扫边压打包下载。大目录是流式产出，不占服务端磁盘；下载时长取决于目录体积',
+    pathRequired: '根路径不能为空',
+    password: '加密密码（可选）',
+    passwordPlaceholder: '留空则不加密',
+    passwordHint: '提供密码时产出 AES-256-CBC 加密包（.zip.enc）。解密命令：openssl enc -d -aes-256-cbc -pbkdf2 -in 文件名.zip.enc -out 文件名.zip',
+    submit: '开始导出',
+    done: '导出完成，下载已开始',
+    principleTitle: '什么是 3-2-1 原则',
+    principleDesc: '数据保护的经典准则：重要数据至少留 3 份、存放在 2 种不同介质、其中 1 份放在异地。',
+    principleItem1: '3 份：NAS 原件 + 本页导出的外部存储副本 + 第三份（另一外置盘或亲友处）',
+    principleItem2: '2 种介质：例如内置盘 + 外置 USB 盘，避免单一介质批量故障一起损失',
+    principleItem3: '1 份异地：防火防盗防勒索，与 NAS 物理分离的副本才是最后防线'
+  },
+
+  // 只读保护目录（ROADMAP Phase 2，2026-10-19 从快照页 tab 提升为独立菜单页）
+  protected: {
+    title: '只读保护',
+    subtitle: '被标记的目录在应用层禁止覆盖与删除，防勒索软件篡改',
+    desc: '被标记的目录及其全部子孙在应用层禁止覆盖与删除（网页端与 WebDAV 同时生效），防勒索软件篡改。SMB 直通模式不受此约束。',
+    mark: '标记保护',
     unmark: '取消保护',
-    protectedPath: '目录路径',
-    protectedPathRequired: '目录路径不能为空',
-    protectedNote: '备注',
-    markPathHint: '填写目录的虚拟路径（如 /Docs），标记后该目录及其全部子孙只读',
+    unmarkConfirm: '确定取消「{path}」的只读保护？取消后该目录恢复可写。',
+    path: '目录路径',
+    pathRequired: '目录路径不能为空',
+    pathHint: '填写目录的虚拟路径（如 /Docs），标记后该目录及其全部子孙只读',
     pathNotFound: '路径不存在或不是目录',
-    unmarkConfirm: '确定取消「{path}」的只读保护？取消后该目录恢复可写。'
+    note: '备注',
+    createdAt: '标记时间',
+    actions: '操作',
+    empty: '暂无受保护目录'
   },
 
   media: {
@@ -290,7 +347,7 @@ export default {
     recentFiles: '最近文件',
     recentEmpty: '暂无最近文件',
     occupiedSpace: '占用空间',
-    recycleHint: '恢复与清空请在文件管理页操作',
+    recycleHint: '恢复与清空请在回收站页操作',
     manageRecycle: '管理回收站',
     // 快捷操作（导航 + 实际行动）
     quickActions: '快捷操作',    actionFilesDesc: '浏览、上传与整理文件',
@@ -305,8 +362,9 @@ export default {
     actionRefreshCapacityDesc: '重新记账所有池容量',
     actionScanSync: '扫描同步',
     actionScanSyncDesc: '物理文件入库',
-    actionRecycle: '回收站',
-    actionRecycleDesc: '恢复或清空已删除文件',
+    actionRecycleDesc: '恢复或永久删除已删除文件',
+    actionSnapshotDesc: '创建、对比目录时间点形态',
+    actionExportDesc: '打包目录下载到外部存储',
     capacityRefreshed: '容量已刷新',
     scanDone: '扫描完成：新增 {added} 项，更新 {updated} 项',
     // 系统信息模块（八组域）
@@ -516,17 +574,17 @@ export default {
   },
 
   // 系统设置
+  // 个人设置（2026-10-19 拆分：系统信息与外网访问迁到 systemInfo 段，仅管理员）
   settings: {
-    title: '系统设置',
-    subtitle: '管理个人信息和系统配置',
+    title: '个人设置',
+    subtitle: '管理您的账户信息与界面偏好',
     profile: '个人信息',
     profileDesc: '管理您的账户信息',
     security: '安全设置',
     securityDesc: '修改您的登录密码',
     appearance: '界面设置',
     appearanceDesc: '自定义界面外观',
-    system: '系统信息',
-    systemDesc: '查看系统运行状态',    darkMode: '暗色模式',
+    darkMode: '暗色模式',
     darkModeDesc: '切换深色/浅色主题',
     lightMode: '亮色模式',
     language: '语言',
@@ -537,6 +595,15 @@ export default {
     passwordChanged: '密码已修改，请重新登录',
     currentPasswordRequired: '请输入当前密码',
     newPasswordRequired: '请输入新密码',
+    cannotModify: '不可修改'
+  },
+
+  // 系统信息（2026-10-19 从个人设置拆出，仅管理员；含外网访问配置）
+  systemInfo: {
+    title: '系统信息',
+    subtitle: '查看系统运行状态，生成外网访问配置',
+    cardTitle: '系统信息',
+    cardDesc: '查看系统运行状态',
     systemName: '系统名称',
     version: '版本',
     os: '操作系统',
@@ -547,8 +614,7 @@ export default {
     uptime: '运行时间',
     memoryUsage: '内存使用',
     threadCount: '线程数',
-    running: '运行中',
-    cannotModify: '不可修改'
+    running: '运行中'
   },
 
   // 错误消息
@@ -585,6 +651,7 @@ export default {
     loginSystem: '登录系统',
     preparingDownload: '准备下载...',
     downloadNow: '立即下载',
+    downloadFailed: '下载失败，请重试',
     rootDir: '根目录',
     downloadZip: '下载整个文件夹 (ZIP)',
     back: '返回',
@@ -629,14 +696,6 @@ export default {
     shareSingleOnly: '暂不支持多选分享，请选择单个文件或文件夹',
     enterSearchKeyword: '请输入搜索关键词',
     searchFailed: '搜索失败',
-    loadRecycleBinFailed: '加载回收站失败',
-    restoreSuccess: '恢复成功',
-    restoreFailed: '恢复失败',
-    confirmEmptyRecycleBin: '确定要清空回收站吗？此操作不可恢复！',
-    emptyRecycleBinTitle: '清空回收站',
-    emptyAction: '清空',
-    recycleBinEmptied: '回收站已清空',
-    emptyFailed: '清空失败',
     selectToUpload: '请选择要上传的文件',
     storageInsufficient: '存储空间不足！需要 {required}，可用 {available}',
     uploadCountSuccess: '成功上传 {count} 个文件',
@@ -705,11 +764,6 @@ export default {
     currentDirOnly: '仅当前目录',
     foundResults: '找到 {count} 个结果',
     noMatchFound: '未找到匹配的文件',
-    recycleBinTitle: '回收站',
-    clearRecycleBin: '清空回收站',
-    colOriginalPath: '原路径',
-    actRestore: '恢复',
-    recycleBinEmpty: '回收站为空',
     uploadTitle: '上传文件',
     uploadTo: '上传到:',
     dropHereBefore: '将文件拖到此处，或',

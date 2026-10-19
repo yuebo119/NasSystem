@@ -18,6 +18,11 @@ const elMessage = vi.hoisted(() => ({
   warning: vi.fn()
 }))
 
+const authShare = vi.hoisted(() => ({
+  download: vi.fn(),
+  getFolderContent: vi.fn()
+}))
+
 vi.mock('element-plus', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
   return { ...actual, ElMessage: elMessage }
@@ -30,16 +35,36 @@ vi.mock('@/api/fileShare', () => ({
     verifyPassword: vi.fn(),
     getFolderContent: vi.fn(),
     getDownloadUrl: vi.fn(() => '/download')
-  }
+  },
+  // ITM-N23 认证通道：Internal 型分享对已登录用户的唯一合法路径
+  authenticatedShareApi: authShare
 }))
 
 import { publicShareApi, ShareAccessType } from '@/api/fileShare'
 import i18n from '@/locales'
 import ShareAccess from '@/views/ShareAccess.vue'
 import { flush, mountView } from '@/__tests__/helpers'
+import { createPinia, setActivePinia } from 'pinia'
+import { useUserStore } from '@/stores/user'
 
 const mockGetInfo = vi.mocked(publicShareApi.getInfo)
 const mockGetFolderContent = vi.mocked(publicShareApi.getFolderContent)
+const mockAuthDownload = vi.mocked(authShare.download)
+const mockAuthFolderContent = vi.mocked(authShare.getFolderContent)
+
+/** 预置登录态：Internal 型分享的认证通道以 userStore.isAuthenticated 为准 */
+function setLoggedIn() {
+  localStorage.setItem('token', 'test-token')
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const store = useUserStore()
+  store.user = {
+    id: 'u1', username: 'alice', role: 'User', isEnabled: true, usedBytes: 0,
+    createdAt: '2026-01-01T00:00:00Z'
+  }
+  store.initialized = true
+  return pinia
+}
 
 // 返回 any：publicShareApi 的标注签名是 AxiosResponse（axios 声明层未跟上
 // 拦截器剥壳），mock 只提供被测字段
@@ -64,8 +89,8 @@ function info(overrides: Record<string, unknown>): any {
 
 const SHARE_ROUTE = { path: '/s/:shareCode', component: { render: () => null } }
 
-function mountShare() {
-  return mountView(ShareAccess, { route: '/s/abc', routes: [SHARE_ROUTE] })
+function mountShare(pinia?: ReturnType<typeof createPinia>) {
+  return mountView(ShareAccess, { route: '/s/abc', routes: [SHARE_ROUTE], pinia })
 }
 
 describe('ShareAccess 视图层契约', () => {
@@ -81,6 +106,7 @@ describe('ShareAccess 视图层契约', () => {
 
   afterEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
   })
 
   it('getInfo 未返回时展示加载态，且用路由参数作 shareCode', async () => {
@@ -184,5 +210,73 @@ describe('ShareAccess 视图层契约', () => {
     expect(items).toHaveLength(2)
     expect(items[1].textContent).toContain('a.txt')
     unmount()
+  })
+
+  // ITM-N23：Internal 型分享对已登录用户走认证端点。修复前 canAccess 对
+  // Internal 恒 false，已登录用户点开链接也落到"需要登录"引导，认证端点
+  // （file-shares/{shareCode}/download 与 /files/{subPath}）零调用方
+  describe('Internal 分享的认证通道', () => {
+    it('已登录用户看 Internal 单文件分享直接展示下载按钮，不落登录引导', async () => {
+      mockGetInfo.mockResolvedValue(info({ accessType: ShareAccessType.Internal }))
+      const pinia = setLoggedIn()
+
+      const { div, unmount } = await mountShare(pinia)
+      await flush(50)
+
+      expect(div.querySelector('.login-state')).toBeNull()
+      expect(div.querySelector('.file-state')).not.toBeNull()
+      expect(div.querySelector('.file-state')?.textContent).toContain('立即下载')
+      unmount()
+    })
+
+    it('已登录用户下载 Internal 分享走认证端点（Bearer 通道）', async () => {
+      mockGetInfo.mockResolvedValue(info({ accessType: ShareAccessType.Internal }))
+      mockAuthDownload.mockResolvedValue(new Blob(['x']))
+      // happy-dom 无 URL.createObjectURL，测试环境补桩
+      URL.createObjectURL = vi.fn(() => 'blob:mock')
+      URL.revokeObjectURL = vi.fn()
+      const pinia = setLoggedIn()
+
+      const { div, unmount } = await mountShare(pinia)
+      await flush(50)
+
+      const button = Array.from(div.querySelectorAll('button')).find(b => b.textContent?.includes('立即下载'))
+      button?.click()
+      await vi.waitFor(() => {
+        if (!mockAuthDownload.mock.calls.length) throw new Error('not called')
+      })
+
+      expect(mockAuthDownload).toHaveBeenCalledWith('abc', undefined)
+      unmount()
+    })
+
+    it('已登录用户浏览 Internal 分享文件夹走认证端点，不调公开端点', async () => {
+      mockGetInfo.mockResolvedValue(info({ accessType: ShareAccessType.Internal, isFolder: true }))
+      mockAuthFolderContent.mockResolvedValue({
+        success: true,
+        data: { shareCode: 'abc', currentPath: '', items: [] },
+        timestamp: ''
+      } as never)
+      const pinia = setLoggedIn()
+
+      const { div, unmount } = await mountShare(pinia)
+      await flush(50)
+
+      expect(mockAuthFolderContent).toHaveBeenCalledWith('abc', undefined)
+      expect(mockGetFolderContent).not.toHaveBeenCalled()
+      expect(div.querySelector('.folder-state')).not.toBeNull()
+      unmount()
+    })
+
+    it('未登录用户看 Internal 分享仍落登录引导', async () => {
+      mockGetInfo.mockResolvedValue(info({ accessType: ShareAccessType.Internal }))
+
+      const { div, unmount } = await mountShare()
+      await flush(50)
+
+      expect(div.querySelector('.login-state')).not.toBeNull()
+      expect(div.querySelector('.login-state')?.textContent).toContain('仅限内部用户')
+      unmount()
+    })
   })
 })

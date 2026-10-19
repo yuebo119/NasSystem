@@ -125,6 +125,34 @@ export const fileShareApi = {
     http.post<FileShareDto>(`/file-shares/${id}/regenerate-code`)
 }
 
+// 认证用户的分享访问 API（ITM-N23：Internal 型分享的唯一合法通道）。
+// 已登录用户点开内部分享链接时走这一组：Bearer 头由 http 拦截器自动带上，
+// 下载因要带 Authorization 头不能用 <a href>，与 files/download 同型走 fetch + blob
+export const authenticatedShareApi = {
+  // 认证下载：单文件走 Range 流式响应，文件夹走 ZipDirectoryResult
+  async download(shareCode: string, subPath?: string): Promise<Blob> {
+    const token = localStorage.getItem('token')
+    let url = `/api/v1/file-shares/${shareCode}/download`
+    if (subPath) url += `/${subPath}`
+    const response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!response.ok) {
+      throw new Error(`authenticated share download failed: ${response.status}`)
+    }
+    return response.blob()
+  },
+
+  // 认证浏览分享文件夹（密码型分享仍要求 accessToken，认证身份不豁免密码校验）
+  getFolderContent: (shareCode: string, subPath?: string, token?: string) => {
+    let url = `/file-shares/${shareCode}/files`
+    if (subPath) url += `/${subPath}`
+    const params: Record<string, string> = {}
+    if (token) params.token = token
+    return http.get<ShareFolderContentDto>(url, { params })
+  }
+}
+
 // 公开访问 API
 export const publicShareApi = {
   // 获取公开分享信息

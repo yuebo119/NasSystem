@@ -36,7 +36,6 @@ const drawerSize = useDrawerSize()
 const createFolderDialogVisible = ref(false)
 const renameDialogVisible = ref(false)
 const searchDialogVisible = ref(false)
-const recycleBinDialogVisible = ref(false)
 const uploadDialogVisible = ref(false)
 const previewDialogVisible = ref(false)
 
@@ -56,8 +55,6 @@ const searchLoading = ref(false)
 const searchItemType = ref('')
 const searchExtension = ref('')
 const searchInCurrentDir = ref(true)
-const recycleBinItems = ref<FileItem[]>([])
-const recycleBinLoading = ref(false)
 const previewItem = ref<FileItem | null>(null)
 
 // 搜索防抖定时器
@@ -104,9 +101,10 @@ watch(
   { immediate: true }
 )
 
-// Dashboard 快捷操作的跳转意图：?upload=1 / ?newFolder=1 / ?recycle=1
-// 分别打开上传、新建文件夹、回收站。用完即清 query——不清的话刷新会
-// 重复弹出，浏览器返回也会再次触发
+// Dashboard 快捷操作的跳转意图：?upload=1 / ?newFolder=1
+// 分别打开上传、新建文件夹。用完即清 query——不清的话刷新会
+// 重复弹出，浏览器返回也会再次触发。
+// 回收站 2026-10-19 提升为独立菜单页，Dashboard 的直接跳 /recycle-bin
 watch(
   () => route.query,
   (query) => {
@@ -115,9 +113,6 @@ watch(
       router.replace({ path: route.path })
     } else if (query.newFolder) {
       createFolderDialogVisible.value = true
-      router.replace({ path: route.path })
-    } else if (query.recycle) {
-      openRecycleBin()
       router.replace({ path: route.path })
     }
   },
@@ -437,52 +432,6 @@ async function goToSearchResult(item: FileItem) {
       fileStore.setFocusItem(item.id)
       router.push(`/files${parentPath}`)
     }
-  }
-}
-
-// 打开回收站
-async function openRecycleBin() {
-  recycleBinDialogVisible.value = true
-  recycleBinLoading.value = true
-  try {
-    const result = await fileApi.getRecycleBin()
-    if (result.success && result.data) {
-      recycleBinItems.value = result.data
-    }
-  } catch (e) {
-    ElMessage.error(t('filesView.loadRecycleBinFailed'))
-  } finally {
-    recycleBinLoading.value = false
-  }
-}
-
-// 恢复文件
-async function restoreFile(item: FileItem) {
-  const result = await fileApi.restore(item.id)
-  if (result.success) {
-    ElMessage.success(t('filesView.restoreSuccess'))
-    recycleBinItems.value = recycleBinItems.value.filter(i => i.id !== item.id)
-    await fileStore.loadDirectory(fileStore.currentPath)
-  } else {
-    ElMessage.error(result.error?.message || t('filesView.restoreFailed'))
-  }
-}
-
-// 清空回收站
-async function emptyRecycleBin() {
-  try {
-    await ElMessageBox.confirm(t('filesView.confirmEmptyRecycleBin'), t('filesView.emptyRecycleBinTitle'), {
-      confirmButtonText: t('filesView.emptyAction'), cancelButtonText: t('filesView.cancel'), type: 'warning'
-    })
-    const result = await fileApi.emptyRecycleBin()
-    if (result.success) {
-      ElMessage.success(t('filesView.recycleBinEmptied'))
-      recycleBinItems.value = []
-    } else {
-      ElMessage.error(result.error?.message || t('filesView.emptyFailed'))
-    }
-  } catch {
-    // 取消操作
   }
 }
 
@@ -1503,9 +1452,11 @@ onUnmounted(() => {
           </el-button>
         </el-tooltip>
         <el-tooltip :content="$t('filesView.recycleBinTip')" placement="bottom">
-          <el-button @click="openRecycleBin">
-            <el-icon><DeleteFilled /></el-icon>
-          </el-button>
+          <router-link to="/recycle-bin">
+            <el-button>
+              <el-icon><DeleteFilled /></el-icon>
+            </el-button>
+          </router-link>
         </el-tooltip>
         <el-tooltip :content="fileStore.showHidden ? $t('filesView.hideHiddenTip') : $t('filesView.showHiddenTip')" placement="bottom">
           <el-button @click="toggleShowHidden" :type="fileStore.showHidden ? 'primary' : 'default'">
@@ -1689,37 +1640,6 @@ onUnmounted(() => {
         </div>
         <el-empty v-else-if="searchQuery && !searchLoading" :description="$t('filesView.noMatchFound')" />
       </div>
-    </el-drawer>
-
-    <!-- 回收站抽屉 -->
-    <el-drawer v-model="recycleBinDialogVisible" :title="$t('filesView.recycleBinTitle')" :size="drawerSize('560px', '50vw', '820px')">
-      <template #header>
-        <div class="recycle-header">
-          <span>{{ $t('filesView.recycleBinTitle') }}</span>
-          <el-button type="danger" size="small" @click="emptyRecycleBin" :disabled="recycleBinItems.length === 0">
-            {{ $t('filesView.clearRecycleBin') }}
-          </el-button>
-        </div>
-      </template>
-      <el-table :data="recycleBinItems" v-loading="recycleBinLoading" max-height="calc(100vh - 240px)">
-        <el-table-column prop="name" :label="$t('filesView.colName')" min-width="200">
-          <template #default="{ row }">
-            <div class="file-name">
-              <el-icon :color="getFileIconColor(row as FileItem)">
-                <component :is="getFileIcon(row as FileItem)" />
-              </el-icon>
-              <span>{{ (row as FileItem).name }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="path" :label="$t('filesView.colOriginalPath')" min-width="200" />
-        <el-table-column :label="$t('filesView.colActions')" width="120">
-          <template #default="{ row }">
-            <el-button size="small" type="primary" @click="restoreFile(row as FileItem)">{{ $t('filesView.actRestore') }}</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-if="recycleBinItems.length === 0 && !recycleBinLoading" :description="$t('filesView.recycleBinEmpty')" />
     </el-drawer>
 
     <!-- 上传抽屉 -->
@@ -2392,14 +2312,6 @@ onUnmounted(() => {
     gap: 12px;
     flex-wrap: wrap;
   }
-}
-
-.recycle-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding-right: 40px;
 }
 
 .upload-path-info {

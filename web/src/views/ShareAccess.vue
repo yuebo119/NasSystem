@@ -7,13 +7,20 @@ import {
   Download, Lock, Warning, User, ArrowLeft,
   Clock, View, Link as LinkIcon, Folder, FolderOpened
 } from '@element-plus/icons-vue'
-import { publicShareApi, ShareAccessType, type PublicShareInfoDto, type ShareFolderContentDto, type ShareFileItemDto } from '@/api/fileShare'
+import { publicShareApi, authenticatedShareApi, ShareAccessType, type PublicShareInfoDto, type ShareFolderContentDto, type ShareFileItemDto } from '@/api/fileShare'
 import { getFileIcon, getFileIconColor } from '@/utils/format'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 // ITM-M3 收尾：对外访客页接入 i18n（外部用户此前无法切换语言）
 const { t } = useI18n()
+// 登录态决定 Internal 型分享的通道：已登录走认证端点（ITM-N23），
+// 未登录落登录引导。userStore 在分享页是只读消费，不触发初始化拉取
+const userStore = useUserStore()
 const shareCode = computed(() => route.params.shareCode as string)
+
+// Internal 型且已登录：认证端点放行（密码型仍要求 accessToken，认证不豁免密码）
+const isLoggedIn = computed(() => userStore.isAuthenticated)
 
 // 状态
 const loading = ref(true)
@@ -34,7 +41,9 @@ const loadShareInfo = async () => {
     const result = await publicShareApi.getInfo(shareCode.value)
     if (result.data) {
       shareInfo.value = result.data
-      if (result.data.isAccessible && result.data.isFolder) {
+      // 文件夹只在确实可访问时预载内容：Internal 未登录落登录引导、
+      // 密码未验证落密码态，两者都不该提前打文件夹端点（会报错且无意义）
+      if (result.data.isAccessible && result.data.isFolder && canAccess.value) {
         await loadFolderContent()
       }
     }
@@ -71,7 +80,10 @@ const verifyPassword = async () => {
 // 加载文件夹内容
 const loadFolderContent = async (subPath?: string) => {
   try {
-    const result = await publicShareApi.getFolderContent(shareCode.value, accessToken.value || undefined, subPath)
+    // Internal 型已登录用户走认证端点；其余（公开/密码）走公开端点
+    const result = isInternalAuthenticated.value
+      ? await authenticatedShareApi.getFolderContent(shareCode.value, subPath)
+      : await publicShareApi.getFolderContent(shareCode.value, accessToken.value || undefined, subPath)
     if (result.data) {
       folderContent.value = result.data
       currentPath.value = subPath || ''
@@ -82,16 +94,34 @@ const loadFolderContent = async (subPath?: string) => {
 }
 
 // 下载文件
-const downloadFile = (subPath?: string) => {
+const downloadFile = async (subPath?: string) => {
   downloading.value = true
-  const url = publicShareApi.getDownloadUrl(shareCode.value, accessToken.value || undefined, subPath)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = ''
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  setTimeout(() => { downloading.value = false }, 1000)
+  try {
+    if (isInternalAuthenticated.value) {
+      // 认证下载：Bearer 头无法用 <a href> 带，fetch 落 blob 再转对象 URL
+      const blob = await authenticatedShareApi.download(shareCode.value, subPath)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = ''
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } else {
+      const url = publicShareApi.getDownloadUrl(shareCode.value, accessToken.value || undefined, subPath)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = ''
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || t('shareAccess.downloadFailed'))
+  } finally {
+    setTimeout(() => { downloading.value = false }, 1000)
+  }
 }
 
 // 进入子目录
@@ -110,11 +140,19 @@ const goBack = () => {
   loadFolderContent(parts.join('/') || undefined)
 }
 
+// Internal 型已登录：认证通道（Bearer 自动带上，密码型不加 token 仍会被后端要求密码）
+const isInternalAuthenticated = computed(() =>
+  !!shareInfo.value &&
+  shareInfo.value.accessType === ShareAccessType.Internal &&
+  isLoggedIn.value
+)
+
 // 是否可以访问
 const canAccess = computed(() => {
   if (!shareInfo.value) return false
   if (shareInfo.value.accessType === ShareAccessType.Public) return true
   if (shareInfo.value.accessType === ShareAccessType.Password && accessToken.value) return true
+  if (shareInfo.value.accessType === ShareAccessType.Internal && isLoggedIn.value) return true
   return false
 })
 
@@ -217,8 +255,8 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 需要登录 -->
-        <div v-else-if="shareInfo?.accessType === ShareAccessType.Internal" class="state-container login-state">
+        <!-- 需要登录（仅未登录时展示；已登录的 Internal 分享落可访问分支） -->
+        <div v-else-if="shareInfo?.accessType === ShareAccessType.Internal && !isLoggedIn" class="state-container login-state">
           <div class="file-icon-wrapper">
             <el-icon :size="56" :color="getFileIconColor(shareInfo)">
               <component :is="getFileIcon(shareInfo)" />

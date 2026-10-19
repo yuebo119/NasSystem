@@ -28,17 +28,26 @@ export default {
   nav: {
     dashboard: 'Dashboard',
     files: 'Files',
-    snapshots: 'Snapshots',
     media: 'Media',
-    backup: 'Backup',
+    recycleBin: 'Recycle Bin',
+    snapshots: 'Snapshots',
+    protectedDirs: 'Protected Dirs',
+    export: '3-2-1 Export',
+    backup: 'Mobile Backup',
     shares: 'Shares',
     storage: 'Storage',
     users: 'Users',
     systemConfig: 'System Config',
-    settings: 'Settings',
+    systemInfo: 'System Info',
+    settings: 'Preferences',
     logout: 'Logout',
     collapse: 'Collapse',
-    menu: 'Menu'
+    menu: 'Menu',
+    groupFiles: 'Files & Media',
+    groupProtection: 'Data Protection',
+    groupSharing: 'Sharing & Backup',
+    groupSystem: 'System',
+    groupPersonal: 'Personal'
   },
 
   config: {
@@ -115,9 +124,12 @@ export default {
     shutdownScheduled: 'Shutdown scheduled, the service stops in about 3 seconds'
   },
 
-  // Directory snapshots and read-only protection (ROADMAP Phase 2)
+  // Directory snapshots (ROADMAP Phase 2). Read-only protection moved to the
+  // protected section and 3-2-1 export to the export section on 2026-10-19,
+  // each with its own menu page
   snapshot: {
     title: 'Directory Snapshots',
+    subtitle: 'Record the shape of a directory tree at a point in time, for comparison and recovery reference',
     create: 'Create Snapshot',
     compare: 'Compare Snapshots',
     detail: 'Snapshot Detail',
@@ -150,23 +162,69 @@ export default {
     file: 'File',
     change: 'Change',
     sizeChange: 'Size Change',
-    deleteConfirm: 'Delete snapshot "{name}"? Its entries will be deleted too. This cannot be undone.',
-    export: 'Export Directory',
-    exportHint: 'Streams the directory subtree into a zip download. Large directories are streamed without server disk usage; download time depends on size',
-    exportPassword: 'Encryption password (optional)',
-    exportPasswordPlaceholder: 'Leave empty for no encryption',
-    exportPasswordHint: 'With a password the output is an AES-256-CBC encrypted archive (.zip.enc). Decrypt with: openssl enc -d -aes-256-cbc -pbkdf2 -in file.zip.enc -out file.zip',
-    exportDone: 'Export complete, download started',
-    protectedTitle: 'Read-Only Protection',
-    protectedDesc: 'Marked directories and all their descendants cannot be overwritten or deleted at the application layer (both web and WebDAV). The SMB passthrough mode is exempt by design.',
-    markProtected: 'Mark Protected',
+    deleteConfirm: 'Delete snapshot "{name}"? Its entries will be deleted too. This cannot be undone.'
+  },
+
+  // Recycle bin (promoted from the Files drawer to its own menu page on 2026-10-19)
+  recycle: {
+    title: 'Recycle Bin',
+    subtitle: 'Deleted files are kept here temporarily; restore them or delete permanently',
+    hint: 'Deleting from the file manager sends items here. Permanent deletion or emptying cannot be undone.',
+    colName: 'Name',
+    colOriginalPath: 'Original Path',
+    colSize: 'Size',
+    colDeletedAt: 'Deleted At',
+    colActions: 'Actions',
+    restore: 'Restore',
+    restoreSuccess: 'Restored to original path',
+    restoreFailed: 'Restore failed',
+    permanentDelete: 'Delete Permanently',
+    permanentDeleteConfirm: 'Permanently delete "{name}"? This cannot be undone.',
+    deleteDone: 'Permanently deleted',
+    deleteFailed: 'Permanent delete failed',
+    empty: 'Empty Recycle Bin',
+    emptyConfirm: 'Empty the recycle bin? All files will be permanently deleted. This cannot be undone.',
+    emptyDone: 'Recycle bin emptied',
+    emptyFailed: 'Empty failed',
+    emptyState: 'Recycle bin is empty',
+    loadFailed: 'Failed to load recycle bin'
+  },
+
+  // 3-2-1 export (ROADMAP Phase 2, promoted from the snapshot page toolbar on 2026-10-19)
+  export: {
+    title: '3-2-1 Export',
+    subtitle: 'Package a directory for download to external storage, completing the last mile of the 3-2-1 rule',
+    rootPath: 'Root Path',
+    rootPathHint: 'Streams the directory subtree into a zip download. Large directories are streamed without server disk usage; download time depends on size',
+    pathRequired: 'Root path cannot be empty',
+    password: 'Encryption password (optional)',
+    passwordPlaceholder: 'Leave empty for no encryption',
+    passwordHint: 'With a password the output is an AES-256-CBC encrypted archive (.zip.enc). Decrypt with: openssl enc -d -aes-256-cbc -pbkdf2 -in file.zip.enc -out file.zip',
+    submit: 'Start Export',
+    done: 'Export complete, download started',
+    principleTitle: 'What is the 3-2-1 rule',
+    principleDesc: 'The classic data-protection rule: keep at least 3 copies of important data, on 2 different media, with 1 copy offsite.',
+    principleItem1: '3 copies: the NAS original + an external-storage copy from this page + a third copy (another external drive or a friend)',
+    principleItem2: '2 media: e.g. internal drive + external USB drive, so a single media batch failure cannot take all copies',
+    principleItem3: '1 offsite: fire, theft and ransomware protection. A copy physically separated from the NAS is the last line of defense'
+  },
+
+  // Read-only protected directories (ROADMAP Phase 2, promoted from the snapshot page tab on 2026-10-19)
+  protected: {
+    title: 'Read-Only Protection',
+    subtitle: 'Marked directories cannot be overwritten or deleted at the application layer, stopping ransomware tampering',
+    desc: 'Marked directories and all their descendants cannot be overwritten or deleted at the application layer (both web and WebDAV). The SMB passthrough mode is exempt by design.',
+    mark: 'Mark Protected',
     unmark: 'Remove Protection',
-    protectedPath: 'Directory Path',
-    protectedPathRequired: 'Directory path cannot be empty',
-    protectedNote: 'Note',
-    markPathHint: 'Enter the virtual path of a directory (e.g. /Docs). The directory and all descendants become read-only',
+    unmarkConfirm: 'Remove read-only protection for "{path}"? The directory becomes writable again.',
+    path: 'Directory Path',
+    pathRequired: 'Directory path cannot be empty',
+    pathHint: 'Enter the virtual path of a directory (e.g. /Docs). The directory and all descendants become read-only',
     pathNotFound: 'Path does not exist or is not a directory',
-    unmarkConfirm: 'Remove read-only protection for "{path}"? The directory becomes writable again.'
+    note: 'Note',
+    createdAt: 'Marked At',
+    actions: 'Actions',
+    empty: 'No protected directories'
   },
 
   media: {
@@ -291,7 +349,7 @@ export default {
     recentFiles: 'Recent Files',
     recentEmpty: 'No recent files',
     occupiedSpace: 'Occupied',
-    recycleHint: 'Restore or purge in the Files page',
+    recycleHint: 'Restore or purge in the Recycle Bin page',
     manageRecycle: 'Manage Recycle Bin',
     // Quick actions (navigation + real actions)
     quickActions: 'Quick Actions',
@@ -307,8 +365,9 @@ export default {
     actionRefreshCapacityDesc: 'Re-account pool usage',
     actionScanSync: 'Scan & Sync',
     actionScanSyncDesc: 'Import physical files',
-    actionRecycle: 'Recycle Bin',
-    actionRecycleDesc: 'Restore or purge deleted files',
+    actionRecycleDesc: 'Restore or permanently delete removed files',
+    actionSnapshotDesc: 'Create and compare directory snapshots',
+    actionExportDesc: 'Package a directory for external download',
     capacityRefreshed: 'Capacity refreshed',
     scanDone: 'Scan complete: {added} added, {updated} updated',
     // System information module (eight groups)
@@ -518,17 +577,17 @@ export default {
   },
 
   // Settings
+  // Personal preferences (split on 2026-10-19: system info and remote access
+  // moved to the systemInfo section, admin only)
   settings: {
-    title: 'Settings',
-    subtitle: 'Manage personal info and system config',
+    title: 'Preferences',
+    subtitle: 'Manage your account and interface preferences',
     profile: 'Profile',
     profileDesc: 'Manage your account information',
     security: 'Security',
     securityDesc: 'Change your login password',
     appearance: 'Appearance',
     appearanceDesc: 'Customize interface appearance',
-    system: 'System Info',
-    systemDesc: 'View system status',
     darkMode: 'Dark Mode',
     darkModeDesc: 'Toggle dark/light theme',
     lightMode: 'Light Mode',
@@ -540,6 +599,15 @@ export default {
     passwordChanged: 'Password changed, please login again',
     currentPasswordRequired: 'Please enter current password',
     newPasswordRequired: 'Please enter new password',
+    cannotModify: 'Cannot modify'
+  },
+
+  // System info (split from preferences on 2026-10-19, admin only; includes remote access)
+  systemInfo: {
+    title: 'System Info',
+    subtitle: 'View system status and generate remote access configuration',
+    cardTitle: 'System Info',
+    cardDesc: 'View system status',
     systemName: 'System Name',
     version: 'Version',
     os: 'Operating System',
@@ -550,8 +618,7 @@ export default {
     uptime: 'Uptime',
     memoryUsage: 'Memory Usage',
     threadCount: 'Threads',
-    running: 'Running',
-    cannotModify: 'Cannot modify'
+    running: 'Running'
   },
 
   // Error messages
@@ -588,6 +655,7 @@ export default {
     loginSystem: 'Sign in',
     preparingDownload: 'Preparing download...',
     downloadNow: 'Download now',
+    downloadFailed: 'Download failed, please try again',
     rootDir: 'Root',
     downloadZip: 'Download whole folder (ZIP)',
     back: 'Back',
@@ -632,14 +700,6 @@ export default {
     shareSingleOnly: 'Multi-select sharing is not supported; pick one item',
     enterSearchKeyword: 'Enter a search keyword first',
     searchFailed: 'Search failed',
-    loadRecycleBinFailed: 'Failed to load recycle bin',
-    restoreSuccess: 'Restored successfully',
-    restoreFailed: 'Restore failed',
-    confirmEmptyRecycleBin: 'Empty the recycle bin? This cannot be undone!',
-    emptyRecycleBinTitle: 'Empty recycle bin',
-    emptyAction: 'Empty',
-    recycleBinEmptied: 'Recycle bin emptied',
-    emptyFailed: 'Failed to empty',
     selectToUpload: 'Select a file to upload first',
     storageInsufficient: 'Insufficient storage: need {required}, available {available}',
     uploadCountSuccess: 'Uploaded {count} files successfully',
@@ -708,11 +768,6 @@ export default {
     currentDirOnly: 'Current directory only',
     foundResults: '{count} results found',
     noMatchFound: 'No matching files',
-    recycleBinTitle: 'Recycle Bin',
-    clearRecycleBin: 'Empty Recycle Bin',
-    colOriginalPath: 'Original Path',
-    actRestore: 'Restore',
-    recycleBinEmpty: 'Recycle bin is empty',
     uploadTitle: 'Upload Files',
     uploadTo: 'Upload to:',
     dropHereBefore: 'Drag files here or',
