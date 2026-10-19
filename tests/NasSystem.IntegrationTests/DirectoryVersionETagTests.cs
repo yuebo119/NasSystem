@@ -81,26 +81,37 @@ public class DirectoryVersionETagTests : ApiTestBase
     }
 
     [Fact]
-    public async Task Browse_AfterWrite_ETagChanges()
+    public async Task Browse_Subdirectory_AfterWrite_ETagChanges()
     {
-        // Arrange
-        var token = await GetAuthTokenAsync("etagwriteuser");
+        // 2026-10-19 E2E 走查实证的回归：路由参数是裸路径（"etagsub"），
+        // 而 bump 的键带前导斜杠（"/etagsub"）。端点曾直接拿裸路径查版本，
+        // 恒为 0，子目录写入后条件请求无限 304 重放陈旧列表（根目录因
+        // 两种形态都是 "/" 一直正常，既有测试因此全绿）。这条锁子目录
+        var token = await GetAuthTokenAsync("etagsubuser");
         SetAuthToken(token);
         await SeedDefaultStoragePoolAsync();
-        await SeedTestFolderAsync("/documents", "etagwriteuser");
+        var sub = $"/etagsub-{Guid.NewGuid():N}";
+        await SeedTestFolderAsync(sub, "etagsubuser");
 
-        var first = await Client.GetAsync("/api/v1/files/browse/");
+        var first = await Client.GetAsync($"/api/v1/files/browse{sub}");
         var etagBefore = first.Headers.ETag?.Tag;
         etagBefore.Should().NotBeNull();
 
-        // Act：在根目录建一个文件夹（走 UnitOfWork 提交，应递增根目录版本）
+        // 子目录内建文件夹：bump 的键是 "/etagsub-xxx"（带斜杠）
         var created = await Client.PostAsJsonAsync("/api/v1/files/folder",
-            new { parentPath = "/", name = "etag-new-folder" });
+            new { parentPath = sub, name = "child" });
         created.StatusCode.Should().Be(HttpStatusCode.OK, "建文件夹应成功，否则后续断言无意义");
 
-        // Assert：版本号必须变，否则客户端会一直拿旧缓存
-        var second = await Client.GetAsync("/api/v1/files/browse/");
+        var second = await Client.GetAsync($"/api/v1/files/browse{sub}");
         var etagAfter = second.Headers.ETag?.Tag;
-        etagAfter.Should().NotBe(etagBefore, "写入提交后目录版本号必须递增，ETag 必须变");
+        etagAfter.Should().NotBe(etagBefore, "子目录写入后 ETag 必须变化（键形态对齐）");
+
+        // 旧 ETag 的条件请求不得 304：否则重放写入前的陈旧列表
+        var conditional = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/files/browse{sub}");
+        conditional.Headers.IfNoneMatch.Add(EntityTagHeaderValue.Parse(etagBefore!));
+        var stale = await Client.SendAsync(conditional);
+        stale.StatusCode.Should().Be(HttpStatusCode.OK, "写入后旧 ETag 不得命中 304");
+        var body = await stale.Content.ReadAsStringAsync();
+        body.Should().Contain("child", "响应体应包含新写入的条目");
     }
 }

@@ -197,7 +197,9 @@ const handleToggle = async (user: UserType) => {
 
 const handleDelete = async (user: UserType) => {
   try {
-    await ElMessageBox.confirm(t('users.deleteConfirm').replace('{name}', user.username), t('common.confirm'), { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') })
+    // 命名插值走 t() 第二参（同 Storage.vue 的坑）：vue-i18n 会先消费
+    // {name} 占位符，先取串再 replace 是空操作，确认框名字永远为空
+    await ElMessageBox.confirm(t('users.deleteConfirm', { name: user.username }), t('common.confirm'), { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') })
     const response = await userApi.deleteUser(user.id)
     if (response.success) {
       ElMessage.success(t('users.deleteSuccess'))

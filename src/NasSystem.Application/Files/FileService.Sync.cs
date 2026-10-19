@@ -50,7 +50,25 @@ public sealed partial class FileService
             // 其物理文件仍存在于挂载点，缺席会被当作新发现重建（软删复活），
             // 且恢复时撞 Path 唯一索引（ITM-N26）
             var scanEntries = await _fileRepository.GetScanEntriesAsync(defaultPool.Value.Id, cancellationToken);
-            var dbPathMap = scanEntries.ToDictionary(x => x.Path, x => x);
+            // 同一 Path 允许多条记录：Path 唯一索引是部分索引（只管未删），
+            // 软删历史与新记录可以同路径共存（删了再传同名文件即是）。
+            // ToDictionary 遇重复键直接抛异常，整个扫描 500（E2E 走查实证：
+            // 回收站里积了多条 davprobe.txt 后点扫描同步必炸）。
+            // 代表记录按"未删优先"取：物理文件同一个，比对大小/决定新建
+            // 看未删那条；纯删历史只在下面的删除集逻辑里按 scanEntries 全量处理
+            var dbPathMap = new Dictionary<string, FileItemScanEntry>(StringComparer.Ordinal);
+            foreach (var entry in scanEntries)
+            {
+                if (dbPathMap.TryGetValue(entry.Path, out var existing))
+                {
+                    if (existing.IsDeleted && !entry.IsDeleted)
+                        dbPathMap[entry.Path] = entry;
+                }
+                else
+                {
+                    dbPathMap[entry.Path] = entry;
+                }
+            }
 
             // 扫描物理文件系统。三类写操作收集到列表末尾一次批量提交：
             // 原实现逐条 AddAsync/UpdateAsync（每文件一条独立 SQL），

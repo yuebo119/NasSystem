@@ -165,7 +165,10 @@ const handleSetDefault = async (pool: StoragePool) => {
 const handleDelete = async (pool: StoragePool) => {
   if (pool.isDefault) { ElMessage.warning(t('storage.cannotDeleteDefault')); return }
   try {
-    await ElMessageBox.confirm(t('storage.deletePoolConfirm').replace('{name}', pool.name), t('common.confirm'), { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') })
+    // 命名插值走 t() 第二参：不要先取字符串再 replace('{name}', ...)——
+    // vue-i18n 的占位符就是 {name}，无参 t() 会先把它替换成空串，
+    // 事后的 replace 是空操作，确认框里名字永远是空的（E2E 走查实证）
+    await ElMessageBox.confirm(t('storage.deletePoolConfirm', { name: pool.name }), t('common.confirm'), { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') })
     const result = await storageApi.deletePool(pool.id) as any
     if (result.success) { ElMessage.success(t('storage.deleteSuccess')); await loadData() }
     else { ElMessage.error(result.message || t('common.failed')) }

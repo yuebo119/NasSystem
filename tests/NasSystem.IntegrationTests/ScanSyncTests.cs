@@ -120,6 +120,35 @@ public class ScanSyncTests : ApiTestBase, IDisposable
     }
 
     [Fact]
+    public async Task Scan_WithDuplicatePathRecords_Succeeds()
+    {
+        // 2026-10-19 E2E 走查实证的回归：Path 唯一索引是部分索引（只管未删），
+        // 软删历史与新记录同路径共存（删了再传同名文件即是）。扫描建对比表的
+        // ToDictionary 撞重复键，整个扫描 500（"An item with the same key
+        // has already been added"）——回收站积几条同名记录后点"扫描同步"必炸
+        var token = await GetAuthTokenAsync("scandup" + Guid.NewGuid().ToString("N")[..6]);
+        SetAuthToken(token);
+        await EnsureClassPoolAsync();
+
+        var name = $"{PathPrefix}-dup";
+        // ① 建目录 ② 软删（回收站留一条 IsDeleted=1 的同路径记录）
+        var create1 = await Client.PostAsJsonAsync("/api/v1/files/folder", new { parentPath = "/", name });
+        create1.StatusCode.Should().Be(HttpStatusCode.OK);
+        var softDelete = await Client.PostAsJsonAsync("/api/v1/files/delete",
+            new { paths = new[] { $"/{name}" }, permanent = false });
+        softDelete.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // ③ 同名再建：库里有两条同 Path 记录（一删一活）
+        var create2 = await Client.PostAsJsonAsync("/api/v1/files/folder", new { parentPath = "/", name });
+        create2.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // ④ 扫描必须成功（修复前 500 Scan.Failed 重复键）
+        var scan = await Client.PostAsJsonAsync("/api/v1/files/scan", new { });
+        var scanBody = await scan.Content.ReadAsStringAsync();
+        scan.StatusCode.Should().Be(HttpStatusCode.OK, $"同路径多记录时扫描应成功，实际响应：{scanBody}");
+    }
+
+    [Fact]
     public async Task Scan_BumpsETagOfScannedDirectory()
     {
         // Arrange

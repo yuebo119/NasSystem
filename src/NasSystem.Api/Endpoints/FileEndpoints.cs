@@ -168,7 +168,12 @@ public static class FileEndpoints
         HttpContext httpContext = null!)
     {
         var userId = GetUserId(user);
-        var targetPath = path ?? "/";
+        // 路由参数是去掉前导斜杠的裸路径（"123"、"docs/sub"，根目录是空串），
+        // 而 DirectoryVersion 的键一律是带前导斜杠的规范形态（"/123"、"docs/sub"
+        // 的父键等）。直接拿裸路径查版本号永远 miss（恒 0），子目录的条件请求
+        // 会无限 304 重放陈旧列表——E2E 走查实证：移入 /123 的文件夹在前端
+        // 不显示，而根目录（两种形态下都是 "/"）一直正常。这里对齐键形态
+        var targetPath = string.IsNullOrEmpty(path) ? "/" : "/" + path.Trim('/');
 
         // 条件请求：目录内容版本号未变则回 304，省掉整趟查询、DTO 映射与 JSON 序列化。
         // 版本号由 UnitOfWork 在写提交成功后递增（DirectoryVersion），
