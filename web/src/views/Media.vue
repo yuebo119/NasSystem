@@ -15,7 +15,7 @@ import { ElMessage } from 'element-plus'
 import { Picture, VideoCamera, Headset } from '@element-plus/icons-vue'
 import { mediaApi, type MediaType } from '@/api/media'
 import { semanticApi, type SemanticHit } from '@/api/semantic'
-import { fileApi } from '@/api/file'
+import AuthImage from '@/components/AuthImage.vue'
 import type { MediaItem, MediaMetadata } from '@/types'
 import { formatSize } from '@/utils/format'
 import { useIsMobile } from '@/utils/useIsMobile'
@@ -143,12 +143,15 @@ const groups = computed(() => {
   return result
 })
 
+// immediate：首屏就要加载首页。没有它时 watch 只在切换 tab 时触发，
+// 首访媒体库永远是空的（只有切走再切回或手点"加载更多"才有内容）——
+// 2026-10-19 E2E 走查实证：API 有 5 张图，页面显示"暂无媒体文件"
 watch(activeType, () => {
   page.value = 1
   items.value = []
   metadataMap.value = new Map()
   void loadMore(true)
-})
+}, { immediate: true })
 
 async function loadMore(reset = false) {
   if (loading.value) return
@@ -275,7 +278,7 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
             @click="openInFiles(item)"
           >
             <div class="cell-thumb">
-              <img :src="fileApi.getThumbnailUrl(item.path, 300)" loading="lazy" :alt="item.name" />
+              <AuthImage :path="item.path" :size="300" />
             </div>
             <div class="cell-name" :title="item.name">{{ item.name }}</div>
             <div class="cell-size">{{ formatSize(item.sizeBytes) }}</div>
@@ -293,11 +296,10 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
               @click="item.mediaType === 'video' ? playVideo(item) : openInFiles(item)"
             >
               <div class="cell-thumb">
-                <img
+                <AuthImage
                   v-if="item.mediaType === 'image'"
-                  :src="fileApi.getThumbnailUrl(item.path, 300)"
-                  loading="lazy"
-                  :alt="item.name"
+                  :path="item.path"
+                  :size="300"
                 />
                 <el-icon v-else :size="40" class="cell-icon">
                   <VideoCamera v-if="item.mediaType === 'video'" />

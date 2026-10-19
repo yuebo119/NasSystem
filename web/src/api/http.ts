@@ -5,6 +5,14 @@ import { ElMessage } from 'element-plus'
 import router from '@/router'
 import i18n from '@/locales'
 
+// 自定义请求配置：401 时跳过拦截器的自动跳登录。供会话校验类请求
+// （/users/me）使用——它们的 401 由 store 与路由守卫自行处理
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    skipAuthRedirect?: boolean
+  }
+}
+
 // 创建 axios 实例
 // timeout 按请求类型区分：默认 30s 只适合普通 JSON API。
 // 上传走 formData 且后端允许 500MB，30s 传不完就被 axios 中断，
@@ -45,25 +53,32 @@ http.interceptors.response.use(
 
     if (response) {
       const { status, data } = response
-      
-      switch (status) {
-        case 401:
+
+      if (status === 401) {
+        // skipAuthRedirect 的请求（会话校验）不跳转：token 失效由 store
+        // 的 checkAuth 清状态、路由守卫带 redirect 跳登录。否则公开分享页
+        // 的访客带过期令牌时，checkAuth 的 401 会经这里把人弹去登录页，
+        // 分享页永远加载不出来，且丢失原目标地址（E2E 走查实证）
+        if (!error.config?.skipAuthRedirect) {
           // 未授权，清除登录状态并跳转登录页
           localStorage.removeItem('token')
           router.push({ name: 'Login' })
           ElMessage.error(t('error.sessionExpired'))
-          break
-        case 403:
-          ElMessage.error(t('error.forbidden'))
-          break
-        case 404:
-          ElMessage.error(data?.error?.message || t('error.notFound'))
-          break
-        case 500:
-          ElMessage.error(t('error.serverError'))
-          break
-        default:
-          ElMessage.error(data?.error?.message || t('error.requestFailed'))
+        }
+      } else {
+        switch (status) {
+          case 403:
+            ElMessage.error(t('error.forbidden'))
+            break
+          case 404:
+            ElMessage.error(data?.error?.message || t('error.notFound'))
+            break
+          case 500:
+            ElMessage.error(t('error.serverError'))
+            break
+          default:
+            ElMessage.error(data?.error?.message || t('error.requestFailed'))
+        }
       }
     } else if (error.code === 'ECONNABORTED') {
       ElMessage.error(t('error.timeout'))

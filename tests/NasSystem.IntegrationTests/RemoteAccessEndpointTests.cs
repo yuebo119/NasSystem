@@ -65,6 +65,40 @@ public class RemoteAccessEndpointTests : ApiTestBase
             "未知方案是客户端错误，不能静默回落成某个默认方案");
     }
 
+    [Fact]
+    public async Task Config_LangEn_ReturnsEnglishSteps()
+    {
+        // 2026-10-19 E2E 走查实证的回归：英文界面下配置注释与步骤全是中文。
+        // 生成器按 lang 出双语，端点透传，缺省仍 zh（既有调方行为不变）
+        var adminToken = await LoginAsAdminAsync();
+
+        var request = new HttpRequestMessage(
+            HttpMethod.Get, "/api/v1/system/remote-access/config?provider=cloudflare&hostname=nas.test.com&lang=en");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var response = await Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("Install cloudflared", "lang=en 应出英文步骤");
+        body.Should().Contain("nas.test.com", "插值（生效域名）与语言无关，都要在");
+        body.Should().NotContain("安装 cloudflared", "英文分支不应混中文步骤");
+    }
+
+    [Fact]
+    public async Task Config_DefaultLang_StaysChinese()
+    {
+        // 不传 lang 的既有调方必须还是中文（契约不变）
+        var adminToken = await LoginAsAdminAsync();
+
+        var request = new HttpRequestMessage(
+            HttpMethod.Get, "/api/v1/system/remote-access/config?provider=cloudflare&hostname=nas.test.com");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var response = await Client.SendAsync(request);
+
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("安装 cloudflared", "缺省 lang 保持中文");
+    }
+
     /// <summary>用种子 admin/admin123 登录换令牌（种子见 Infrastructure 的 SeedDataAsync）</summary>
     private async Task<string> LoginAsAdminAsync()
     {

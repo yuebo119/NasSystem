@@ -102,8 +102,13 @@ describe('SystemInfo 视图层契约', () => {
       if (!div.querySelector('.remote-result')) throw new Error('not generated')
     })
 
+    // lang 按界面语言透传（测试环境由 navigator.language 决定，不写死具体值）
     expect(mockGet).toHaveBeenCalledWith('/system/remote-access/config', {
-      params: { provider: 'cloudflare', hostname: undefined }
+      params: {
+        provider: 'cloudflare',
+        hostname: undefined,
+        lang: expect.stringMatching(/^(zh|en)$/)
+      }
     })
     const result = div.querySelector('.remote-result')?.textContent ?? ''
     expect(result).toContain('config.yml')

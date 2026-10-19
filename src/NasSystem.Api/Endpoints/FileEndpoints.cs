@@ -183,8 +183,11 @@ public static class FileEndpoints
         // ETag 必须含 userId：响应体按归属过滤（多用户隔离），同一目录不同用户
         // 内容不同——2026-10-19 E2E 走查实证，路径+版本的 ETag 会让浏览器
         // 把他人（或修复前的泄漏响应）的缓存体 304 重放给当前用户
+        // 路径经 EscapeDataString 转 ASCII：ETag 是 HTTP 头，头值不允许
+        // 非 ASCII（中文目录名直传会让 Kestrel 抛 Invalid non-ASCII
+        // character，整个浏览 500——2026-10-19 E2E 走查实证）
         var version = NasSystem.Application.Files.DirectoryVersion.Get(targetPath);
-        var etag = $"\"{targetPath}:{userId}:{version}\"";
+        var etag = $"\"{Uri.EscapeDataString(targetPath)}:{userId}:{version}\"";
 
         if (httpContext.Request.Headers.IfNoneMatch.ToString().Contains(etag, StringComparison.Ordinal))
         {

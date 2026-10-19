@@ -137,6 +137,23 @@ describe('http 响应拦截器', () => {
     expect(mockMessage).toHaveBeenCalledWith('登录已过期，请重新登录')
   })
 
+  it('401 带 skipAuthRedirect 时不清 token 不跳转（会话校验类请求）', async () => {
+    // 2026-10-19 E2E 走查实证的回归：公开分享页的访客带过期令牌时，
+    // 守卫的 checkAuth 打 /users/me 收 401，若走全局跳转会被弹去登录页，
+    // 分享页永远加载不出来。带标志的 401 交给 store 与守卫自行处理
+    localStorage.setItem('token', 'tok-abc')
+    rejectWith(401, { error: { code: 'Unauthorized', message: 'x' } })
+
+    await expect(
+      http.get('/users/me', { skipAuthRedirect: true })
+    ).rejects.toThrow()
+
+    // vitest 的 toBe 只收期望值，说明写注释里
+    expect(localStorage.getItem('token')).toBe('tok-abc')
+    expect(routerPush).not.toHaveBeenCalled()
+    expect(mockMessage).not.toHaveBeenCalled()
+  })
+
   it('403 提示无权限，不清 token 不跳转', async () => {
     localStorage.setItem('token', 'tok-abc')
     rejectWith(403)

@@ -71,7 +71,11 @@ public static class ThumbnailEndpoints
         // 条件请求在查库之前判定：ETag 由 URL 三要素（路径加请求尺寸）加用户决定。
         // 含用户是因为缩略图现在按归属放行（多用户隔离）：ETag 不含用户时，
         // 浏览器缓存里他人文件的缩略图会被 304 重放给当前用户，归属校验被绕过
-        var etag = $"\"{path}:{userId}:{targetWidth}:{targetHeight}\"";
+        // 路径经 EscapeDataString 转 ASCII：ETag 是 HTTP 头，头值不允许
+        // 非 ASCII。含中文/空格的文件名直传会让 Kestrel 抛 Invalid
+        // non-ASCII character，缩略图整个 500（2026-10-19 E2E 走查实证：
+        // 媒体库 5 张图里带中文名的那个 400）
+        var etag = $"\"{Uri.EscapeDataString(path)}:{userId}:{targetWidth}:{targetHeight}\"";
         httpContext.Response.Headers.ETag = etag;
 
         if (httpContext.Request.Headers.IfNoneMatch.ToString().Contains(etag, StringComparison.Ordinal))

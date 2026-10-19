@@ -149,4 +149,49 @@ public class ThumbnailEndpointTests : ApiTestBase
             HttpStatusCode.NotFound, HttpStatusCode.InternalServerError);
         // 关键是"有响应"而不是连接被重置或挂起
     }
+
+    [Fact]
+    public async Task GetThumbnail_WithNonAsciiFileName_ReturnsThumbnailNotHeaderCrash()
+    {
+        // 2026-10-19 E2E 走查实证的回归：ETag 用裸路径拼，中文文件名
+        // （"副本"等）让 Kestrel 抛 Invalid non-ASCII character in header，
+        // 缩略图整个 500。ETag 现经 EscapeDataString 转 ASCII
+        var token = await GetAuthTokenAsync("thumbcnuser");
+        SetAuthToken(token);
+        await SeedDefaultStoragePoolAsync();
+
+        var storageRoot = Path.Combine(Path.GetTempPath(), $"thumb-cn-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(storageRoot);
+        try
+        {
+            var physicalFile = Path.Combine(storageRoot, "中文 图片.png");
+            await File.WriteAllBytesAsync(physicalFile, CreateTinyPng());
+
+            var (scope, users, pools, fileItems, _, unitOfWork) = CreateDataScope();
+            using (scope)
+            {
+                var user = (await users.GetAllAsync()).First(u => u.Username == "thumbcnuser");
+                var pool = await pools.GetDefaultAsync();
+                var virtualPath = $"/中文-{Guid.NewGuid():N} 图片.png";
+                await fileItems.AddAsync(FileItem.CreateFile(
+                    Path.GetFileName(virtualPath), virtualPath, physicalFile, CreateTinyPng().Length,
+                    "image/png", pool!.Id, user.Id));
+                await unitOfWork.SaveChangesAsync();
+
+                // URL 编码后发送（浏览器/img 标签也是这样发的）
+                var encoded = Uri.EscapeDataString(virtualPath.TrimStart('/'));
+                var response = await Client.GetAsync(
+                    $"/api/v1/thumbnails/{encoded}?width=128&height=128");
+
+                response.StatusCode.Should().Be(HttpStatusCode.OK,
+                    "中文文件名的缩略图应正常返回；ETag 头不允许非 ASCII 是曾经的崩因");
+                response.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
+                response.Headers.ETag.Should().NotBeNull("响应要带 ETag（转义后的 ASCII 形态）");
+            }
+        }
+        finally
+        {
+            Directory.Delete(storageRoot, recursive: true);
+        }
+    }
 }

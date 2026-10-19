@@ -93,6 +93,14 @@ const loadFolderContent = async (subPath?: string) => {
   }
 }
 
+// 下载文件名：子路径取末段，否则取分享自身的文件名。
+// blob 下载必须显式给 download 属性——留空时浏览器拿 blob UUID
+// 当文件名（实测存成 "2f04b985-....txt"）
+const downloadFileName = (subPath?: string): string => {
+  if (subPath) return subPath.split('/').pop() || subPath
+  return shareInfo.value?.fileName || 'download'
+}
+
 // 下载文件
 const downloadFile = async (subPath?: string) => {
   downloading.value = true
@@ -103,7 +111,7 @@ const downloadFile = async (subPath?: string) => {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = ''
+      link.download = downloadFileName(subPath)
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -112,7 +120,7 @@ const downloadFile = async (subPath?: string) => {
       const url = publicShareApi.getDownloadUrl(shareCode.value, accessToken.value || undefined, subPath)
       const link = document.createElement('a')
       link.href = url
-      link.download = ''
+      link.download = downloadFileName(subPath)
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -271,7 +279,9 @@ onMounted(() => {
               <span>{{ $t('shareAccess.internalOnly') }}</span>
             </div>
             <p class="login-hint">{{ $t('shareAccess.loginRequiredHint') }}</p>
-            <el-button type="primary" size="large" @click="$router.push('/login')">
+            <!-- 带 redirect 回分享页：登录成功后回到原分享链接，
+                 不带则落 dashboard，访客要找回到链接（E2E 走查实证） -->
+            <el-button type="primary" size="large" @click="$router.push({ path: '/login', query: { redirect: $route.fullPath } })">
               {{ $t('shareAccess.loginSystem') }}
             </el-button>
           </div>

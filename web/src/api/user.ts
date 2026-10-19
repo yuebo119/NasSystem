@@ -12,9 +12,12 @@ export const userApi = {
     return http.post('/users/logout')
   },
 
-  // 获取当前用户信息
+  // 获取当前用户信息（会话校验专用）。skipAuthRedirect：401 时不走
+  // 全局拦截器的跳登录，由 store 的 checkAuth 自行清 token、路由守卫
+  // 带 redirect 参数跳转——否则公开分享页的访客带过期令牌访问时，
+  // checkAuth 的 401 会把人弹去登录页且丢失目标地址（E2E 走查实证）
   async getCurrentUser(): Promise<ApiResponse<User>> {
-    return http.get('/users/me')
+    return http.get('/users/me', { skipAuthRedirect: true })
   },
 
   // 获取用户列表

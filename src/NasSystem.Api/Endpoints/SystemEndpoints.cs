@@ -202,14 +202,17 @@ public static class SystemEndpoints
 
     /// <summary>
     /// 外网访问配置生成（ROADMAP Phase 3）。provider 非法时回 400——
-    /// 生成器对未知方案抛 ArgumentException，这里转成客户端错误
+    /// 生成器对未知方案抛 ArgumentException，这里转成客户端错误。
+    /// lang 透传界面语言（zh/en）：配置注释与操作步骤按它出，
+    /// 缺省 zh（端点既有调方不传时行为不变）
     /// </summary>
-    private static IResult GetRemoteAccessConfig(string provider, string? hostname, int localPort = 6050)
+    private static IResult GetRemoteAccessConfig(
+        string provider, string? hostname, int localPort = 6050, string lang = "zh")
     {
         try
         {
             var config = NasSystem.Application.SystemInfo.RemoteAccessConfigGenerator.Generate(
-                provider, hostname, localPort);
+                provider, hostname, localPort, lang);
             return Results.Ok(ApiResponse<object>.Ok(config));
         }
         catch (ArgumentException ex)

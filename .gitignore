@@ -72,3 +72,10 @@ tools/Benchmark/data/
 # nginx 自签证书与 ACME 挑战文件由部署时生成，不入库
 /certs/
 /certbot-webroot/
+
+# 运行期生成的本地资产：CLIP 模型四件套（约 606MB，经设置页下载到
+# src/NasSystem.Api/models/）与缩略图缓存（appsettings 的
+# Thumbnails:CacheDirectory 指向 src/NasSystem.Api/temp/）。
+# 都是本地运行产物，误入库会把百 MB 级二进制塞进版本库
+src/NasSystem.Api/models/
+src/NasSystem.Api/temp/

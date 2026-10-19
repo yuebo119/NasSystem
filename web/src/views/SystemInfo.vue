@@ -11,6 +11,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Refresh, InfoFilled, Monitor } from '@element-plus/icons-vue'
 import http from '@/api/http'
+import { getLocale } from '@/locales'
 
 const { t } = useI18n()
 
@@ -48,7 +49,10 @@ const generateRemoteConfig = async () => {
     const res = await http.get('/system/remote-access/config', {
       params: {
         provider: remoteProvider.value,
-        hostname: remoteHostname.value || undefined
+        hostname: remoteHostname.value || undefined,
+        // 配置注释与步骤按界面语言出（后端生成器双语；插值在后端算，
+        // 前端拿不到生效域名的回退值，所以文本不能放前端 i18n）
+        lang: getLocale() === 'zh-CN' ? 'zh' : 'en'
       }
     }) as any
     if (res.success) {
