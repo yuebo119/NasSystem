@@ -14,12 +14,13 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Link, ArrowRight, Monitor, Warning, Picture } from '@element-plus/icons-vue'
+import { Link, ArrowRight, Monitor, Warning, Picture, VideoCamera } from '@element-plus/icons-vue'
 import { formatSize } from '@/utils/format'
 import { systemConfigApi } from '@/api/systemConfig'
 import { systemControlApi } from '@/api/systemControl'
 import { thumbnailApi } from '@/api/thumbnail'
 import { semanticApi } from '@/api/semantic'
+import { mediaApi, type TranscodeStatus } from '@/api/media'
 import type { SemanticStatus } from '@/api/semantic'
 import http from '@/api/http'
 import type { SystemConfigSnapshot, SystemConfigItem } from '@/types'
@@ -41,6 +42,8 @@ const thumbClearingAll = ref(false)
 const semanticStatus = ref<SemanticStatus | null>(null)
 const semanticLoading = ref(false)
 const semanticDownloading = ref(false)
+// 视频转码（2026-10-19 多码率阶梯）：编码器与阶梯档位，部署环境事实
+const transcodeStatus = ref<TranscodeStatus | null>(null)
 
 // 模型状态：设置页打开时拉一次；下载进行中由下载方法内轮询推进
 async function loadSemanticStatus() {
@@ -72,8 +75,7 @@ async function downloadSemanticModel() {
 
 // 清空全部缩略图缓存：下次访问全量重新生成（CPU 与磁盘压力），
 // 确认文案说明代价。失败只提示不阻断（缓存清了大不了再生成）
-async function clearAllThumbnails() {
-  try {
+async function clearAllThumbnails() {  try {
     await ElMessageBox.confirm(
       t('config.clearAllThumbnailsConfirm'),
       t('config.clearAllThumbnails'),
@@ -103,7 +105,22 @@ const visibleGroups = computed(() =>
   snapshot.value?.groups.filter(g => g.group !== 'webdav' && g.group !== 'ocr') ?? []
 )
 
-onMounted(loadConfig)
+// 转码能力状态：编码器与阶梯是部署环境事实（硬件可达性因机器而异），
+// 拉取失败不阻断页面（其余配置照常可用）
+async function loadTranscodeStatus() {
+  try {
+    const resp = await mediaApi.getTranscodeStatus()
+    if (resp.success && resp.data) transcodeStatus.value = resp.data
+  } catch {
+    // 状态展示失败静默：不影响配置表单
+  }
+}
+
+onMounted(() => {
+  loadConfig()
+  loadSemanticStatus()
+  loadTranscodeStatus()
+})
 
 async function loadConfig() {
   loading.value = true
@@ -355,6 +372,32 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
       </div>
     </div>
 
+    <!-- ④-c 视频转码：编码器与码率阶梯（2026-10-19 多码率升级） -->
+    <div class="config-card" v-if="transcodeStatus">
+      <h3 class="card-title">
+        <el-icon style="vertical-align: -2px; margin-right: 4px"><VideoCamera /></el-icon>
+        {{ $t('config.transcodeTitle') }}
+      </h3>
+      <p class="readonly-desc">{{ $t('config.transcodeDesc') }}</p>
+
+      <div class="transcode-status">
+        <el-tag :type="transcodeStatus.ffmpegAvailable ? 'success' : 'danger'" size="small">
+          {{ transcodeStatus.ffmpegAvailable ? $t('config.transcodeFfmpegOk') : $t('config.transcodeFfmpegMissing') }}
+        </el-tag>
+        <el-tag :type="transcodeStatus.isHardwareEncoder ? 'success' : 'info'" size="small" v-if="transcodeStatus.ffmpegAvailable">
+          {{ transcodeStatus.encoder }}
+          {{ transcodeStatus.isHardwareEncoder ? $t('config.transcodeHardware') : $t('config.transcodeSoftware') }}
+        </el-tag>
+      </div>
+
+      <div class="transcode-rungs" v-if="transcodeStatus.rungs.length">
+        <span class="rungs-label">{{ $t('config.transcodeLadder') }}</span>
+        <el-tag v-for="rung in transcodeStatus.rungs" :key="rung.height" size="small" type="primary" effect="plain">
+          {{ rung.name }} · {{ (rung.maxBitrateKbps / 1000).toFixed(1) }} Mbps
+        </el-tag>
+      </div>
+    </div>
+
     <!-- ⑤ 危险区：重启/关机（真实调度，非计划消息） -->
     <div class="config-card danger-card">
       <h3 class="card-title">
@@ -506,6 +549,25 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
 
     li {
       margin-bottom: 4px;
+    }
+  }
+
+  .transcode-status {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .transcode-rungs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+
+    .rungs-label {
+      font-size: 13px;
+      color: var(--el-text-color-regular);
     }
   }
 

@@ -29,6 +29,12 @@ public interface ITranscodeService
     Task<Result<HlsPlaylist>> GetOrCreateHlsAsync(
         string physicalPath, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 转码能力状态：ffmpeg 可用性、当前生效编码器（含硬件/软件）、
+    /// 码率阶梯档位。供配置页如实展示（探测结果可能随部署环境变化）
+    /// </summary>
+    Task<Result<TranscodeStatus>> GetStatusAsync(CancellationToken cancellationToken = default);
+
     /// <summary>清空转码缓存（对齐缩略图缓存清理的管理入口）</summary>
     Task<long> ClearCacheAsync(CancellationToken cancellationToken = default);
 
@@ -47,3 +53,10 @@ public sealed record HlsPlaylist(
     string Directory,
     string PlaylistFileName,
     long TotalSizeBytes);
+
+/// <summary>转码能力状态（配置页展示，诚实降级的事实源）</summary>
+public sealed record TranscodeStatus(
+    bool FfmpegAvailable,
+    string Encoder,
+    bool IsHardwareEncoder,
+    IReadOnlyList<TranscodeRung> Rungs);

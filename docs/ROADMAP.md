@@ -324,3 +324,14 @@ API-only 判定不变：/system/health（Docker healthcheck 消费）、thumbnai
 踩坑记录：Git Bash 的 MSYS 路径转换把 curl 的 -F "path=/" 表单值改写成 Windows 路径，上传全部落到 C:\Program Files\Git 下报 401，一度被误判为应用 bug；审计脚本需 export MSYS_NO_PATHCONV=1 且本地文件参数走 cygpath -w/-m。另：本机 ffmpeg 缺失，视频转码链路在此环境为诚实 501，画质需在部署环境验收。
 
 验证基线（本轮实测）：后端单测 178 + 集成 226（新增 3 例契约测试）全绿；前端 166 例/23 spec 全绿（本轮无前端改动，复测确认）；oxlint 0 警告；生产构建通过。
+
+第七轮（2026-10-19，视频转码自适应化）：Phase 3 的 HLS 转码从单档 1080p 升级为多码率自适应阶梯，方案与取舍见 ADR-0004。要点：
+
+- 阶梯：ffmpeg -i 探测源分辨率（不依赖 ffprobe），1080p/720p/480p 取不超过源的档位不上放大，源低于 480p 出单档锚定源高度；CRF 23 锚质量，每档 maxrate/bufsize 锁 ABR 车道。
+- 一次调用多路：filter_complex split 加 var_stream_map，一次解码 N 路编码，master.m3u8 加 v{N}/ 布局；音频按探测每档映射，无音频源不映射（-map 0:a 会直接失败）。
+- 硬件编码：h264_nvenc/qsv/amf/vaapi/videotoolbox 真实小编码探测（320x240，NVENC 最小维度之上），TTL 缓存；硬件运行时失败自动降级 libx264 重试一次。探针实测本机 NVENC 可用、QSV 编译在内但 MFX session 失败，证明真实编码探测必要，-encoders 列表会误报。
+- 寻址：master/variant/segment 同路由 query 寻址（HlsUrlRewriter 重写），段名白名单不变；缓存键 = 路径 + 阶梯签名 + 编码器；缓存目录构造期解析为绝对路径（File.Exists 按进程 CWD、Results.File 按 wwwroot 解析，混用会让"文件存在却 404"）。
+- 配置页新增转码能力卡：ffmpeg 可用性、当前编码器（硬件/软件）、码率阶梯，部署环境事实如实展示；顺带修复语义搜图状态此前不在挂载时加载的缺口。
+- 播放侧零改动：hls.js 对 master 自动 ABR。
+
+验证：单测 192（+14 阶梯/解析/参数构建）加集成 232（+6，含真实 ffmpeg 三档、不上放大、编码器状态）加前端 166 全绿；oxlint 0 警告；生产构建通过。端到端：真实 1080p 带音频源上传，master 三档（1920x1080/1280x720/854x480）、variant 重写、segment 200（video/mp2t）、hls.js 视角 URL 解析链全通、配置卡展示 NVENC。踩坑：master_pl_name 传全路径会被 ffmpeg 再拼一次输出目录导致失败，只能传纯文件名。

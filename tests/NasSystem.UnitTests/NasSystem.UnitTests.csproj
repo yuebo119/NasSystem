@@ -11,6 +11,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\NasSystem.Domain\NasSystem.Domain.csproj" />
     <ProjectReference Include="..\..\src\NasSystem.Application\NasSystem.Application.csproj" />
+    <!-- Infrastructure：转码参数构建是纯静态函数（无 IO），住在这里；
+         单测直接覆盖分支，不必起真实 ffmpeg -->
+    <ProjectReference Include="..\..\src\NasSystem.Infrastructure\NasSystem.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\NasSystem.Shared\NasSystem.Shared.csproj" />
   </ItemGroup>
 
