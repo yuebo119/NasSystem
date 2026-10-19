@@ -66,12 +66,12 @@ public static class ThumbnailEndpoints
     {
         var targetWidth = width ?? 200;
         var targetHeight = height ?? 200;
+        var userId = GetUserId(user);
 
-        // 条件请求在查库之前判定：ETag 只由 URL 三要素（路径加请求尺寸）决定，
-        // 同一 URL 的服务端吸附结果必然相同，故键稳定。命中 If-None-Match 直接 304，
-        // 连一次 FileItems 查询都省掉。
-        // 不用服务端算出的缓存键当 ETag：那需要先调服务，304 就失去了省成本的意义
-        var etag = $"\"{path}:{targetWidth}:{targetHeight}\"";
+        // 条件请求在查库之前判定：ETag 由 URL 三要素（路径加请求尺寸）加用户决定。
+        // 含用户是因为缩略图现在按归属放行（多用户隔离）：ETag 不含用户时，
+        // 浏览器缓存里他人文件的缩略图会被 304 重放给当前用户，归属校验被绕过
+        var etag = $"\"{path}:{userId}:{targetWidth}:{targetHeight}\"";
         httpContext.Response.Headers.ETag = etag;
 
         if (httpContext.Request.Headers.IfNoneMatch.ToString().Contains(etag, StringComparison.Ordinal))
@@ -82,15 +82,18 @@ public static class ThumbnailEndpoints
 
         // 端点收到的是虚拟路径，缩略图服务要的是物理路径。原先直接把虚拟路径交给
         // 服务，File.Exists 恒为 false，缩略图功能整个不工作（Thumbnail.FileNotFound）。
-        // 查不到记录时退回原值，让服务给出原有的"源文件不存在"错误而不是崩
+        // 多用户隔离：记录不存在或非本人时按不存在处理，不回退原值——
+        // 回退会让服务拿裸路径去碰磁盘，既是越权面也是噪声错误
         var item = await fileItemRepository.GetByPathAsync(path, cancellationToken);
-        var physicalPath = item?.PhysicalPath ?? path;
+        if (item is null || item.OwnerId != userId)
+            return Results.NotFound(ApiResponse<object>.Fail("File.NotFound", $"文件不存在: {path}"));
+        var physicalPath = item.PhysicalPath;
 
         var result = await thumbnailService.GetThumbnailAsync(
             physicalPath,
             targetWidth,
             targetHeight,
-            GetUserId(user),
+            userId,
             cancellationToken);
 
         if (!result.IsSuccess)

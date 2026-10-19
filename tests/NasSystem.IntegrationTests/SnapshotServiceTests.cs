@@ -123,6 +123,48 @@ public class SnapshotServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateAsync_RootPath_CollectsEverythingNotJustNothing()
+    {
+        // 2026-10-19 E2E 走查实证的回归：根 / 的后代前缀曾拼成 //%，
+        // 永不匹配库存路径，根路径快照静默采出 0 条目（UI 默认根就是 /）
+        var (scope, snapshots, _, users, pools, fileItems, unitOfWork) = Scope();
+        using (scope)
+        {
+            await SeedTreeAsync(users, pools, fileItems, unitOfWork);
+
+            var result = await snapshots.CreateAsync("/", "全库", Operator);
+            result.IsSuccess.Should().BeTrue();
+            result.Value.FileCount.Should().Be(2, "根路径快照应采到全部文件");
+            result.Value.FolderCount.Should().Be(2, "Docs 与 Docs/sub 两个文件夹");
+            result.Value.TotalSizeBytes.Should().Be(300);
+
+            var entries = await snapshots.GetEntriesAsync(result.Value.Id, 1, 100);
+            var paths = entries.Value.Items.Select(e => e.RelativePath).ToList();
+            paths.Should().BeEquivalentTo(new[] { "Docs", "Docs/a.txt", "Docs/sub", "Docs/sub/b.txt" },
+                "根自身不入库，全部子孙入库");
+        }
+    }
+
+    [Fact]
+    public async Task GetSubtreeEntriesAsync_RootPath_ReturnsAllDescendants()
+    {
+        // 同族第二锁：子树删除/恢复/移动的数据源。根路径下曾静默返回空，
+        // 意味着"删到根"的操作什么都不做（fail-safe 方向，但仍是断链）
+        var (scope, _, _, users, pools, fileItems, unitOfWork) = Scope();
+        using (scope)
+        {
+            await SeedTreeAsync(users, pools, fileItems, unitOfWork);
+
+            var subtree = await fileItems.GetSubtreeEntriesAsync("/");
+            subtree.Should().HaveCount(4, "根路径子树应含 Docs、Docs/a.txt、Docs/sub、Docs/sub/b.txt");
+            subtree.Select(e => e.Path).Should().BeEquivalentTo(new[]
+            {
+                "/Docs", "/Docs/a.txt", "/Docs/sub", "/Docs/sub/b.txt"
+            });
+        }
+    }
+
+    [Fact]
     public async Task CreateAsync_IncludesSoftDeletedRecords()
     {
         var (scope, snapshots, _, users, pools, fileItems, unitOfWork) = Scope();

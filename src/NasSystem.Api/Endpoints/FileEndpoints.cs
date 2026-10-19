@@ -174,9 +174,12 @@ public static class FileEndpoints
         // 版本号由 UnitOfWork 在写提交成功后递增（DirectoryVersion），
         // 覆盖建文件夹/上传/重命名/移动/复制/删除/恢复/扫描等全部写入口，
         // 不依赖在这里枚举用例。
-        // ApiResponse.Timestamp 每次现取，所以校验值不能用响应体哈希，必须用版本号
+        // ApiResponse.Timestamp 每次现取，所以校验值不能用响应体哈希，必须用版本号。
+        // ETag 必须含 userId：响应体按归属过滤（多用户隔离），同一目录不同用户
+        // 内容不同——2026-10-19 E2E 走查实证，路径+版本的 ETag 会让浏览器
+        // 把他人（或修复前的泄漏响应）的缓存体 304 重放给当前用户
         var version = NasSystem.Application.Files.DirectoryVersion.Get(targetPath);
-        var etag = $"\"{targetPath}:{version}\"";
+        var etag = $"\"{targetPath}:{userId}:{version}\"";
 
         if (httpContext.Request.Headers.IfNoneMatch.ToString().Contains(etag, StringComparison.Ordinal))
         {

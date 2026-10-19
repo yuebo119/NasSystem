@@ -35,11 +35,19 @@ public sealed partial class FileService
         // Path = "/" 的行，这次查询必然返回 null，纯粹是白跑一趟
         FileItem? parent = null;
         if (path != "/")
+        {
             parent = await _fileRepository.GetByPathAsync(path, cancellationToken);
+            // 多用户隔离：非本人的目录按"不存在"处理——不确认也不否认其存在。
+            // 同时兜住旧怪癖：路径不存在时 parent 为 null 会退化成根目录列表，
+            // 浏览 /任意不存在路径 都能看到根内容
+            if (parent is null || parent.OwnerId != userId)
+                return Result<DirectoryContentDto>.Failure(FileErrors.NotFound(path));
+        }
 
-        // 摘要查询：按需取列 + IsHidden 下推 + 不排序（前端 store 会按用户选择重排）
+        // 摘要查询：按需取列 + IsHidden 下推 + 归属过滤 + 不排序
+        // （前端 store 会按用户选择重排）
         var children = await _fileRepository.GetChildrenSummariesAsync(
-            parent?.Id, includeHidden, cancellationToken);
+            parent?.Id, userId, includeHidden, cancellationToken);
 
         var breadcrumbs = BuildBreadcrumbs(path);
 
@@ -103,7 +111,8 @@ public sealed partial class FileService
         path = NormalizePath(path);
         var item = await _fileRepository.GetByPathAsync(path, cancellationToken);
 
-        if (item is null)
+        // 非本人按不存在处理（不暴露他人条目存在性）
+        if (item is null || item.OwnerId != userId)
             return Result<FileItemDto>.Failure(FileErrors.NotFound(path));
 
         return Result<FileItemDto>.Success(MapToDto(item));

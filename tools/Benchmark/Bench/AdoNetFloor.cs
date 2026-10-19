@@ -67,18 +67,19 @@ public sealed class AdoNetFloor : IAsyncDisposable
     /// 只数行数不映射：FileItemLite 的列序是硬编码的 11 列，与投影列序不同，
     /// 而这条用例要量的正是"数据库读出这些列并传回驱动"的成本
     /// </summary>
-    public async Task<long> GetChildrenSummariesAsync(Guid? parentId)
+    public async Task<long> GetChildrenSummariesAsync(Guid? parentId, Guid ownerId)
     {
         const string columns =
             "\"Id\",\"Name\",\"Path\",\"ItemType\",\"SizeBytes\",\"MimeType\",\"Extension\",\"Hash\"," +
             "\"OwnerId\",\"ParentId\",\"IsHidden\",\"IsReadOnly\",\"CreatedAt\",\"UpdatedAt\"";
 
         var sql = parentId.HasValue
-            ? $"SELECT COUNT(*) FROM (SELECT {columns} FROM \"FileItems\" WHERE \"ParentId\" = $p AND \"IsDeleted\" = 0 AND \"IsHidden\" = 0)"
-            : $"SELECT COUNT(*) FROM (SELECT {columns} FROM \"FileItems\" WHERE \"ParentId\" IS NULL AND \"IsDeleted\" = 0 AND \"IsHidden\" = 0)";
+            ? $"SELECT COUNT(*) FROM (SELECT {columns} FROM \"FileItems\" WHERE \"ParentId\" = $p AND \"IsDeleted\" = 0 AND \"IsHidden\" = 0 AND \"OwnerId\" = $o)"
+            : $"SELECT COUNT(*) FROM (SELECT {columns} FROM \"FileItems\" WHERE \"ParentId\" IS NULL AND \"IsDeleted\" = 0 AND \"IsHidden\" = 0 AND \"OwnerId\" = $o)";
 
         await using var cmd = Command(sql);
         cmd.Parameters.AddWithValue("$p", parentId ?? Guid.Empty);
+        cmd.Parameters.AddWithValue("$o", ownerId);
         var count = await cmd.ExecuteScalarAsync();
         return Convert.ToInt64(count);
     }

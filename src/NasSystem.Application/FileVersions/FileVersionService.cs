@@ -163,9 +163,14 @@ public class FileVersionService : IFileVersionService
     {
         // 不要求 FileItem 仍存在：永久删除的文件记录已没了，但版本快照的
         // 全部意义就是兜住这种不可逆操作，此时版本必须仍可列出可下载。
-        // 版本记录自带 CreatedByUserId，用户名经仓储附带查询，不依赖 FileItem
+        // 版本记录自带 CreatedByUserId，用户名经仓储附带查询，不依赖 FileItem。
+        // 多用户隔离：列表按创建者收敛（.ai/lessons.md 记载的"七方法全裸"缺口），
+        // 他人文件的版本对本用户不可见
         var versions = await _versionRepository.GetByFileItemIdAsync(fileItemId, cancellationToken);
-        var dtos = versions.Select(MapToDto).ToList();
+        var dtos = versions
+            .Where(v => v.CreatedByUserId == userId)
+            .Select(MapToDto)
+            .ToList();
 
         return Result<IReadOnlyList<FileVersionDto>>.Success(dtos);
     }
@@ -180,7 +185,7 @@ public class FileVersionService : IFileVersionService
         var version = await _versionRepository.GetByVersionNumberAsync(
             fileItemId, versionNumber, cancellationToken);
 
-        if (version is null)
+        if (version is null || version.CreatedByUserId != userId)
         {
             return Result<FileVersionDto>.Failure(
                 new Error("FileVersion.NotFound", $"版本 {versionNumber} 不存在"));
@@ -199,7 +204,7 @@ public class FileVersionService : IFileVersionService
         var version = await _versionRepository.GetByVersionNumberAsync(
             fileItemId, versionNumber, cancellationToken);
 
-        if (version is null)
+        if (version is null || version.CreatedByUserId != userId)
         {
             return Result<FileVersionDto>.Failure(
                 new Error("FileVersion.NotFound", $"版本 {versionNumber} 不存在"));
@@ -269,7 +274,7 @@ public class FileVersionService : IFileVersionService
         var version = await _versionRepository.GetByVersionNumberAsync(
             fileItemId, versionNumber, cancellationToken);
 
-        if (version is null)
+        if (version is null || version.CreatedByUserId != userId)
         {
             return Result<(Stream, string, string)>.Failure(
                 new Error("FileVersion.NotFound", $"版本 {versionNumber} 不存在"));
@@ -305,7 +310,7 @@ public class FileVersionService : IFileVersionService
         var version = await _versionRepository.GetByVersionNumberAsync(
             fileItemId, versionNumber, cancellationToken);
 
-        if (version is null)
+        if (version is null || version.CreatedByUserId != userId)
         {
             return Result.Failure(
                 new Error("FileVersion.NotFound", $"版本 {versionNumber} 不存在"));
@@ -355,13 +360,13 @@ public class FileVersionService : IFileVersionService
         var version2 = await _versionRepository.GetByVersionNumberAsync(
             fileItemId, versionNumber2, cancellationToken);
 
-        if (version1 is null)
+        if (version1 is null || version1.CreatedByUserId != userId)
         {
             return Result<VersionComparisonDto>.Failure(
                 new Error("FileVersion.NotFound", $"版本 {versionNumber1} 不存在"));
         }
 
-        if (version2 is null)
+        if (version2 is null || version2.CreatedByUserId != userId)
         {
             return Result<VersionComparisonDto>.Failure(
                 new Error("FileVersion.NotFound", $"版本 {versionNumber2} 不存在"));

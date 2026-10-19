@@ -83,7 +83,7 @@ public class FileServiceTests
         var userId = Guid.NewGuid();
         var path = "/documents";
         
-        var parentItem = CreateFileItem(Guid.NewGuid(), "documents", "/documents", FileItemType.Folder);
+        var parentItem = CreateFileItem(Guid.NewGuid(), "documents", "/documents", FileItemType.Folder, ownerId: userId);
         var childFile = CreateFileItem(Guid.NewGuid(), "test.txt", "/documents/test.txt", FileItemType.File, null, 1024);
         var childFolder = CreateFileItem(Guid.NewGuid(), "subfolder", "/documents/subfolder", FileItemType.Folder, null);
 
@@ -92,7 +92,7 @@ public class FileServiceTests
             .ReturnsAsync(parentItem);
 
         _fileRepositoryMock
-            .Setup(x => x.GetChildrenSummariesAsync(It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetChildrenSummariesAsync(It.IsAny<Guid?>(), It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FileItemSummary>
             {
                 CreateSummary("test.txt", "/documents/test.txt", FileItemType.File, parentId: parentItem.Id, sizeBytes: 1024),
@@ -124,7 +124,7 @@ public class FileServiceTests
             .ReturnsAsync((FileItem?)null);
 
         _fileRepositoryMock
-            .Setup(x => x.GetChildrenSummariesAsync(null, false, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetChildrenSummariesAsync(null, It.IsAny<Guid>(), false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FileItemSummary>
             {
                 CreateSummary("documents", "/documents", FileItemType.Folder)
@@ -150,14 +150,14 @@ public class FileServiceTests
         var userId = Guid.NewGuid();
         var path = "/documents";
 
-        var parentItem = CreateFileItem(Guid.NewGuid(), "documents", "/documents", FileItemType.Folder);
+        var parentItem = CreateFileItem(Guid.NewGuid(), "documents", "/documents", FileItemType.Folder, ownerId: userId);
 
         _fileRepositoryMock
             .Setup(x => x.GetByPathAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(parentItem);
 
         _fileRepositoryMock
-            .Setup(x => x.GetChildrenSummariesAsync(parentItem.Id, false, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetChildrenSummariesAsync(parentItem.Id, userId, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FileItemSummary>
             {
                 CreateSummary("visible.txt", "/documents/visible.txt", FileItemType.File, parentId: parentItem.Id)
@@ -172,7 +172,7 @@ public class FileServiceTests
         result.Value.Items[0].Name.Should().Be("visible.txt");
 
         _fileRepositoryMock.Verify(
-            x => x.GetChildrenSummariesAsync(parentItem.Id, false, It.IsAny<CancellationToken>()),
+            x => x.GetChildrenSummariesAsync(parentItem.Id, userId, false, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -186,7 +186,7 @@ public class FileServiceTests
         // Arrange
         var userId = Guid.NewGuid();
         var path = "/documents/test.txt";
-        var fileItem = CreateFileItem(Guid.NewGuid(), "test.txt", path, FileItemType.File);
+        var fileItem = CreateFileItem(Guid.NewGuid(), "test.txt", path, FileItemType.File, ownerId: userId);
 
         _fileRepositoryMock
             .Setup(x => x.GetByPathAsync(path, It.IsAny<CancellationToken>()))
@@ -234,7 +234,7 @@ public class FileServiceTests
         var parentId = Guid.NewGuid();
         var poolId = Guid.NewGuid();
 
-        var parentItem = CreateFileItem(parentId, "documents", parentPath, FileItemType.Folder);
+        var parentItem = CreateFileItem(parentId, "documents", parentPath, FileItemType.Folder, ownerId: userId);
         var storagePool = CreateStoragePool(poolId, "DefaultPool", "/mnt/storage");
 
         var request = new CreateFolderRequest 
@@ -408,7 +408,7 @@ public class FileServiceTests
         // Arrange
         var userId = Guid.NewGuid();
         var fileId = Guid.NewGuid();
-        var fileItem = CreateFileItem(fileId, "test.txt", "/documents/test.txt", FileItemType.File);
+        var fileItem = CreateFileItem(fileId, "test.txt", "/documents/test.txt", FileItemType.File, ownerId: userId);
 
         var request = new DeleteItemsRequest 
         { 
@@ -445,7 +445,7 @@ public class FileServiceTests
     {
         // Arrange
         var userId = Guid.NewGuid();
-        var fileItem = CreateFileItem(Guid.NewGuid(), "delete-me.txt", "/documents/delete-me.txt", FileItemType.File);
+        var fileItem = CreateFileItem(Guid.NewGuid(), "delete-me.txt", "/documents/delete-me.txt", FileItemType.File, ownerId: userId);
 
         var request = new DeleteItemsRequest
         {
@@ -454,7 +454,7 @@ public class FileServiceTests
         };
 
         _fileRepositoryMock
-            .Setup(x => x.GetByPathAsync("/documents/delete-me.txt", It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByPathIncludingDeletedAsync("/documents/delete-me.txt", It.IsAny<CancellationToken>()))
             .ReturnsAsync(fileItem);
 
         // 设置文件存在检查返回 true
@@ -480,7 +480,7 @@ public class FileServiceTests
     {
         // Arrange
         var userId = Guid.NewGuid();
-        var folder = CreateFileItem(Guid.NewGuid(), "folder", "/documents/folder", FileItemType.Folder);
+        var folder = CreateFileItem(Guid.NewGuid(), "folder", "/documents/folder", FileItemType.Folder, ownerId: userId);
 
         var request = new DeleteItemsRequest
         {
@@ -489,7 +489,7 @@ public class FileServiceTests
         };
 
         _fileRepositoryMock
-            .Setup(x => x.GetByPathAsync("/documents/folder", It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByPathIncludingDeletedAsync("/documents/folder", It.IsAny<CancellationToken>()))
             .ReturnsAsync(folder);
 
         // 设置目录存在检查返回 true
@@ -510,8 +510,8 @@ public class FileServiceTests
     {
         // Arrange
         var userId = Guid.NewGuid();
-        var file1 = CreateFileItem(Guid.NewGuid(), "file1.txt", "/documents/file1.txt", FileItemType.File);
-        var file2 = CreateFileItem(Guid.NewGuid(), "file2.txt", "/documents/file2.txt", FileItemType.File);
+        var file1 = CreateFileItem(Guid.NewGuid(), "file1.txt", "/documents/file1.txt", FileItemType.File, ownerId: userId);
+        var file2 = CreateFileItem(Guid.NewGuid(), "file2.txt", "/documents/file2.txt", FileItemType.File, ownerId: userId);
 
         var request = new DeleteItemsRequest
         {
@@ -577,7 +577,7 @@ public class FileServiceTests
     {
         // Arrange
         var userId = Guid.NewGuid();
-        var file = CreateFileItem(Guid.NewGuid(), "old.txt", "/documents/old.txt", FileItemType.File);
+        var file = CreateFileItem(Guid.NewGuid(), "old.txt", "/documents/old.txt", FileItemType.File, ownerId: userId);
 
         var request = new RenameItemRequest
         {
@@ -609,7 +609,7 @@ public class FileServiceTests
     {
         // Arrange
         var userId = Guid.NewGuid();
-        var file = CreateFileItem(Guid.NewGuid(), "old.txt", "/documents/old.txt", FileItemType.File);
+        var file = CreateFileItem(Guid.NewGuid(), "old.txt", "/documents/old.txt", FileItemType.File, ownerId: userId);
 
         var request = new RenameItemRequest
         {
@@ -666,8 +666,8 @@ public class FileServiceTests
     {
         // Arrange
         var userId = Guid.NewGuid();
-        var file = CreateFileItem(Guid.NewGuid(), "file.txt", "/source/file.txt", FileItemType.File);
-        var destFolder = CreateFileItem(Guid.NewGuid(), "destination", "/destination", FileItemType.Folder);
+        var file = CreateFileItem(Guid.NewGuid(), "file.txt", "/source/file.txt", FileItemType.File, ownerId: userId);
+        var destFolder = CreateFileItem(Guid.NewGuid(), "destination", "/destination", FileItemType.Folder, ownerId: userId);
 
         var request = new MoveOrCopyRequest
         {
@@ -700,9 +700,9 @@ public class FileServiceTests
     {
         // Arrange
         var userId = Guid.NewGuid();
-        var file1 = CreateFileItem(Guid.NewGuid(), "file1.txt", "/source/file1.txt", FileItemType.File);
-        var file2 = CreateFileItem(Guid.NewGuid(), "file2.txt", "/source/file2.txt", FileItemType.File);
-        var destFolder = CreateFileItem(Guid.NewGuid(), "destination", "/destination", FileItemType.Folder);
+        var file1 = CreateFileItem(Guid.NewGuid(), "file1.txt", "/source/file1.txt", FileItemType.File, ownerId: userId);
+        var file2 = CreateFileItem(Guid.NewGuid(), "file2.txt", "/source/file2.txt", FileItemType.File, ownerId: userId);
+        var destFolder = CreateFileItem(Guid.NewGuid(), "destination", "/destination", FileItemType.Folder, ownerId: userId);
 
         var request = new MoveOrCopyRequest
         {
@@ -787,7 +787,7 @@ public class FileServiceTests
         // Arrange
         var userId = Guid.NewGuid();
         var fileId = Guid.NewGuid();
-        var file = CreateFileItem(fileId, "deleted.txt", "/documents/deleted.txt", FileItemType.File);
+        var file = CreateFileItem(fileId, "deleted.txt", "/documents/deleted.txt", FileItemType.File, ownerId: userId);
 
         // S3：恢复走单条 SQL（整棵子树），不再逐条 Restore + UpdateAsync
         _fileRepositoryMock
@@ -1013,11 +1013,13 @@ public class FileServiceTests
         FileItemType itemType,
         Guid? parentId = null,
         long sizeBytes = 0,
-        bool isHidden = false)
+        bool isHidden = false,
+        Guid? ownerId = null)
     {
+        var owner = ownerId ?? Guid.NewGuid();
         return itemType == FileItemType.Folder
-            ? FileItem.CreateFolder(name, path, $"/mnt/storage{path}", Guid.NewGuid(), Guid.NewGuid(), parentId)
-            : FileItem.CreateFile(name, path, $"/mnt/storage{path}", sizeBytes, "text/plain", Guid.NewGuid(), Guid.NewGuid(), parentId);
+            ? FileItem.CreateFolder(name, path, $"/mnt/storage{path}", Guid.NewGuid(), owner, parentId)
+            : FileItem.CreateFile(name, path, $"/mnt/storage{path}", sizeBytes, "text/plain", Guid.NewGuid(), owner, parentId);
     }
 
     /// <summary>

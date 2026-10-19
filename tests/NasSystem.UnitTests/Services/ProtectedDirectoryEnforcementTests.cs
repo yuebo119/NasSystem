@@ -82,7 +82,7 @@ public class ProtectedDirectoryEnforcementTests
             NullLogger<FileService>.Instance);
     }
 
-    private static FileItem CreateExistingFile(string path) =>
+    private static FileItem CreateExistingFile(string path, Guid? ownerId = null) =>
         FileItem.CreateFile(
             name: System.IO.Path.GetFileName(path),
             path: path,
@@ -90,15 +90,16 @@ public class ProtectedDirectoryEnforcementTests
             sizeBytes: 10,
             mimeType: "text/plain",
             storagePoolId: Guid.NewGuid(),
-            ownerId: Guid.NewGuid());
+            ownerId: ownerId ?? Guid.NewGuid());
 
     [Fact]
     public async Task UploadFileAsync_OverwriteProtectedPath_IsRejected()
     {
         // Arrange：目标路径已存在（覆盖场景）且处于保护内
+        var userId = Guid.NewGuid();
         _fileRepositoryMock
             .Setup(x => x.GetByPathAsync("/Docs/secret.txt", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(CreateExistingFile("/Docs/secret.txt"));
+            .ReturnsAsync(CreateExistingFile("/Docs/secret.txt", userId));
 
         // 任何物理 IO 都不该发生（拦截在落盘之前）——OpenWrite 被调用即失败
         _fileSystemServiceMock
@@ -112,7 +113,7 @@ public class ProtectedDirectoryEnforcementTests
 
         // Act
         var result = await _sut.UploadFileAsync(
-            metadata, new System.IO.MemoryStream([1, 2, 3]), Guid.NewGuid());
+            metadata, new System.IO.MemoryStream([1, 2, 3]), userId);
 
         // Assert
         result.IsFailure.Should().BeTrue("覆盖受保护目录内的文件必须被拒绝");
@@ -225,7 +226,8 @@ public class ProtectedDirectoryEnforcementTests
     public async Task DeleteAsync_UnprotectedPath_DeletesNormally()
     {
         // 对照：未标记路径的软删照常走通（防拦截逻辑误伤正常删除）
-        var target = CreateExistingFile("/Other/file.txt");
+        var userId = Guid.NewGuid();
+        var target = CreateExistingFile("/Other/file.txt", userId);
         _fileRepositoryMock
             .Setup(x => x.GetByPathAsync("/Other/file.txt", It.IsAny<CancellationToken>()))
             .ReturnsAsync(target);
@@ -242,7 +244,7 @@ public class ProtectedDirectoryEnforcementTests
 
         var request = new DeleteItemsRequest { Paths = ["/Other/file.txt"], Permanent = false };
 
-        var result = await _sut.DeleteAsync(request, Guid.NewGuid());
+        var result = await _sut.DeleteAsync(request, userId);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.DeletedCount.Should().Be(1);

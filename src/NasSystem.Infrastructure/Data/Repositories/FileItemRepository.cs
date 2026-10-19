@@ -37,6 +37,17 @@ public sealed class FileItemRepository(
         return row?.ToDomain();
     }
 
+    public async Task<FileItem?> GetByPathIncludingDeletedAsync(
+        string path, CancellationToken cancellationToken = default)
+    {
+        var normalizedPath = NormalizePath(path);
+        var db = await sessions.GetAsync(cancellationToken);
+        var row = await db.From<FileItemRow>()
+            .Where($"Path = {normalizedPath}")
+            .FirstOrDefaultAsync(cancellationToken);
+        return row?.ToDomain();
+    }
+
     public async Task<IReadOnlyList<FileItem>> GetChildrenAsync(
         Guid? parentId,
         bool includeDeleted = false,
@@ -63,16 +74,20 @@ public sealed class FileItemRepository(
     }
 
     /// <summary>
-    /// 浏览专用子项查询：按需取 14 列 + IsHidden 下推 + 不排序。
+    /// 浏览专用子项查询：按需取 14 列 + IsHidden 下推 + 不排序 + 归属过滤。
     /// </summary>
     /// <remarks>
     /// 列序必须与 <see cref="FileItemBrowseRow"/> 的属性声明序逐列对齐（PalORM 投影
     /// 按序号映射，错位静默交换数据）。两个 WHERE 分支共用同一列序，只在前置条件上分叉：
     /// 根目录必须生成 <c>ParentId IS NULL</c>——FormattableString 的 null 实参只会变成
     /// <c>@pN</c> 占位，而 SQLite 里 <c>x = NULL</c> 恒不匹配，根目录会静默返回空。
+    /// OwnerId 过滤是多用户隔离的库层防线：2026-10-19 E2E 走查实证新用户能浏览到
+    /// 他人全部文件（.ai/lessons.md 记载的"FileService 不过滤 ownerId"缺口），
+    /// OCR/媒体/语义/转码四处都校验归属，核心文件链路不能是例外
     /// </remarks>
     public async Task<IReadOnlyList<FileItemSummary>> GetChildrenSummariesAsync(
         Guid? parentId,
+        Guid ownerId,
         bool includeHidden = false,
         CancellationToken cancellationToken = default)
     {
@@ -89,19 +104,24 @@ public sealed class FileItemRepository(
 
         // 根目录必须生成 ParentId IS NULL：FormattableString 的 null 实参只会变成
         // @pN 占位，而 SQLite 里 x = NULL 恒不匹配，根目录会静默返回空。
-        // parentId 保留为 {0} 绑定参数，不内联 Guid 字面量（绕过参数绑定就绕过
-        // Microsoft.Data.Sqlite 的 Guid 大写 D 归一）
-        var parentClause = parentId.HasValue ? "ParentId = {0}" : "ParentId IS NULL";
+        // parentId 与 ownerId 都保留为绑定参数，不内联 Guid 字面量（绕过参数绑定
+        // 就绕过 Microsoft.Data.Sqlite 的 Guid 大写 D 归一）
+        System.FormattableString query;
+        if (parentId.HasValue)
+        {
+            var withParent = "SELECT " + Columns + " FROM FileItems WHERE ParentId = {0}" +
+                " AND IsDeleted = 0" + hiddenFilter + " AND OwnerId = {1}";
+            query = System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                withParent, parentId.Value, ownerId);
+        }
+        else
+        {
+            var atRoot = "SELECT " + Columns + " FROM FileItems WHERE ParentId IS NULL" +
+                " AND IsDeleted = 0" + hiddenFilter + " AND OwnerId = {0}";
+            query = System.Runtime.CompilerServices.FormattableStringFactory.Create(atRoot, ownerId);
+        }
 
-        var sql = "SELECT " + Columns + " FROM FileItems WHERE " + parentClause +
-            " AND IsDeleted = 0" + hiddenFilter;
-
-        var rows = await db.QueryAsync<FileItemBrowseRow>(
-            parentId.HasValue
-                ? System.Runtime.CompilerServices.FormattableStringFactory.Create(sql, parentId.Value)
-                : System.Runtime.CompilerServices.FormattableStringFactory.Create(sql),
-            false,
-            cancellationToken);
+        var rows = await db.QueryAsync<FileItemBrowseRow>(query, false, cancellationToken);
 
         return rows.Select(r => new FileItemSummary
         {
@@ -479,7 +499,7 @@ public sealed class FileItemRepository(
             return [];
 
         var rows = await db.From<FileItemRow>()
-            .Where($"Path LIKE {EscapeLike(parentPath + "/") + '%'} ESCAPE '#' AND IsDeleted = 0")
+            .Where($"Path LIKE {DescendantPrefix(parentPath)} ESCAPE '#' AND IsDeleted = 0")
             .OrderBy(f => f.Path)
             .ToListAsync(cancellationToken);
 
@@ -525,7 +545,7 @@ public sealed class FileItemRepository(
 
         // 与 GetSubtreeEntriesAsync 同口径：根自身 + 全部后代、不论删除态、
         // OR 两支都走参数绑定。多取 Hash/UpdatedAt/CreatedAt 三列入快照采集
-        var prefix = EscapeLike(rootPath) + "/%";
+        var prefix = DescendantPrefix(rootPath);
         var rows = await db.QueryAsync<FileItemSnapshotEntryRow>(
             System.Runtime.CompilerServices.FormattableStringFactory.Create(
                 "SELECT Path, ItemType, SizeBytes, Hash, UpdatedAt, CreatedAt FROM FileItems WHERE Path = {0} OR Path LIKE {1} ESCAPE '#'",
@@ -545,7 +565,7 @@ public sealed class FileItemRepository(
 
         // 根自身 + 全部后代，不论删除态。OR 的两支都走参数绑定：
         // 根路径等值比较与 LIKE 前缀各一个占位
-        var prefix = EscapeLike(rootPath) + "/%";
+        var prefix = DescendantPrefix(rootPath);
         var rows = await db.QueryAsync<FileItemEntryRow>(
             System.Runtime.CompilerServices.FormattableStringFactory.Create(
                 "SELECT Path, ItemType, SizeBytes FROM FileItems WHERE Path = {0} OR Path LIKE {1} ESCAPE '#'",
@@ -565,7 +585,7 @@ public sealed class FileItemRepository(
         // 中途失败整体回滚（逐条实体 Update 时代同样由 UoW 事务保证）。
         // UpdatedAt 一并写：原逐条实现经 SoftDelete 的 MarkAsModified 会写，
         // 不写则前端"修改时间"显示与旧行为不一致
-        var prefix = EscapeLike(rootPath) + "/%";
+        var prefix = DescendantPrefix(rootPath);
         unitOfWork.EnqueueCommand(async (db, ct) => await db.ExecuteAsync(
             System.Runtime.CompilerServices.FormattableStringFactory.Create(
                 "UPDATE FileItems SET IsDeleted = 1, DeletedAt = {0}, UpdatedAt = {0} " +
@@ -581,7 +601,7 @@ public sealed class FileItemRepository(
         CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
-        var prefix = EscapeLike(rootPath) + "/%";
+        var prefix = DescendantPrefix(rootPath);
         unitOfWork.EnqueueCommand(async (db, ct) => await db.ExecuteAsync(
             System.Runtime.CompilerServices.FormattableStringFactory.Create(
                 "UPDATE FileItems SET IsDeleted = 0, DeletedAt = NULL, UpdatedAt = {0} " +
@@ -605,7 +625,7 @@ public sealed class FileItemRepository(
         // 用 OS 分隔符，相对段原样拼接即可，不需要 replace（旧基与新基同形态）。
         // 五个值全部走绑定参数：基路径含用户输入（名称），内联即绕过参数化；
         // 两个长度是本方法计算的 int，同样按参数传递保持口径统一
-        var prefix = EscapeLike(oldVirtualBase) + "/%";
+        var prefix = DescendantPrefix(oldVirtualBase);
         unitOfWork.EnqueueCommand(async (db, ct) => await db.ExecuteAsync(
             System.Runtime.CompilerServices.FormattableStringFactory.Create(
                 "UPDATE FileItems SET " +
@@ -815,6 +835,15 @@ public sealed class FileItemRepository(
 
     private static string EscapeLike(string value) =>
         value.Replace("#", "##").Replace("%", "#%").Replace("_", "#_");
+
+    /// <summary>
+    /// 后代路径的 LIKE 模式。根 / 的后代是 /% 而不是 //%：根路径按
+    /// 常规拼法会产出双斜杠，永不匹配任何库存路径（库存路径形如 /a/b），
+    /// 症状是快照采集、子树删除/恢复、移动重写在根路径下静默无操作
+    /// （2026-10-19 E2E 走查实证：根路径快照采出 0 条目）
+    /// </summary>
+    private static string DescendantPrefix(string rootPath) =>
+        rootPath == "/" ? "/%" : EscapeLike(rootPath) + "/%";
 
     /// <summary>
     /// 标准化路径（单一真源委托，见 FilePath.Normalize 的保留论证）

@@ -212,7 +212,7 @@ export default {
     title: '3-2-1 导出',
     subtitle: '把目录打包下载到外部存储，完成 3-2-1 备份原则的最后一公里',
     rootPath: '根路径',
-    rootPathHint: '把目录子树边扫边压打包下载。大目录是流式产出，不占服务端磁盘；下载时长取决于目录体积',
+    rootPathHint: '把目录子树边扫边压打包下载。大目录是流式产出，不占服务端磁盘；下载时长取决于目录体积。填 / 导出默认存储池全库（多池部署下只含默认池）',
     pathRequired: '根路径不能为空',
     password: '加密密码（可选）',
     passwordPlaceholder: '留空则不加密',

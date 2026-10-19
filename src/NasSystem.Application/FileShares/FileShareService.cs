@@ -46,7 +46,9 @@ public sealed class FileShareService(
     {
         // 验证文件是否存在
         var fileItem = await fileItemRepository.GetByIdAsync(request.FileItemId, cancellationToken);
-        if (fileItem is null)
+        // 多用户隔离：只能分享自己的文件。非本人按不存在处理
+        // （不确认也不否认该 Id 对应他人文件）
+        if (fileItem is null || fileItem.OwnerId != userId)
             return Result<FileShareDto>.Failure(FileShareErrors.FileNotFound(request.FileItemId));
 
         // 处理密码

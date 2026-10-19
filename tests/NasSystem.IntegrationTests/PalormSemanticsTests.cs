@@ -108,7 +108,7 @@ public class PalormSemanticsTests : IDisposable
                 "sub", "/sub", "/mnt/p/sub", pool.Id, user.Id, parentId: null));
             await uow.SaveChangesAsync();
 
-            var rootChildren = await fileItems.GetChildrenSummariesAsync(null, includeHidden: false);
+            var rootChildren = await fileItems.GetChildrenSummariesAsync(null, user.Id, includeHidden: false);
             rootChildren.Should().HaveCount(2, "根目录应列出 ParentId 为 NULL 的项");
         }
     }
@@ -141,11 +141,11 @@ public class PalormSemanticsTests : IDisposable
             await db.ExecuteAsync(System.Runtime.CompilerServices.FormattableStringFactory.Create(
                 "UPDATE FileItems SET IsHidden = 1 WHERE Path = '/hidden.txt'"));
 
-            var visibleOnly = await fileItems.GetChildrenSummariesAsync(null, includeHidden: false);
+            var visibleOnly = await fileItems.GetChildrenSummariesAsync(null, user.Id, includeHidden: false);
             visibleOnly.Should().HaveCount(1);
             visibleOnly[0].Name.Should().Be("visible.txt");
 
-            var withHidden = await fileItems.GetChildrenSummariesAsync(null, includeHidden: true);
+            var withHidden = await fileItems.GetChildrenSummariesAsync(null, user.Id, includeHidden: true);
             withHidden.Should().HaveCount(2, "includeHidden=true 时隐藏项应返回");
         }
     }

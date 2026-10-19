@@ -51,8 +51,14 @@ public sealed partial class FileService
                 continue;
             }
 
-            var item = await _fileRepository.GetByPathAsync(normalized, cancellationToken);
-            if (item is null)
+            // 永久删的查找含软删记录：回收站里的条目 IsDeleted=1，按可见口径
+            // （GetByPathAsync 排已删）找不到，回收站"单条永久删除"会全数落入
+            // "路径不存在"——2026-10-19 E2E 走查实证，该按钮此前从未成功过
+            var item = request.Permanent
+                ? await _fileRepository.GetByPathIncludingDeletedAsync(normalized, cancellationToken)
+                : await _fileRepository.GetByPathAsync(normalized, cancellationToken);
+            // 多用户隔离：不存在与非本人的条目都按不存在处理（删/永久删都是写路径）
+            if (item is null || item.OwnerId != userId)
             {
                 result.FailedItems.Add($"路径不存在: {normalized}");
                 continue;
@@ -162,7 +168,8 @@ public sealed partial class FileService
         CancellationToken cancellationToken = default)
     {
         var item = await _fileRepository.GetByIdAsync(fileId, cancellationToken);
-        if (item is null)
+        // 多用户隔离：非本人的回收站记录按不存在处理（恢复是写路径）
+        if (item is null || item.OwnerId != userId)
             return Result<FileItemDto>.Failure(FileErrors.NotFoundById(fileId));
 
         // 内存实体同步恢复态：持久化走下面的批量 SQL（不经过实体），

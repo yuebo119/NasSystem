@@ -36,6 +36,7 @@ public static class ExportEndpoints
     private static async Task<IResult> CreateExport(
         CreateExportRequest request,
         IFileItemRepository fileRepository,
+        IStoragePoolRepository poolRepository,
         ClaimsPrincipal user,
         CancellationToken cancellationToken)
     {
@@ -47,6 +48,22 @@ public static class ExportEndpoints
             normalized = "/" + normalized;
         if (normalized.Length > 1)
             normalized = normalized.TrimEnd('/');
+
+        // 根 / 没有库记录（根本身不是实体），但它是导出页的默认值：
+        // 解析为默认存储池的挂载点，导出该池全库（3-2-1 的主场景）。
+        // 多池部署下只含默认池——UI 提示文案对此明示，不假装是全库
+        if (normalized == "/")
+        {
+            var defaultPool = await poolRepository.GetDefaultAsync(cancellationToken);
+            if (defaultPool is null)
+                return Results.NotFound(new { message = "默认存储池不存在，无法导出根目录" });
+            var rootPrefix = string.IsNullOrWhiteSpace(defaultPool.Name) ? "nas" : defaultPool.Name;
+            return new ExportResult(
+                defaultPool.MountPath,
+                rootPrefix,
+                $"{rootPrefix}-{DateTime.UtcNow:yyyyMMdd-HHmmss}",
+                request.Password);
+        }
 
         // 校验在流式响应开始之前：路径不存在/不是目录时还能返回结构化错误，
         // 一旦开始写响应体就只剩半截流

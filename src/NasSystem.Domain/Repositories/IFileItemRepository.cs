@@ -19,6 +19,13 @@ public interface IFileItemRepository : IRepository<FileItem>
     Task<FileItem?> GetByPathAsync(string path, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 根据路径获取文件项（含软删记录）。回收站条目的永久删除按路径查找，
+    /// 可见口径（GetByPathAsync 排已删）会让回收站"永久删除"全数落入
+    /// "路径不存在"——2026-10-19 E2E 走查实证
+    /// </summary>
+    Task<FileItem?> GetByPathIncludingDeletedAsync(string path, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 获取目录下的子项
     /// </summary>
     Task<IReadOnlyList<FileItem>> GetChildrenAsync(
@@ -36,9 +43,11 @@ public interface IFileItemRepository : IRepository<FileItem>
     /// 排序不在此做：前端 store 的 sortedFiles 会按用户选择重排，服务端 ORDER BY
     /// 的产物被完整丢弃，省掉这次排序。
     /// 软删过滤仍是硬约束：WHERE 必须带 IsDeleted = 0，否则回收站记录会出现在浏览结果里。
+    /// OwnerId 过滤同为硬约束：多用户隔离的库层防线，调方传入当前用户 Id。
     /// </remarks>
     Task<IReadOnlyList<FileItemSummary>> GetChildrenSummariesAsync(
         Guid? parentId,
+        Guid ownerId,
         bool includeHidden = false,
         CancellationToken cancellationToken = default);
 

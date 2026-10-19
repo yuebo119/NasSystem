@@ -78,7 +78,7 @@ public class FilePathNormalizeTests
         var repoMock = new Moq.Mock<IFileItemRepository>();
         // 归一化目标为根目录时的最小行为：父不存在、子列表为空。
         // 服务走 GetChildrenSummariesAsync（浏览专用投影查询），不是 GetChildrenAsync
-        repoMock.Setup(r => r.GetChildrenSummariesAsync(It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+        repoMock.Setup(r => r.GetChildrenSummariesAsync(It.IsAny<Guid?>(), It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new List<FileItemSummary>());
         repoMock.Setup(r => r.GetDeletedItemsAsync(It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync([]);

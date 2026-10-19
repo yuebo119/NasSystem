@@ -56,7 +56,9 @@ public static class SemanticEndpoints
     {
         var status = await semanticService.GetStatusAsync(cancellationToken);
         var progress = await semanticService.GetProgressAsync(cancellationToken);
-        return Results.Ok(new
+        // ApiResponse 包装不是可选装饰：前端统一按 success/data 判定，
+        // 裸对象会让整个语义卡（模型四件套/索引进度/手动触发）静默不渲染
+        return Results.Ok(ApiResponse<object>.Ok(new
         {
             model = new
             {
@@ -70,7 +72,7 @@ public static class SemanticEndpoints
                 isIndexing = progress.IsIndexing,
                 error = progress.LastError,
             },
-        });
+        }));
     }
 
     private static async Task<IResult> DownloadModel(
@@ -143,7 +145,9 @@ public static class SemanticEndpoints
                 distance = hit.Distance,
             });
         }
-        return Results.Ok(new { items = hits });
+        // 与 /status 同缘由包 ApiResponse：前端按 success/data 统一判定，
+        // 裸对象会让搜索静默无结果（媒体库看不到任何反馈）
+        return Results.Ok(ApiResponse<object>.Ok(new { items = hits }));
     }
 
     private sealed record SemanticSearchRequest(string Query, int TopK = 50);

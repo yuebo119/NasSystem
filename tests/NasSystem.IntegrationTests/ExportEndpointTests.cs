@@ -189,6 +189,63 @@ public class ExportEndpointTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Export_RootPath_ExportsDefaultPool()
+    {
+        // 2026-10-19 E2E 走查实证的回归：根 / 曾是 404（根不是库记录），
+        // 而它是导出页的默认值，首点必失败。现按默认存储池挂载点导出
+        await SeedExportTreeAsync();
+        await MakeSeededPoolTheOnlyDefaultAsync();
+        var token = await AdminTokenAsync();
+
+        var response = await Client.SendAsync(CreateExportRequest(token, new { rootPath = "/" }));
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK,
+            "根路径应解析为默认存储池，不再 404");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/zip");
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        var names = archive.Entries.Select(e => e.FullName).OrderBy(n => n).ToList();
+        // 前缀是池名：与目录导出的前缀逻辑一致（目录导前缀为目录名）
+        var prefix = await GetDefaultPoolNameAsync();
+        names.Should().BeEquivalentTo(new[]
+        {
+            $"{prefix}/empty/",
+            $"{prefix}/readme.txt",
+            $"{prefix}/sub/data.bin"
+        }, "根导出 = 默认池挂载点下的物理树，条目以池名为顶层目录");
+    }
+
+    private async Task<string> GetDefaultPoolNameAsync()
+    {
+        var (scope, _, pools, _, _, _) = CreateDataScope();
+        using (scope)
+        {
+            var pool = await pools.GetDefaultAsync();
+            return pool?.Name ?? throw new InvalidOperationException("默认池应存在");
+        }
+    }
+
+    /// <summary>
+    /// 种子助手直接 SetAsDefault(true) 不经服务层，共享库里会留下多个
+    /// 默认池（GetDefaultAsync 取到旧的种子池）。按挂载点认出本次的池，
+    /// 把其余默认取消——与 SetDefaultPoolAsync 的服务层口径一致
+    /// </summary>
+    private async Task MakeSeededPoolTheOnlyDefaultAsync()
+    {
+        var (scope, _, pools, _, _, unitOfWork) = CreateDataScope();
+        using (scope)
+        {
+            var all = await pools.GetAllAsync();
+            foreach (var pool in all.Where(p => p.IsDefault && p.MountPath != _storageRoot))
+            {
+                pool.SetAsDefault(false);
+                await pools.UpdateAsync(pool);
+            }
+            await unitOfWork.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
     public async Task Export_FilePathInsteadOfDirectory_Returns400()
     {
         var root = await SeedExportTreeAsync();

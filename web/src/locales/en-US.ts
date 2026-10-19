@@ -214,7 +214,7 @@ export default {
     title: '3-2-1 Export',
     subtitle: 'Package a directory for download to external storage, completing the last mile of the 3-2-1 rule',
     rootPath: 'Root Path',
-    rootPathHint: 'Streams the directory subtree into a zip download. Large directories are streamed without server disk usage; download time depends on size',
+    rootPathHint: 'Streams the directory subtree into a zip download. Large directories are streamed without server disk usage; download time depends on size. Use / to export the entire default storage pool (multi-pool setups cover the default pool only)',
     pathRequired: 'Root path cannot be empty',
     password: 'Encryption password (optional)',
     passwordPlaceholder: 'Leave empty for no encryption',

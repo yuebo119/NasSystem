@@ -53,9 +53,13 @@ public sealed class SnapshotService(
         {
             if (string.Equals(item.Path, normalizedRoot, StringComparison.Ordinal))
                 continue;
-            var relative = item.Path.Length > normalizedRoot.Length + 1
-                ? item.Path[(normalizedRoot.Length + 1)..]
-                : item.Path;
+            // 相对路径：非根根路径剥 "根 + 分隔符"（长度 + 1）；根 / 的分隔符
+            // 就是根自身最后一位，只剥 1 字符（否则 "/Docs" 会剥出 "ocs"）
+            var relative = normalizedRoot == "/"
+                ? item.Path[1..]
+                : item.Path.Length > normalizedRoot.Length + 1
+                    ? item.Path[(normalizedRoot.Length + 1)..]
+                    : item.Path;
             entries.Add(SnapshotEntry.Create(
                 snapshot.Id, relative, item.ItemType == Domain.Enums.FileItemType.Folder,
                 item.SizeBytes, item.Hash, item.UpdatedAt ?? item.CreatedAt));

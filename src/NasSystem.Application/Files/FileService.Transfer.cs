@@ -39,7 +39,8 @@ public sealed partial class FileService
         if (parentPath != "/")
         {
             var parent = await _fileRepository.GetByPathAsync(parentPath, cancellationToken);
-            if (parent is null || parent.ItemType != FileItemType.Folder)
+            // 多用户隔离：父目录不存在或非本人一律按不存在处理
+            if (parent is null || parent.ItemType != FileItemType.Folder || parent.OwnerId != userId)
                 return Result<FileItemDto>.Failure(FileErrors.NotFound(parentPath));
             parentId = parent.Id;
         }
@@ -82,6 +83,10 @@ public sealed partial class FileService
 
         // 检查是否已存在
         var existingItem = await _fileRepository.GetByPathAsync(filePath, cancellationToken);
+        // 多用户隔离：同名文件属他人时按不存在处理（不确认也不否认），
+        // 否则 AlreadyExists 会成为他人文件存在性的探测器
+        if (existingItem is not null && existingItem.OwnerId != userId)
+            existingItem = null;
         if (existingItem != null && !metadata.Overwrite)
             return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(filePath));
 
@@ -96,7 +101,11 @@ public sealed partial class FileService
         if (destPath != "/")
         {
             var parent = await _fileRepository.GetByPathAsync(destPath, cancellationToken);
-            parentId = parent?.Id;
+            // 多用户隔离：目标目录非本人按不存在处理。原实现 parent?.Id 对
+            // 不存在的目录静默落到根级（parentId 留 null），记录自相矛盾
+            if (parent is null || parent.OwnerId != userId)
+                return Result<FileItemDto>.Failure(FileErrors.NotFound(destPath));
+            parentId = parent.Id;
         }
 
         // 获取默认存储池
@@ -240,7 +249,8 @@ public sealed partial class FileService
         path = NormalizePath(path);
         var item = await _fileRepository.GetByPathAsync(path, cancellationToken);
 
-        if (item is null)
+        // 多用户隔离：非本人文件按不存在处理（下载是读路径，同样不暴露存在性）
+        if (item is null || item.OwnerId != userId)
             return Result<(Stream, string, string)>.Failure(FileErrors.NotFound(path));
 
         if (item.ItemType != FileItemType.File)
@@ -261,7 +271,8 @@ public sealed partial class FileService
         var path = NormalizePath(request.Path);
         var item = await _fileRepository.GetByPathAsync(path, cancellationToken);
 
-        if (item is null)
+        // 多用户隔离：只能改名自己的条目
+        if (item is null || item.OwnerId != userId)
             return Result<FileItemDto>.Failure(FileErrors.NotFound(path));
 
         // ITM-N20：新名先过名称不变量，防止 "../x" 类输入经路径拼接逃逸挂载根
@@ -335,7 +346,7 @@ public sealed partial class FileService
         }
 
         // 默认池与目标目录准备（Move/Copy 共用的前奏，目标目录缺失统一报错）
-        var prepared = await PrepareTransferDestinationAsync(destPath, cancellationToken);
+        var prepared = await PrepareTransferDestinationAsync(destPath, userId, cancellationToken);
         if (prepared.IsFailure)
             return Result<IReadOnlyList<FileItemDto>>.Failure(prepared.Error);
         var (poolId, poolMountPath, destParentId) = prepared.Value;
@@ -344,7 +355,9 @@ public sealed partial class FileService
         {
             var normalized = NormalizePath(sourcePath);
             var item = await _fileRepository.GetByPathAsync(normalized, cancellationToken);
-            if (item is null) continue;
+            // 多用户隔离：不存在与非本人的源都跳过（与既有"不存在即跳过"的
+            // 批量语义一致，不阻断其余项的移动）
+            if (item is null || item.OwnerId != userId) continue;
 
             // 检查是否移动到自身或子目录
             if (destPath.StartsWith(normalized + "/", StringComparison.Ordinal) || destPath == normalized)
@@ -409,7 +422,7 @@ public sealed partial class FileService
         var destPath = NormalizePath(request.DestinationPath);
 
         // 默认池与目标目录准备（与 MoveAsync 共用同一前奏与报错语义）
-        var prepared = await PrepareTransferDestinationAsync(destPath, cancellationToken);
+        var prepared = await PrepareTransferDestinationAsync(destPath, userId, cancellationToken);
         if (prepared.IsFailure)
             return Result<IReadOnlyList<FileItemDto>>.Failure(prepared.Error);
         var (poolId, poolMountPath, destParentId) = prepared.Value;
@@ -418,7 +431,8 @@ public sealed partial class FileService
         {
             var normalized = NormalizePath(sourcePath);
             var sourceItem = await _fileRepository.GetByPathAsync(normalized, cancellationToken);
-            if (sourceItem is null) continue;
+            // 多用户隔离：不存在与非本人的源都跳过（同移动批次语义）
+            if (sourceItem is null || sourceItem.OwnerId != userId) continue;
 
             // 生成不重复的目标名称
             var targetName = await GenerateUniqueCopyNameAsync(destPath, sourceItem.Name, sourceItem.ItemType == FileItemType.Folder, cancellationToken);
@@ -460,6 +474,7 @@ public sealed partial class FileService
     /// </summary>
     private async Task<Result<(Guid PoolId, string MountPath, Guid? ParentId)>> PrepareTransferDestinationAsync(
         string destPath,
+        Guid userId,
         CancellationToken cancellationToken)
     {
         var poolResult = await GetDefaultPoolOrFailureAsync(cancellationToken);
@@ -470,7 +485,8 @@ public sealed partial class FileService
         if (destPath != "/")
         {
             var destParent = await _fileRepository.GetByPathAsync(destPath, cancellationToken);
-            if (destParent is null)
+            // 多用户隔离：目标目录非本人按不存在处理（移动与复制共用此前置）
+            if (destParent is null || destParent.OwnerId != userId)
                 return Result<(Guid, string, Guid?)>.Failure(FileErrors.NotFound(destPath));
             destParentId = destParent.Id;
         }
