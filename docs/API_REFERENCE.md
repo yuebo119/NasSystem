@@ -1035,6 +1035,93 @@
 
 ---
 
+## 9. 语义搜图 API
+
+### 9.1 获取模型与索引状态
+
+**GET** `/api/v1/semantic/status`
+
+需要管理员权限
+
+**响应：**
+```json
+{
+  "model": {
+    "ready": true,
+    "files": [
+      { "name": "vision_model.onnx", "present": true, "sizeBytes": 350000000 },
+      { "name": "text_model.onnx", "present": true, "sizeBytes": 250000000 },
+      { "name": "vocab.json", "present": true, "sizeBytes": 900000 },
+      { "name": "merges.txt", "present": true, "sizeBytes": 500000 }
+    ]
+  },
+  "index_": {
+    "totalImages": 1200,
+    "indexedImages": 1200,
+    "isIndexing": false,
+    "error": null
+  }
+}
+```
+
+### 9.2 下载模型四件套
+
+**POST** `/api/v1/semantic/model/download`
+
+需要管理员权限
+
+约 606MB，从 hf-mirror 下载到数据目录。幂等：已就位直接返回。下载是慢动作，进度经轮询 9.1 观察文件就位。
+
+### 9.3 手动触发一轮索引
+
+**POST** `/api/v1/semantic/index/trigger`
+
+需要管理员权限
+
+唤醒后台建库服务立即执行一轮增量编码。语义搜图总开关（`semantic.enabled`）关闭时返回 400 `Semantic.Disabled`；模型未就位返回 404 `Semantic.ModelNotReady`；否则 202 受理，真正编码在后台执行，进度经 9.1 轮询。自动建索引（`semantic.auto-index`）关闭时，此端点是建索引的唯一入口。
+
+**响应（202）：**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "已触发一轮语义索引，后台执行中，进度见状态查询"
+  },
+  "timestamp": "2026-10-19T12:00:00Z"
+}
+```
+
+### 9.4 语义搜图
+
+**POST** `/api/v1/semantic/search`
+
+需要认证
+
+**请求体：**
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| query | string | 是 | 自然语言查询词 |
+| topK | int | 否 | 返回条数，默认 50，上限 200 |
+
+模型未就位或功能关闭时返回明确错误（不返回空列表假装搜过）。
+
+**响应：**
+```json
+{
+  "items": [
+    {
+      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "name": "photo.jpg",
+      "path": "/photos/photo.jpg",
+      "sizeBytes": 2048000,
+      "distance": 0.12
+    }
+  ]
+}
+```
+
+---
+
 ## 错误码参考
 
 | 错误码 | HTTP 状态码 | 说明 |
@@ -1054,6 +1141,8 @@
 | Share.InvalidPassword | 401 | 分享密码错误 |
 | Storage.NotFound | 404 | 存储池不存在 |
 | Storage.InsufficientSpace | 507 | 存储空间不足 |
+| Semantic.Disabled | 400 | 语义搜图未启用 |
+| Semantic.ModelNotReady | 404 | 语义模型未下载 |
 | Validation.InvalidInput | 400 | 输入验证失败 |
 
 ---

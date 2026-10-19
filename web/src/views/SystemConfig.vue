@@ -2,7 +2,7 @@
 /**
  * 系统配置页（ROADMAP Phase 0-3 配置收口）。
  *
- * 三块内容：
+ * 内容块：
  * ① 协议接入入口卡：WebDAV/SMB 2026-10-19 拆到独立页（/webdav，
  *    含四端挂载指南、认证锁定阈值、SMB 强告警），此处只留导航。
  *    webdav 与 ocr 两组 descriptor 也不再在本页渲染——同一份值
@@ -10,6 +10,10 @@
  * ② 配置表单：按后端 descriptor 分组渲染（int → 数字框，bool → 开关），
  *    新增配置项后端加一条 descriptor 即自动出现，前端零改动
  * ③ 只读环境信息：上传上限等启动期定死的项（appsettings 管）
+ * ④ 维护操作：清空缩略图/转码缓存（都是"清了会重建"的可逆动作，
+ *    确认文案写明 CPU 与磁盘代价）
+ * ⑤ 语义搜图卡：模型四件套状态、索引进度、手动触发一轮建索引
+ * ⑥ 危险区：重启/关机（真实调度）
  */
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -42,8 +46,10 @@ const thumbClearingAll = ref(false)
 const semanticStatus = ref<SemanticStatus | null>(null)
 const semanticLoading = ref(false)
 const semanticDownloading = ref(false)
+const semanticTriggering = ref(false)
 // 视频转码（2026-10-19 多码率阶梯）：编码器与阶梯档位，部署环境事实
 const transcodeStatus = ref<TranscodeStatus | null>(null)
+const transcodeClearing = ref(false)
 
 // 模型状态：设置页打开时拉一次；下载进行中由下载方法内轮询推进
 async function loadSemanticStatus() {
@@ -70,6 +76,24 @@ async function downloadSemanticModel() {
   } finally {
     semanticDownloading.value = false
     await loadSemanticStatus()
+  }
+}
+
+// 手动触发一轮索引：auto-index 关闭时的唯一驱动，也是开启态下
+// "现在就跑"的入口（不必等 5 分钟周期）。202 只表示受理，
+// 真正编码在后台——轮询 status 观察进度
+async function triggerSemanticIndex() {
+  semanticTriggering.value = true
+  try {
+    const resp = await semanticApi.triggerIndex()
+    if (resp.success) {
+      ElMessage.success(t('config.semanticTriggerDone'))
+      await loadSemanticStatus()
+    }
+  } catch {
+    // 错误消息由 http 拦截器统一弹出（未启用/模型未就位有明确文案）
+  } finally {
+    semanticTriggering.value = false
   }
 }
 
@@ -113,6 +137,35 @@ async function loadTranscodeStatus() {
     if (resp.success && resp.data) transcodeStatus.value = resp.data
   } catch {
     // 状态展示失败静默：不影响配置表单
+  }
+}
+
+// 清空 HLS 转码缓存：下次播放按需重建。确认文案说明代价
+// （重新转码是 CPU 密集动作），成功后告知实际释放的空间
+async function clearTranscodeCache() {
+  try {
+    await ElMessageBox.confirm(
+      t('config.transcodeClearCacheConfirm'),
+      t('config.transcodeClearCache'),
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  transcodeClearing.value = true
+  try {
+    const resp = await mediaApi.clearTranscodeCache()
+    if (resp.success) {
+      ElMessage.success(
+        t('config.transcodeClearCacheDone', {
+          size: formatSize(resp.data?.freedBytes ?? 0)
+        })
+      )
+    }
+  } catch {
+    // 错误消息由 http 拦截器统一弹出
+  } finally {
+    transcodeClearing.value = false
   }
 }
 
@@ -366,6 +419,14 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
         >
           {{ semanticStatus.model.ready ? $t('config.semanticModelReady') : $t('config.semanticDownload') }}
         </el-button>
+        <!-- 手动建索引：auto-index 关闭时的唯一驱动；索引进行中重复触发无意义 -->
+        <el-button
+          :loading="semanticTriggering"
+          :disabled="!semanticStatus.model.ready || semanticStatus.index_.isIndexing"
+          @click="triggerSemanticIndex"
+        >
+          {{ $t('config.semanticTriggerIndex') }}
+        </el-button>
         <el-button :loading="semanticLoading" @click="loadSemanticStatus">
           {{ $t('common.refresh') }}
         </el-button>
@@ -395,6 +456,12 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
         <el-tag v-for="rung in transcodeStatus.rungs" :key="rung.height" size="small" type="primary" effect="plain">
           {{ rung.name }} · {{ (rung.maxBitrateKbps / 1000).toFixed(1) }} Mbps
         </el-tag>
+      </div>
+
+      <div class="danger-actions">
+        <el-button :loading="transcodeClearing" @click="clearTranscodeCache">
+          {{ $t('config.transcodeClearCache') }}
+        </el-button>
       </div>
     </div>
 
@@ -571,16 +638,17 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
     }
   }
 
+  .danger-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
   .danger-card {
     border-color: var(--el-color-danger-light-5);
 
     .card-title {
       color: var(--el-color-danger);
-    }
-
-    .danger-actions {
-      display: flex;
-      gap: 12px;
     }
   }
 

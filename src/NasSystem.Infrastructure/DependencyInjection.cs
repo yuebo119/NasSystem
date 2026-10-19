@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NasSystem.Application.Common;
+using NasSystem.Application.Semantic;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Repositories;
 using NasSystem.Domain.Services;
@@ -129,7 +130,12 @@ public static class DependencyInjection
         services.AddScoped<Application.Semantic.ISemanticSearchService, Semantic.SemanticSearchService>();
 
         // 语义索引后台建库：模型就位且开关打开时增量编码（单张 58ms，
-        // 容量口径决定必须后台）
+        // 容量口径决定必须后台）。coordinator 是手动触发（trigger 端点）
+        // 到后台服务的唤醒通道；接口映射委托到同一单例，端点与后台
+        // 服务共享一个实例（两处各注册一份会裂成两个对象，唤醒丢失）
+        services.AddSingleton<Semantic.SemanticIndexCoordinator>();
+        services.AddSingleton<ISemanticIndexTrigger>(
+            provider => provider.GetRequiredService<Semantic.SemanticIndexCoordinator>());
         services.AddHostedService<Semantic.SemanticIndexBackgroundService>();
 
         // 系统动态配置（配置页）：descriptor 驱动，键值表存储，改完即生效。

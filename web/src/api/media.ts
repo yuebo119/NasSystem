@@ -30,5 +30,11 @@ export const mediaApi = {
   // 转码能力状态：ffmpeg 可用性、当前编码器（硬件/软件）、码率阶梯
   async getTranscodeStatus(): Promise<ApiResponse<TranscodeStatus>> {
     return http.get('/media/stream/status')
+  },
+
+  // 清空全部 HLS 转码缓存（管理员）：下次播放按需重新转码。
+  // freedBytes 是实际释放的磁盘空间
+  async clearTranscodeCache(): Promise<ApiResponse<{ freedBytes: number }>> {
+    return http.delete('/media/stream/cache')
   }
 }

@@ -6,6 +6,7 @@
 namespace NasSystem.Infrastructure.Semantic;
 
 using Microsoft.Extensions.Logging;
+using NasSystem.Application.Configuration;
 using NasSystem.Application.Semantic;
 using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
@@ -33,6 +34,7 @@ public sealed class SemanticSearchService : ISemanticSearchService
     private readonly ClipModelDownloader _downloader;
     private readonly SemanticOptions _options;
     private readonly IFileItemRepository _fileItems;
+    private readonly ISystemConfigService _config;
     private readonly ILogger<SemanticSearchService> _logger;
 
     public SemanticSearchService(
@@ -41,6 +43,7 @@ public sealed class SemanticSearchService : ISemanticSearchService
         ClipModelDownloader downloader,
         SemanticOptions options,
         IFileItemRepository fileItems,
+        ISystemConfigService config,
         ILogger<SemanticSearchService> logger)
     {
         _indexStore = indexStore;
@@ -48,6 +51,7 @@ public sealed class SemanticSearchService : ISemanticSearchService
         _downloader = downloader;
         _options = options;
         _fileItems = fileItems;
+        _config = config;
         _logger = logger;
     }
 
@@ -100,6 +104,12 @@ public sealed class SemanticSearchService : ISemanticSearchService
     {
         if (string.IsNullOrWhiteSpace(query))
             return Result<IReadOnlyList<SemanticHit>>.Failure(Error.Validation("查询词不能为空"));
+
+        // 总开关：semantic.enabled 关闭时搜索明确失败（descriptor 的承诺），
+        // 不返回空列表假装搜过
+        if (!await _config.GetBoolAsync(ConfigDescriptors.Keys.SemanticEnabled, cancellationToken))
+            return Result<IReadOnlyList<SemanticHit>>.Failure(
+                new Error("Semantic.Disabled", "语义搜图未启用，请在系统配置中先开启"));
 
         if (!ClipModelDownloader.IsReady(_options.ModelDirectory))
             return Result<IReadOnlyList<SemanticHit>>.Failure(

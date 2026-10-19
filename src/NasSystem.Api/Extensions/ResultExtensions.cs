@@ -32,6 +32,9 @@ public static class ResultExtensions
         ["FileVersion.NotFound"] = HttpStatusCode.NotFound,
         ["FileVersion.StorageNotFound"] = HttpStatusCode.NotFound,
         ["Backup.DeviceNotFound"] = HttpStatusCode.NotFound,
+        // 模型未就位是"引用的东西不存在"（四件套未下载）：
+        // SemanticEndpoints 注释承诺的 404 语义，此前漏登记落 500
+        ["Semantic.ModelNotReady"] = HttpStatusCode.NotFound,
 
         // ─── 409：与现有状态冲突 ───
         ["File.AlreadyExists"] = HttpStatusCode.Conflict,
@@ -45,6 +48,7 @@ public static class ResultExtensions
 
         // ─── 400：请求本身不成立（参数、类型、前提状态）───
         ["Config.ValidationFailed"] = HttpStatusCode.BadRequest,
+        ["Semantic.Disabled"] = HttpStatusCode.BadRequest,
         ["File.InvalidName"] = HttpStatusCode.BadRequest,
         ["File.NotFile"] = HttpStatusCode.BadRequest,
         ["File.NotFolder"] = HttpStatusCode.BadRequest,

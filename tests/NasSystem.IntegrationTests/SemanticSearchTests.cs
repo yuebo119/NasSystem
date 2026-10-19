@@ -9,14 +9,16 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NasSystem.Application.Configuration;
 using NasSystem.Application.Semantic;
 using NasSystem.Infrastructure;
 using NasSystem.Infrastructure.Semantic;
+using NasSystem.Shared;
 using Xunit;
 
 /// <summary>
-/// 两个层面：一、模型未就位时全部能力诚实降级（状态可查、搜索明确
-/// 失败），不返回空列表假装搜过——这是"不做假 UI"的测试形态；
+/// 两个层面：一、模型未就位或总开关关闭时全部能力诚实降级（状态可查、
+/// 搜索明确失败），不返回空列表假装搜过——这是"不做假 UI"的测试形态；
 /// 二、vec0 存储的 KNN 排序（确定性向量，不依赖 606MB 真模型，
 /// CLIP 推理质量由部署环境人工验收）。
 /// </summary>
@@ -59,6 +61,7 @@ public class SemanticSearchTests : IDisposable
                 NullLogger<ClipModelDownloader>.Instance),
             options,
             _provider.GetRequiredService<NasSystem.Domain.Repositories.IFileItemRepository>(),
+            ConfigWithSemanticEnabled(true),
             NullLogger<SemanticSearchService>.Instance);
 
         var status = await service.GetStatusAsync();
@@ -69,6 +72,33 @@ public class SemanticSearchTests : IDisposable
         search.IsFailure.Should().BeTrue("模型未就位必须明确失败");
         search.Error.Code.Should().Be("Semantic.ModelNotReady",
             "错误码让前端区分'未就位'与'搜过了没命中'");
+    }
+
+    [Fact]
+    public async Task SemanticDisabled_SearchFailsLoudly()
+    {
+        // 总开关关闭：即使模型就位也不搜（descriptor 的承诺语义）。
+        // 用空目录让模型检查同样不通过，但 Disabled 检查在前——
+        // 这条锁的正是"先判开关"的顺序
+        var options = new SemanticOptions
+        {
+            ModelDirectory = Path.Combine(Path.GetTempPath(), $"empty-model-{Guid.NewGuid():N}"),
+        };
+        var service = new SemanticSearchService(
+            CreateStore(),
+            new ClipEngineHolder(NullLogger<ClipEngineHolder>.Instance),
+            new ClipModelDownloader(
+                new HttpClient { BaseAddress = new Uri("http://localhost") },
+                NullLogger<ClipModelDownloader>.Instance),
+            options,
+            _provider.GetRequiredService<NasSystem.Domain.Repositories.IFileItemRepository>(),
+            ConfigWithSemanticEnabled(false),
+            NullLogger<SemanticSearchService>.Instance);
+
+        var search = await service.SearchAsync("猫");
+        search.IsFailure.Should().BeTrue("功能关闭时搜索必须明确失败");
+        search.Error.Code.Should().Be("Semantic.Disabled",
+            "不返回空列表假装搜过；错误码让前端引导去系统配置开启");
     }
 
     [Fact]
@@ -139,6 +169,41 @@ public class SemanticSearchTests : IDisposable
         var vecPath = Path.Combine(
             AppContext.BaseDirectory, "runtimes", "win-x64", "native", "vec0.dll");
         return new SemanticIndexStore($"Data Source={_dbPath}", vecPath, NullLogger<SemanticIndexStore>.Instance);
+    }
+
+    /// <summary>按总开关取值造配置桩（只影响 semantic.enabled 一个键）</summary>
+    private static ISystemConfigService ConfigWithSemanticEnabled(bool enabled) =>
+        new StubConfigService(enabled);
+
+    /// <summary>
+    /// 最小配置桩：semantic.enabled 返回给定值，其余键走默认。
+    /// 集成测试项目不引 Moq，与 NoOpSystemControlService 同款手写
+    /// </summary>
+    private sealed class StubConfigService : ISystemConfigService
+    {
+        private readonly bool _semanticEnabled;
+
+        public StubConfigService(bool semanticEnabled) => _semanticEnabled = semanticEnabled;
+
+        public Task<SystemConfigSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SystemConfigSnapshot([], null));
+
+        public Task<Result> UpdateAsync(
+            IReadOnlyDictionary<string, string> values,
+            Guid operatorUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result.Success());
+
+        public Task<int> GetIntAsync(string key, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ConfigDescriptors.IntDefault(key));
+
+        public Task<bool> GetBoolAsync(string key, CancellationToken cancellationToken = default) =>
+            Task.FromResult(key == ConfigDescriptors.Keys.SemanticEnabled
+                ? _semanticEnabled
+                : ConfigDescriptors.BoolDefault(key));
+
+        public Task<string> GetStringAsync(string key, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ConfigDescriptors.StringDefault(key));
     }
 
     public void Dispose()

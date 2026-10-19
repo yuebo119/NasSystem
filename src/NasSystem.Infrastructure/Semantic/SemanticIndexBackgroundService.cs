@@ -20,6 +20,9 @@ using NasSystem.Application.Configuration;
 /// vec0 表本身就是进度账本（已写入的不会重写），重启后从缺失集继续。
 /// 并发闸 1：CLIP 编码是 CPU 密集（ONNX 内部已多线程），再并发只会
 /// 抢核；与 OCR 引擎的 EnterRun 同款取舍。
+/// 两档触发：semantic.auto-index 打开时每 5 分钟自动轮；关闭时自动轮
+/// 空转，仅 POST /semantic/index/trigger 的手动请求（经
+/// <see cref="SemanticIndexCoordinator"/> 唤醒）能驱动一轮。
 /// </remarks>
 public sealed class SemanticIndexBackgroundService : BackgroundService
 {
@@ -30,13 +33,16 @@ public sealed class SemanticIndexBackgroundService : BackgroundService
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMinutes(5);
 
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly SemanticIndexCoordinator _coordinator;
     private readonly ILogger<SemanticIndexBackgroundService> _logger;
 
     public SemanticIndexBackgroundService(
         IServiceScopeFactory scopeFactory,
+        SemanticIndexCoordinator coordinator,
         ILogger<SemanticIndexBackgroundService> logger)
     {
         _scopeFactory = scopeFactory;
+        _coordinator = coordinator;
         _logger = logger;
     }
 
@@ -54,11 +60,52 @@ public sealed class SemanticIndexBackgroundService : BackgroundService
             return;
         }
 
+        // 首轮立即跑（保持启动即建库的原有行为：开启态下 30 秒后就开始）
+        try
+        {
+            await RunIndexPassAsync(manual: false, stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "语义索引首轮异常（已降级，进入周期循环）");
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
+            // 等待取先到者：5 分钟周期到点，或手动触发唤醒。手动唤醒
+            // 立即成轮，不等满周期（触发就是要"现在跑"）
+            var delayTask = Task.Delay(ScanInterval, stoppingToken);
+            var wakeTask = _coordinator.WaitAsync(stoppingToken);
+            var completed = await Task.WhenAny(delayTask, wakeTask);
+            if (completed.IsCanceled || stoppingToken.IsCancellationRequested)
+                break;
+
+            if (completed == wakeTask && _coordinator.TryConsumeRun())
+            {
+                // 手动轮：auto-index 关闭时的唯一驱动。跑完重新计时
+                try
+                {
+                    await RunIndexPassAsync(manual: true, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "语义索引手动轮异常（已降级）");
+                }
+                continue;
+            }
+
+            // 周期到点：自动轮（受 auto-index 开关约束）
             try
             {
-                await RunIndexPassAsync(stoppingToken);
+                await RunIndexPassAsync(manual: false, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -69,25 +116,21 @@ public sealed class SemanticIndexBackgroundService : BackgroundService
                 // 单轮失败降级：记日志等下一轮，不杀宿主
                 _logger.LogError(ex, "语义索引轮次异常（已降级，等待下一轮）");
             }
-
-            try
-            {
-                await Task.Delay(ScanInterval, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
         }
 
         _logger.LogInformation("语义索引服务已停止");
     }
 
-    private async Task RunIndexPassAsync(CancellationToken cancellationToken)
+    private async Task RunIndexPassAsync(bool manual, CancellationToken cancellationToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var config = scope.ServiceProvider.GetRequiredService<ISystemConfigService>();
         if (!await config.GetBoolAsync(ConfigDescriptors.Keys.SemanticEnabled, cancellationToken))
+            return;
+
+        // auto-index 只约束自动轮；手动轮（trigger 端点）无视它
+        if (!manual
+            && !await config.GetBoolAsync(ConfigDescriptors.Keys.SemanticAutoIndex, cancellationToken))
             return;
 
         var options = scope.ServiceProvider.GetRequiredService<SemanticOptions>();

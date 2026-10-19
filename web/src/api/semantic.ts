@@ -41,6 +41,12 @@ export const semanticApi = {
     return http.post('/semantic/model/download', {}, { timeout: 0 })
   },
 
+  // 手动触发一轮索引：立即唤醒后台建库（auto-index 关闭时的手动入口）。
+  // 202 只表示已受理，真正编码在后台——前端继续轮询 status 看进度
+  async triggerIndex(): Promise<ApiResponse<null>> {
+    return http.post('/semantic/index/trigger')
+  },
+
   // 语义搜图：返回命中的图片（按距离升序）
   async search(query: string, topK = 50): Promise<ApiResponse<{ items: SemanticHit[] }>> {
     return http.post('/semantic/search', { query, topK })

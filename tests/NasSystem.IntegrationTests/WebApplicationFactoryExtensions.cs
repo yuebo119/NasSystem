@@ -26,6 +26,14 @@ public class NasSystemWebApplicationFactory : WebApplicationFactory<Program>
     private readonly string _dbPath;
     private bool _databaseCreated;
 
+    /// <summary>
+    /// 语义模型目录指针（每工厂实例独立临时目录）。测试按需填/清四件套
+    /// 占位文件控制"模型就绪"态；不填时 IsReady=false，后台索引服务
+    /// 与既有测试的行为与改前一致（空转跳过）
+    /// </summary>
+    public string SemanticModelDirectory { get; } =
+        Path.Combine(Path.GetTempPath(), $"NasTestModels_{Guid.NewGuid():N}");
+
     public NasSystemWebApplicationFactory()
     {
         // 每个工厂实例使用唯一的库文件
@@ -61,6 +69,22 @@ public class NasSystemWebApplicationFactory : WebApplicationFactory<Program>
                 services.Remove(descriptor);
             services.AddSingleton<NasSystem.Application.SystemInfo.ISystemControlService>(
                 new NoOpSystemControlService());
+
+            // SemanticOptions 同理换指向临时模型目录的实例。为什么不能像
+            // 连接串那样走 ConfigureAppConfiguration 覆盖：它在 Program.cs
+            // AddInfrastructureServices(builder.Configuration) 当场完成绑定，
+            // 那时工厂的配置回调还没跑（Build() 才执行），覆盖到不了它。
+            // 摘除重注册与上面两个服务同款，是 ConfigureServices 时机下
+            // 唯一可靠的替换点
+            var semanticDescriptors = services
+                .Where(d => d.ServiceType == typeof(NasSystem.Infrastructure.Semantic.SemanticOptions))
+                .ToList();
+            foreach (var descriptor in semanticDescriptors)
+                services.Remove(descriptor);
+            services.AddSingleton(new NasSystem.Infrastructure.Semantic.SemanticOptions
+            {
+                ModelDirectory = SemanticModelDirectory,
+            });
         });
 
         builder.ConfigureAppConfiguration((_, config) =>
@@ -123,6 +147,16 @@ public class NasSystemWebApplicationFactory : WebApplicationFactory<Program>
             {
                 // 句柄未释放时留下，由系统临时目录清理
             }
+        }
+
+        try
+        {
+            if (Directory.Exists(SemanticModelDirectory))
+                Directory.Delete(SemanticModelDirectory, recursive: true);
+        }
+        catch
+        {
+            // 占位文件被 ONNX 加载尝试持有时留下，由系统临时目录清理
         }
     }
 }

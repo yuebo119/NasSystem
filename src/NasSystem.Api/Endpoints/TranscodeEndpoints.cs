@@ -152,7 +152,9 @@ public static class TranscodeEndpoints
         CancellationToken cancellationToken)
     {
         var freed = await transcodeService.ClearCacheAsync(cancellationToken);
-        return Results.Ok(new { freedBytes = freed });
+        // freedBytes 让前端告知用户实际释放了多少空间（清空是慢动作，
+        // 大缓存下数值可观）；包装形态与其余端点一致
+        return Results.Ok(ApiResponse<object>.Ok(new { freedBytes = freed }));
     }
 
     private static Guid GetUserId(ClaimsPrincipal user)
