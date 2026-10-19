@@ -313,3 +313,14 @@ API-only 判定不变：/system/health（Docker healthcheck 消费）、thumbnai
 - 菜单：WebDAV 挂载入系统管理组（admin），文字识别入文件与媒体组（批量工具对所有人开放）。
 
 验证：前端 166 例/23 spec 全绿，oxlint 0 警告，构建通过；后端单测 178 + 集成 223 全绿；浏览器验收 /webdav（阈值实时值 10/5、配置改 15 读回再还原）、/system-config（webdav/ocr 组消失、链接卡在位）、/ocr（批量工具与管理员开关）、批量识别端点 200 实测。踩坑记录：单例 Guard 注入 scoped 配置服务本机 dotnet build 通过但启动即崩，集成测试因测试环境不跑 ValidateOnBuild 全绿——DI 生命周期改动必须真实起一次进程。
+
+第六轮（2026-10-19，全链路审计）：对运行实例做三层验证。97 个路由逐个实测状态码（35 PASS / 16 符合预期语义 / 0 失败）；17 个前端路由浏览器加载（无空页、无控制台错误）；9 条跨功能链路端到端全绿（WebDAV 协议面、上传→覆盖→版本→恢复、快照三件套、只读保护拦截、3-2-1 导出、备份设备、存储池 CRUD 含默认池业务规则、配置即生效、SignalR 协商）。另验分享三型（公开匿名 200 / 密码验后 200 / Internal 认证 200）、回收站恢复、用户管理 CRUD（禁用→登录 403、重置密码、删除→登录 401）、OCR→搜索全链（canvas 生成中文图片上传，SimdPaddleOCR 识别"审计探针 2026"，全词与中文子串双通道命中）、WebDAV 锁定阈值配置实测（阈值设 2，连错 2 次后第 3 次 429 且正确密码同锁）、诚实降级（ffmpeg 缺失 501、语义模型未就位状态如实）。
+
+审计发现并修复的契约缺陷（均有锁定测试）：
+- 必填参数缺失曾落 500：minimal API 绑定层抛 BadHttpRequestException 落全局异常处理器默认分支，调用方把"少传参数"当"服务端故障"重试；改为按 StatusCode 原样透传 400。注意 TestServer 对该异常有自己的转换（先于应用异常处理器），测试宿主只断言状态码，带消息的 JSON 错误体已对真实实例实测。
+- 错误码到状态码的映射从子串启发式改为显式码表（ResultExtensions.ClientErrorStatuses）：原子串漏掉 14 个客户端错误码（FileShare.PasswordRequired、File.InvalidName、StoragePool.CannotDeleteDefault 等），用户看到"服务器错误"而非真实原因；显式表覆盖全部 44 个手捏码，ITM-N21"未知码落 500"的意图保留（Scan.Failed、Ocr.Failed、Transcode.Failed 等服务端故障仍在 500），新增 EndsWith("NotFound") 家族约定兜底未来的模块.实体NotFound。
+- 容量/配额类（Storage.InsufficientSpace、User.QuotaExceeded）映射 507，与 WebDAV 层既有特判口径一致。
+
+踩坑记录：Git Bash 的 MSYS 路径转换把 curl 的 -F "path=/" 表单值改写成 Windows 路径，上传全部落到 C:\Program Files\Git 下报 401，一度被误判为应用 bug；审计脚本需 export MSYS_NO_PATHCONV=1 且本地文件参数走 cygpath -w/-m。另：本机 ffmpeg 缺失，视频转码链路在此环境为诚实 501，画质需在部署环境验收。
+
+验证基线（本轮实测）：后端单测 178 + 集成 226（新增 3 例契约测试）全绿；前端 166 例/23 spec 全绿（本轮无前端改动，复测确认）；oxlint 0 警告；生产构建通过。

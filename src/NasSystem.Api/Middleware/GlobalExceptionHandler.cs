@@ -57,6 +57,13 @@ public sealed class GlobalExceptionHandler(
                 HttpStatusCode.BadRequest,
                 new ApiError("Error.InvalidOperation", "当前状态下无法执行此操作")),
 
+            // 参数绑定失败（必填参数缺失、JSON 反序列化失败）： minimal API 在
+            // 绑定层抛 BadHttpRequestException，落在默认分支会变 500。这是
+            // 客户端错误，500 会让调用方把"我少传了参数"当成"服务端挂了"重试。
+            // StatusCode 默认 400，绑定层也可能给 413/415 等，原样透传
+            BadHttpRequestException bindEx => (
+                (HttpStatusCode)bindEx.StatusCode,
+                new ApiError("Error.BadRequest", bindEx.Message)),
             // ITM-N10：客户端断开导致的取消——连接已终止，不再尝试写响应（与 Pal.DDD ITM-030 同型）
             OperationCanceledException => (HttpStatusCode.RequestTimeout, null),
 
