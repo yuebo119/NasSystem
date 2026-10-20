@@ -221,6 +221,11 @@ public static class DependencyInjection
             """
             CREATE INDEX IF NOT EXISTS IX_FileItems_Path_Prefix ON FileItems(Path COLLATE NOCASE) WHERE "IsDeleted" = 0;
             CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Email ON Users(Email) WHERE [Email] IS NOT NULL;
+            -- 首页"最近文件"（GetRecentAsync：IsDeleted=0 AND OwnerId=? ORDER BY
+            -- CreatedAt DESC LIMIT N）。带 IsDeleted 条件的部分索引才能被该查询
+            -- 的 WHERE 蕴含命中；(OwnerId, CreatedAt DESC) 同时消掉过滤与排序，
+            -- 万级 FileItems 下不再全表 SCAN + TEMP B-TREE（2026-10-20 审计 P2）
+            CREATE INDEX IF NOT EXISTS IX_FileItems_OwnerId_CreatedAt ON FileItems(OwnerId, CreatedAt DESC) WHERE "IsDeleted" = 0;
             """));
 
         // Path 唯一部分索引单独建：2026-10-19 审计实证，原名

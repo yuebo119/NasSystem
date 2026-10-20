@@ -104,7 +104,10 @@ public class SchemaAndEnumTests : IDisposable
                 // 部分索引：旧名 IX_FileItems_Path 与 EF 遗产索引同名，
                 // IF NOT EXISTS 在存量库直接跳过，唯一兜底从未真正建起来
                 "UX_FileItems_Path_Active",
-                "IX_FileItems_Path_Prefix", "IX_FileItems_StoragePoolId",
+                "IX_FileItems_Path_Prefix",
+                // 首页"最近文件"的复合部分索引（2026-10-20 审计补）
+                "IX_FileItems_OwnerId_CreatedAt",
+                "IX_FileItems_StoragePoolId",
             ],
             ["FileShares"] = ["IX_FileShares_CreatedByUserId", "IX_FileShares_FileItemId", "IX_FileShares_ShareCode"],
             ["FileVersions"] =
@@ -160,6 +163,9 @@ public class SchemaAndEnumTests : IDisposable
             ("StoragePoolId", "SELECT * FROM FileItems WHERE StoragePoolId = 'x'"),
             ("Username 登录", "SELECT * FROM Users WHERE Username = 'x'"),
             ("ShareCode 访问", "SELECT * FROM FileShares WHERE ShareCode = 'x'"),
+            // 首页"最近文件"：过滤 + 排序都应被 (OwnerId, CreatedAt DESC)
+            // 复合部分索引吃掉。2026-10-20 审计前这条是全表 SCAN + TEMP B-TREE
+            ("最近文件", "SELECT * FROM FileItems WHERE IsDeleted = 0 AND OwnerId = 'x' ORDER BY CreatedAt DESC LIMIT 6"),
         };
 
         foreach (var (label, sql) in plans)
@@ -170,6 +176,7 @@ public class SchemaAndEnumTests : IDisposable
             reader.Read().Should().BeTrue($"{label} 应有查询计划");
             var plan = reader.GetString(reader.FieldCount - 1);
             plan.Should().NotContain("SCAN", $"{label} 不应全表扫描");
+            plan.Should().NotContain("TEMP B-TREE", $"{label} 不应再付排序代价");
         }
     }
 
