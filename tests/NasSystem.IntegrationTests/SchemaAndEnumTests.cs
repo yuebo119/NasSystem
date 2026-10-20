@@ -100,7 +100,11 @@ public class SchemaAndEnumTests : IDisposable
             [
                 "IX_FileItems_Hash", "IX_FileItems_IsDeleted", "IX_FileItems_OwnerId",
                 "IX_FileItems_ParentId", "IX_FileItems_ParentId_Name",
-                "IX_FileItems_Path", "IX_FileItems_Path_Prefix", "IX_FileItems_StoragePoolId",
+                // UX_FileItems_Path_Active 是 2026-10-19 改名的 Path 唯一
+                // 部分索引：旧名 IX_FileItems_Path 与 EF 遗产索引同名，
+                // IF NOT EXISTS 在存量库直接跳过，唯一兜底从未真正建起来
+                "UX_FileItems_Path_Active",
+                "IX_FileItems_Path_Prefix", "IX_FileItems_StoragePoolId",
             ],
             ["FileShares"] = ["IX_FileShares_CreatedByUserId", "IX_FileShares_FileItemId", "IX_FileShares_ShareCode"],
             ["FileVersions"] =

@@ -129,12 +129,18 @@ public static class SemanticEndpoints
             return result.ToHttpResult();
 
         // 融合：KNN 命中的 Id → 媒体库图片详情（保持距离排序）。
-        // 过滤非本人/不存在的条目（语义索引可能先于删除同步）
+        // 过滤非本人/不存在的条目（语义索引可能先于删除同步）。
+        // 批量取详情：曾经的逐条 GetByIdAsync 在 topK=200 时是 200 次
+        // 单行查询（2026-10-19 数据库层审计 P2）
         var hits = new List<object>();
+        var hitIds = result.Value.Select(h => h.FileItemId).Distinct().ToList();
+        var items = await fileRepository.GetByIdsAsync(hitIds, cancellationToken);
+        var byId = items.ToDictionary(i => i.Id);
         foreach (var hit in result.Value)
         {
-            var item = await fileRepository.GetByIdAsync(hit.FileItemId, cancellationToken);
-            if (item is null || item.OwnerId != userId || item.IsDeleted)
+            if (!byId.TryGetValue(hit.FileItemId, out var item))
+                continue;
+            if (item.OwnerId != userId || item.IsDeleted)
                 continue;
             hits.Add(new
             {

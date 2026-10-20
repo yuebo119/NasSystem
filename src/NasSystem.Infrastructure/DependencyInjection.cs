@@ -184,7 +184,8 @@ public static class DependencyInjection
     /// 存量库无需 __EFMigrationsHistory：MigrateAsync 的建表是幂等的，
     /// 老库已有的表不会被重建。
     /// </remarks>
-    public static async Task InitializeDatabaseAsync(this IServiceProvider serviceProvider)
+    public static async Task InitializeDatabaseAsync(
+        this IServiceProvider serviceProvider, string? environmentName = null)
     {
         using var scope = serviceProvider.CreateScope();
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
@@ -218,10 +219,32 @@ public static class DependencyInjection
         await db.ExecuteAsync(
             System.Runtime.CompilerServices.FormattableStringFactory.Create(
             """
-            CREATE UNIQUE INDEX IF NOT EXISTS IX_FileItems_Path ON FileItems(Path) WHERE [IsDeleted] = 0;
             CREATE INDEX IF NOT EXISTS IX_FileItems_Path_Prefix ON FileItems(Path COLLATE NOCASE) WHERE "IsDeleted" = 0;
             CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Email ON Users(Email) WHERE [Email] IS NOT NULL;
             """));
+
+        // Path 唯一部分索引单独建：2026-10-19 审计实证，原名
+        // IX_FileItems_Path 与 EF 遗产索引同名，IF NOT EXISTS 在存量库
+        // 直接跳过，TOCTOU 兜底在所有既有部署上从未存在（新建库才有），
+        // 两类库 schema 分叉。改新名 UX_FileItems_Path_Active 后存量库
+        // 也能补建。存量库若因历史并发已存在重复活跃路径，建索引会失败——
+        // 不阻断启动（兜底缺失是降级不是故障），但必须响亮告警让人去清
+        try
+        {
+            await db.ExecuteAsync(
+                System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS UX_FileItems_Path_Active ON FileItems(Path) WHERE [IsDeleted] = 0;
+                """));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Path 唯一部分索引 UX_FileItems_Path_Active 创建失败：存量库大概率存在重复的活跃路径" +
+                "（IsDeleted=0 下同 Path 多行，历史上无唯一约束时期的并发写入可造成）。" +
+                "查找：SELECT Path, COUNT(*) c FROM FileItems WHERE IsDeleted = 0 GROUP BY Path HAVING c > 1；" +
+                "清理后重启即可补上该兜底索引。应用继续启动，但并发同路径上传失去数据库层兜底");
+        }
 
         // OCR 全文检索（ROADMAP Phase 2 全文检索升级）：FTS5 trigram 镜像表。
         // 与 PalORM 行模型体系的关系：FTS5 虚拟表不是行模型（源生成器不产出），
@@ -268,8 +291,13 @@ public static class DependencyInjection
         if (string.IsNullOrWhiteSpace(storagePath))
             storagePath = Path.Combine(AppContext.BaseDirectory, "storage");
 
-        // 初始化种子数据
-        await SeedDataAsync(db, storagePath);
+        // 初始化种子数据。environmentName 由 Program.cs 传入
+        // （IHostEnvironment.EnvironmentName）：生产环境的初始管理员
+        // 不再是无差别的 admin123。初始密码优先取配置项
+        // NasSystem:AdminPassword（Docker 部署对应环境变量
+        /// NasSystem__AdminPassword，与 Jwt__SecretKey 同款双下划线约定）
+        await SeedDataAsync(
+            db, storagePath, environmentName, configuration["NasSystem:AdminPassword"], logger);
     }
 
     /// <summary>
@@ -383,35 +411,96 @@ public static class DependencyInjection
             logger.LogWarning("PalORM schema 漂移: {Drift}", item);
     }
 
-    private static async Task SeedDataAsync(DataSession<SqliteProvider> db, string storagePath)
+    private static async Task SeedDataAsync(
+        DataSession<SqliteProvider> db,
+        string storagePath,
+        string? environmentName,
+        string? configuredPassword,
+        Microsoft.Extensions.Logging.ILogger logger)
     {
-        // 检查是否已有管理员用户
-        var existing = await db.CountAsync<UserRow>($"Username = {"admin"}");
-        if (existing > 0)
+        // 两个种子相互独立判定：曾经的早退条件是"admin 存在就整体跳过"，
+        // admin 被删后重启会以默认密码重建（意外复活），池被删后却永远
+        // 不补种（admin 还在）。各自判定各自补
+        var adminExists = await db.CountAsync<UserRow>($"Username = {"admin"}") > 0;
+        var poolExists = await db.CountAsync<StoragePoolRow>() > 0;
+
+        if (adminExists && poolExists)
             return;
 
-        // 创建默认管理员
-        var passwordHasher = new PasswordHasher();
-        var (hash, salt) = passwordHasher.HashPassword("admin123");
+        var isProduction = string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase);
 
-        var adminUser = Domain.Entities.User.Create(
-            username: "admin",
-            passwordHash: hash,
-            passwordSalt: salt,
-            role: Domain.Enums.UserRole.SuperAdmin,
-            displayName: "系统管理员",
-            email: "admin@localhost");
+        // 初始密码：开发环境保持 admin123 的便利；生产环境优先取配置
+        // （NasSystem:AdminPassword），未提供则生成随机密码并一次性打到
+        // 启动日志——开箱即 admin123 是把生产实例的钥匙贴在门上
+        // （2026-10-19 数据库层审计 P1）
+        string initialPassword;
+        if (!string.IsNullOrWhiteSpace(configuredPassword))
+        {
+            initialPassword = configuredPassword;
+        }
+        else if (isProduction)
+        {
+            initialPassword = GenerateRandomPassword();
+            logger.LogWarning(
+                "已创建初始管理员：用户名 admin，随机密码 {Password}。" +
+                "该密码只在本次启动打印一次，请立即登录并在个人设置中修改；" +
+                "亦可通过 NasSystem:AdminPassword 配置项指定初始密码",
+                initialPassword);
+        }
+        else
+        {
+            initialPassword = "admin123";
+        }
 
         // 挂载点先落成实体再建目录：容量刷新要求目录存在才取磁盘容量，
         // 新装实例不预建的话首页总容量会显示 0
-        var defaultPool = Domain.Entities.StoragePool.Create(
-            name: "默认存储池",
-            mountPath: storagePath,
-            description: "系统默认存储池");
-        defaultPool.SetAsDefault(true);
-        Directory.CreateDirectory(storagePath);
+        Domain.Entities.StoragePool? defaultPool = null;
+        if (!poolExists)
+        {
+            defaultPool = Domain.Entities.StoragePool.Create(
+                name: "默认存储池",
+                mountPath: storagePath,
+                description: "系统默认存储池");
+            defaultPool.SetAsDefault(true);
+            Directory.CreateDirectory(storagePath);
+        }
 
-        await db.InsertAsync(adminUser.ToRow());
-        await db.InsertAsync(defaultPool.ToRow());
+        if (!adminExists)
+        {
+            var passwordHasher = new PasswordHasher();
+            var (hash, salt) = passwordHasher.HashPassword(initialPassword);
+
+            var adminUser = Domain.Entities.User.Create(
+                username: "admin",
+                passwordHash: hash,
+                passwordSalt: salt,
+                role: Domain.Enums.UserRole.SuperAdmin,
+                displayName: "系统管理员",
+                email: "admin@localhost");
+
+            // 两条种子同一事务：曾经的两次独立 Insert 让"管理员进了、
+            // 默认池没进"的半成品状态可以留在库里
+            await db.WithTransaction(async ct =>
+            {
+                await db.InsertAsync(adminUser.ToRow(), ct);
+                if (defaultPool is not null)
+                    await db.InsertAsync(defaultPool.ToRow(), ct);
+            });
+        }
+        else if (defaultPool is not null)
+        {
+            await db.InsertAsync(defaultPool.ToRow());
+        }
+    }
+
+    /// <summary>随机初始密码：去掉易混字符（0/O/1/l/I）的 16 位口令</summary>
+    private static string GenerateRandomPassword()
+    {
+        const string alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+        return string.Create(16, alphabet, static (span, chars) =>
+        {
+            for (var i = 0; i < span.Length; i++)
+                span[i] = chars[System.Security.Cryptography.RandomNumberGenerator.GetInt32(chars.Length)];
+        });
     }
 }

@@ -47,8 +47,9 @@ try
 
     var app = builder.Build();
 
-    // 初始化数据库
-    await app.Services.InitializeDatabaseAsync();
+    // 初始化数据库。传环境名：生产环境的初始管理员不再是无差别的
+    // admin/admin123（未配 NAS_ADMIN_PASSWORD 时生成随机密码并一次性打印）
+    await app.Services.InitializeDatabaseAsync(builder.Environment.EnvironmentName);
 
     // 配置中间件管道
     app.UseRequestLogging();

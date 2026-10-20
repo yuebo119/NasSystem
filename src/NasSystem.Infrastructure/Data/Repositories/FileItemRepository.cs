@@ -498,9 +498,15 @@ public sealed class FileItemRepository(
         if (parentPath is null)
             return [];
 
+        // 不含 IsDeleted 过滤 + Path 倒序，两个约束都服务于永久删除：
+        // ① 回收站里的文件夹整棵子树都是软删态（SoftDeleteSubtreeAsync 同刻
+        //    标记），带 IsDeleted=0 会取回空集，删父行时子的 ParentId 外键
+        //    RESTRICT 直接失败（2026-10-19 审计实证：深度≥1 全灭）
+        // ② 父路径是子路径的前缀，升序时父排在前先删同样撞外键；倒序保证
+        //    最深的先删、父最后删
         var rows = await db.From<FileItemRow>()
-            .Where($"Path LIKE {DescendantPrefix(parentPath)} ESCAPE '#' AND IsDeleted = 0")
-            .OrderBy(f => f.Path)
+            .Where($"Path LIKE {DescendantPrefix(parentPath)} ESCAPE '#'")
+            .OrderByDescending(f => f.Path)
             .ToListAsync(cancellationToken);
 
         return rows.ConvertAll(r => r.ToDomain());
@@ -782,6 +788,27 @@ public sealed class FileItemRepository(
         var db = await sessions.GetAsync(cancellationToken);
         var row = await db.GetAsync<FileItemRow>(id, cancellationToken);
         return row?.ToDomain();
+    }
+
+    public async Task<IReadOnlyList<FileItem>> GetByIdsAsync(
+        IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        if (ids.Count == 0)
+            return [];
+
+        var db = await sessions.GetAsync(cancellationToken);
+
+        // 逐 Id 占位 + 参数化（同 FileShareRepository.LoadFileItemsByIds 的口径）：
+        // 字符串拼接 Guid 集合会被整体参数化成一个字符串，IN 恒不匹配
+        var distinct = ids.Distinct().ToList();
+        var placeholders = string.Join(", ", distinct.Select((_, i) => $"{{{i}}}"));
+        var rows = await db.QueryAsync<FileItemRow>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                $"SELECT * FROM FileItems WHERE Id IN ({placeholders})",
+                distinct.Cast<object>().ToArray()),
+            false,
+            cancellationToken);
+        return rows.ConvertAll(r => r.ToDomain());
     }
 
     public async Task<IReadOnlyList<FileItem>> GetAllAsync(CancellationToken cancellationToken = default)

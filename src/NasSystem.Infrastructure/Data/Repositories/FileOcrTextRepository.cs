@@ -91,9 +91,18 @@ public sealed class FileOcrTextRepository(
             return [];
 
         var db = await sessions.GetAsync(cancellationToken);
-        var rows = await db.From<FileOcrTextRow>()
-            .Where($"FileItemId IN ({string.Join(",", fileItemIds)})")
-            .ToListAsync(cancellationToken);
+
+        // 逐 Id 占位（同 FileShareRepository.LoadFileItemsByIds 的口径）。
+        // 曾经的 string.Join 把整串当一个插值孔，PalORM 整体参数化为
+        // 单个字符串 → FileItemId IN ('a,b,c') 恒不匹配，方法永远返回空
+        // （2026-10-19 审计实证；当时无调用方，属埋雷）
+        var placeholders = string.Join(", ", fileItemIds.Select((_, i) => $"{{{i}}}"));
+        var rows = await db.QueryAsync<FileOcrTextRow>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                $"SELECT * FROM FileOcrTexts WHERE FileItemId IN ({placeholders})",
+                fileItemIds.Cast<object>().ToArray()),
+            false,
+            cancellationToken);
         return rows.Select(r => r.ToDomain()).ToList();
     }
 }

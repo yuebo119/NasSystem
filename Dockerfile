@@ -38,8 +38,12 @@ COPY src/NasSystem.Shared/NasSystem.Shared.csproj src/NasSystem.Shared/
 # 裸 restore 会以 MSB3202 "未找到项目文件" 失败（2026-10-12 实测复现）。
 # 指定 API 工程会连带还原它的全部项目依赖链，行为与还原整个 src 子集等价。
 # 必须带 -r linux-x64：下面的 publish 用了 ReadyToRun，RID 特定的发布需要
-# RID 特定的 assets 文件，否则 --no-restore 会拿到不匹配的还原结果
-RUN dotnet restore src/NasSystem.Api/NasSystem.Api.csproj -r linux-x64
+# RID 特定的 assets 文件，否则 --no-restore 会拿到不匹配的还原结果。
+# 还必须带 -p:PublishReadyToRun=true：ReadyToRun 优化要运行时包
+# （Microsoft.NETCore.App.Runtime.linux-x64），restore 不带该属性时
+# assets 里没有运行时包，publish 阶段报 NETSDK1094（2026-10-20 wslc
+# 容器构建实证：本机从无 Docker，该镜像在修掉此前从未构建成功过）
+RUN dotnet restore src/NasSystem.Api/NasSystem.Api.csproj -r linux-x64 -p:PublishReadyToRun=true
 
 # 复制所有源码
 COPY src/ src/
@@ -76,8 +80,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 创建非 root 用户。UID/GID 固定 1000：SMB sidecar（docker/smb）以
 # force user = nasuser 映射共享卷上的全部写入，两侧 UID 不一致时
-# sidecar 落盘的文件应用层无权读写。固定值是两侧对齐的唯一真源
-RUN groupadd -r -g 1000 nasuser && useradd -r -u 1000 -g nasuser nasuser
+# sidecar 落盘的文件应用层无权读写。固定值是两侧对齐的唯一真源。
+# 幂等四种情况都覆盖：已是 nasuser / 1000 被别的名字占（2026-10-20
+# wslc 构建实证：新版 aspnet 基础镜像自带 ubuntu 用户占着 1000，
+# 裸 groupadd -g 1000 直接 GID already exists 失败） / 1000 空闲 /
+# 老基础镜像上从未有 1000。占用者统一改名为 nasuser（UID/GID 不变）
+RUN set -eux; \
+    if getent group 1000 | cut -d: -f1 | grep -qx nasuser; then :; \
+    elif getent group 1000 >/dev/null 2>&1; then \
+        groupmod -n nasuser "$(getent group 1000 | cut -d: -f1)"; \
+    else \
+        groupadd -r -g 1000 nasuser; \
+    fi; \
+    if getent passwd 1000 | cut -d: -f1 | grep -qx nasuser; then :; \
+    elif getent passwd 1000 >/dev/null 2>&1; then \
+        usermod -l nasuser -d /home/nasuser -g nasuser "$(getent passwd 1000 | cut -d: -f1)"; \
+    else \
+        useradd -r -u 1000 -g nasuser nasuser; \
+    fi
 
 # 创建数据目录
 RUN mkdir -p /app/data /app/storage /app/logs \

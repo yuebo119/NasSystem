@@ -208,7 +208,11 @@ public sealed partial class FileService
         var result = new DeleteResultDto();
         var deletedItems = await _fileRepository.GetDeletedItemsAsync(ownerId: userId, cancellationToken: cancellationToken);
 
-        foreach (var item in deletedItems)
+        // 按路径倒序处理：父路径是子路径的前缀，倒序保证子先于父删。
+        // 软删一个文件夹时整棵子树打同一 DeletedAt（SoftDeleteSubtreeAsync），
+        // 按 DeletedAt 排序父子次序不定，父先删即撞子的 ParentId 外键
+        // RESTRICT，该条进 FailedItems、子树留孤儿（2026-10-19 审计实证）
+        foreach (var item in deletedItems.OrderByDescending(i => i.Path, StringComparer.Ordinal))
         {
             try
             {

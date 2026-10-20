@@ -22,6 +22,19 @@ CERT_DIR="${NGINX_CERT_DIR:-/etc/nginx/certs}"
 CERT_FILE="$CERT_DIR/fullchain.pem"
 KEY_FILE="$CERT_DIR/privkey.pem"
 
+# openssl 不在 nginx:alpine 镜像里（只有 libssl 没有 CLI）：缺它时
+# 生成自签证书的命令 127 退出，整个 entrypoint 挂掉，nginx 起不来
+# （2026-10-20 wslc 容器构建实证）。先探测再补装，装不上给明确出路
+if ! command -v openssl >/dev/null 2>&1; then
+    echo "[nginx-entrypoint] 镜像无 openssl，尝试补装（apk add --no-cache openssl）"
+    if ! apk add --no-cache openssl >/dev/null 2>&1; then
+        echo "[nginx-entrypoint] openssl 补装失败（无网络或只读根文件系统）。" \
+             "请在宿主机生成自签证书放入 $CERT_DIR（fullchain.pem + privkey.pem）后重启，" \
+             "或换用自带 openssl 的 nginx 镜像"
+        exit 1
+    fi
+fi
+
 if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
     echo "[nginx-entrypoint] 检测到已有证书，跳过生成"
 else

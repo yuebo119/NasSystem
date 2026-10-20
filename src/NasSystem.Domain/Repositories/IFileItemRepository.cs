@@ -26,6 +26,14 @@ public interface IFileItemRepository : IRepository<FileItem>
     Task<FileItem?> GetByPathIncludingDeletedAsync(string path, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 按 Id 集合批量取文件项（单条 IN 查询）。语义搜索等"先拿 Id 集合
+    /// 再取详情"的场景用它消 N+1：topK=200 时逐条 GetByIdAsync 是 200 次
+    /// 单行查询
+    /// </summary>
+    Task<IReadOnlyList<FileItem>> GetByIdsAsync(
+        IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 获取目录下的子项
     /// </summary>
     Task<IReadOnlyList<FileItem>> GetChildrenAsync(
@@ -108,7 +116,10 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 获取路径下所有后代 (递归)
+    /// 获取路径下所有后代 (递归)，不论删除态，按路径倒序（最深的先）。
+    /// 倒序与含软删都是为永久删除服务：父是子的路径前缀，父先删撞
+    /// ParentId 外键 RESTRICT；回收站里的子树整棵是软删态，排已删会
+    /// 取回空集同样删不掉
     /// </summary>
     Task<IReadOnlyList<FileItem>> GetDescendantsAsync(
         Guid parentId,

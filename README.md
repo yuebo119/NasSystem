@@ -164,9 +164,11 @@ npm run dev
 
 | 用户名 | 密码 | 角色 |
 |--------|------|------|
-| admin | admin123 | SuperAdmin |
+| admin | admin123（仅开发环境） | SuperAdmin |
 
 > ⚠️ 首次登录后请立即修改默认密码
+>
+> 生产环境（`ASPNETCORE_ENVIRONMENT=Production`）不再播种 admin123：初始密码取配置项 `NasSystem:AdminPassword`（Docker 部署对应环境变量 `NasSystem__AdminPassword`），未提供时启动时生成随机密码并**一次性打印到启动日志**，请及时登录修改
 
 ## 🧪 测试
 
@@ -236,6 +238,37 @@ dotnet test --project tests/NasSystem.IntegrationTests
 
 ## 🐳 Docker 部署
 
+### 无 Docker 环境：WSL3 wslc 原生容器替代
+
+本机没有 Docker 时，可用 WSL3 自带的 `wslc` 容器 CLI 完成相同的构建与运行验证（2026-10-20 全链路实测：镜像构建、Production 启动、nginx 反代、卷持久化均通过）。Docker Hub 被墙而 MCR 与镜像站可达时的操作顺序：
+
+```bash
+# 1. 基础镜像：MCR 直拉；Docker Hub 走镜像站后改回原名
+#    （wslc 无 tag 命令，用一行的 Dockerfile 重新命名）
+wslc pull mcr.microsoft.com/dotnet/sdk:11.0-preview
+wslc pull mcr.microsoft.com/dotnet/aspnet:11.0-preview
+wslc pull docker.1ms.run/library/node:20-alpine
+wslc pull docker.1ms.run/library/nginx:alpine
+printf 'FROM docker.1ms.run/library/node:20-alpine\n'  > /tmp/tag-node/Dockerfile
+printf 'FROM docker.1ms.run/library/nginx:alpine\n' > /tmp/tag-nginx/Dockerfile
+wslc build -t node:20-alpine  -f /tmp/tag-node/Dockerfile  /tmp/tag-node
+wslc build -t nginx:alpine   -f /tmp/tag-nginx/Dockerfile /tmp/tag-nginx
+
+# 2. 构建与运行（compose 的等效手工展开；wslc 无 compose 子命令）
+wslc build -t nas-system:test .
+wslc network create nas-network   # 用户网络才能按容器名解析
+wslc run -d --name nas-system --network nas-network --network-alias nas-system \
+  -p 6050:6050 --volume nas-data:/app/data \
+  -e ASPNETCORE_ENVIRONMENT=Production \
+  -e NasSystem__StoragePath=/app/storage \
+  -e "Jwt__SecretKey=$(python -c 'import secrets;print(secrets.token_urlsafe(48))')" \
+  -e Jwt__Issuer=NasSystem -e Jwt__Audience=NasSystemUsers \
+  -e NasSystem__AdminPassword=your-initial-password \
+  nas-system:test
+```
+
+三个实测踩坑（已对应修进仓库）：Git Bash 的 MSYS 会把 `-e` 值里的 `/app/storage` 改写为主机路径，传环境变量前加 `export MSYS_NO_PATHCONV=1`；`wslc run` 不认 `-v` 短选项，用 `--volume`；卷挂载的 source 用 Windows 路径（`C:\...`）。
+
 ### 环境变量
 
 | 变量 | 描述 | 默认值 |
@@ -244,6 +277,7 @@ dotnet test --project tests/NasSystem.IntegrationTests
 | `JWT_SECRET` | JWT 密钥 | - |
 | `ConnectionStrings__DefaultConnection` | 数据库连接 | - |
 | `NasSystem__StoragePath` | 存储路径 | /app/storage |
+| `NasSystem__AdminPassword` | 初始管理员密码（仅首次播种生效；不提供则生成随机密码并打印到启动日志） | - |
 
 ### 数据卷
 
