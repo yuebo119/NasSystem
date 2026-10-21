@@ -4,12 +4,45 @@ import type { ApiResponse } from '@/types'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 import i18n from '@/locales'
+import { stopHubConnection } from '@/utils/signalr'
 
 // 自定义请求配置：401 时跳过拦截器的自动跳登录。供会话校验类请求
 // （/users/me）使用——它们的 401 由 store 与路由守卫自行处理
 declare module 'axios' {
   export interface AxiosRequestConfig {
     skipAuthRedirect?: boolean
+  }
+}
+
+// 响应拦截器把 AxiosResponse 脱壳成 ApiResponse<T> 后 return response.data
+// （见下文），但 axios 默认签名仍声明 Promise<AxiosResponse<T>>——类型与
+// 运行时不符，每个调用点都被迫写 any 强转硬掰。这里做模块增强把请求方法的
+// 返回型改成脱壳后的 ApiResponse<T>：形参列表与 axios 1.20 逐项对齐
+// （T/R/D/P 四参），只改 R 的默认值，显式传 R 的既有重载用法不受影响。
+// 注意接口合并的顺序规则：后声明的重载排在前面，故这里的签名优先于
+// axios 自带的 AxiosResponse 版本命中
+declare module 'axios' {
+  export interface AxiosInstance {
+    get<T = unknown, R = ApiResponse<T>, D = any, P = any>(
+      url: string,
+      config?: AxiosRequestConfig<D, P>
+    ): Promise<R>
+    post<T = unknown, R = ApiResponse<T>, D = any, P = any>(
+      url: string,
+      data?: D,
+      config?: AxiosRequestConfig<D, P>
+    ): Promise<R>
+    put<T = unknown, R = ApiResponse<T>, D = any, P = any>(
+      url: string,
+      data?: D,
+      config?: AxiosRequestConfig<D, P>
+    ): Promise<R>
+    delete<T = unknown, R = ApiResponse<T>, D = any, P = any>(
+      url: string,
+      config?: AxiosRequestConfig<D, P>
+    ): Promise<R>
+    // head/options/patch/postForm/putForm/patchForm/query 与裸调用形式
+    // 本代码库零使用，不增强——留着 AxiosResponse 签名让人一眼看出未脱壳
   }
 }
 
@@ -80,6 +113,10 @@ http.interceptors.response.use(
           localStorage.removeItem('token')
           router.push({ name: 'Login' })
           ElMessage.error(t('error.sessionExpired'))
+          // 实时连接持有的令牌已失效：停掉并复位单例，重新登录后重建。
+          // 拦截器是同步路径，fire-and-forget；stopHubConnection 内部已吞掉
+          // "连接已断开"的 reject，不会外泄成未处理拒绝
+          void stopHubConnection()
         }
       } else {
         switch (status) {

@@ -601,7 +601,7 @@ async function handleUpload() {
 
   // 检查存储空间
   try {
-    const checkResult = await storageApi.checkSpace({ fileSize: totalSize }) as any
+    const checkResult = await storageApi.checkSpace({ fileSize: totalSize })
     if (checkResult.success && checkResult.data) {
       if (!checkResult.data.hasEnoughSpace) {
         ElMessage.error(checkResult.data.message || t('filesView.storageInsufficient', { required: formatSize(totalSize), available: formatSize(checkResult.data.availableBytes) }))

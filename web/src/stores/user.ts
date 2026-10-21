@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { User } from '@/types'
 import { userApi } from '@/api/user'
+import { stopHubConnection } from '@/utils/signalr'
 
 export const useUserStore = defineStore('user', () => {
   // 状态
@@ -36,6 +37,11 @@ export const useUserStore = defineStore('user', () => {
       user.value = null
       initialized.value = true
       localStorage.removeItem('token')
+      // 实时连接持有的令牌刚失效，没有存在意义：停掉并复位单例，下一个
+      // 登录重建。不 await——stop() 要和服务端走一轮关闭握手，而登出后
+      // 紧跟着 router.push('/login')，不该被这轮往返拖住（stop 内部已吞掉
+      // "连接已断开"的 reject，不会外泄成未处理拒绝）
+      void stopHubConnection()
     }
   }
 

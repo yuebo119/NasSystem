@@ -374,3 +374,90 @@ export interface ScanResult {
   duration: string
   message?: string
 }
+
+// 系统进程状态（GET /system/status）
+export interface SystemStatus {
+  status: string
+  uptime: string
+  memoryUsageMB: number
+  cpuTime: string
+  threadCount: number
+  handleCount: number
+}
+
+// 系统信息（GET /system/info）：按域分组的全量模块。Dashboard 的八组卡与
+// SystemInfo 页共用同一形状，故放公共类型而非各页私有
+export interface SystemInfo {
+  name: string
+  version: string
+  machineName: string
+  startTime: string
+  runningInContainer: boolean
+  runtime: SystemInfoRuntime
+  operatingSystem: SystemInfoOperatingSystem
+  cpu: SystemInfoCpu
+  memory: SystemInfoMemory
+  database: SystemInfoDatabase
+  network: SystemInfoNetwork
+  process: SystemInfoProcess
+}
+
+export interface SystemInfoRuntime {
+  framework: string
+  version: string
+  runtimeIdentifier: string
+  osArchitecture: string
+  processArchitecture: string
+  is64BitProcess: boolean
+  gcMode: string
+  gcGen0Collections: number
+  gcGen1Collections: number
+  gcGen2Collections: number
+}
+
+export interface SystemInfoOperatingSystem {
+  description: string
+  version: string
+  architecture: string
+  is64Bit: boolean
+  timeZone: string
+  culture: string
+  userName: string
+}
+
+export interface SystemInfoCpu {
+  logicalCores: number
+  model: string
+  processCpuPercent: number
+}
+
+export interface SystemInfoMemory {
+  totalPhysicalBytes: number
+  processWorkingSetBytes: number
+  gcHeapBytes: number
+}
+
+export interface SystemInfoDatabase {
+  provider: string
+  version: string
+  filePath: string
+  fileSizeBytes: number
+  journalMode: string
+}
+
+export interface SystemInfoNetwork {
+  isAvailable: boolean
+  hostName: string
+  primaryInterface: string
+  interfaceType: string
+  ipv4Addresses: string[]
+  receivedBytes: number
+  sentBytes: number
+}
+
+export interface SystemInfoProcess {
+  threadCount: number
+  handleCount: number
+  pagedMemoryBytes: number
+  totalProcessorSeconds: number
+}

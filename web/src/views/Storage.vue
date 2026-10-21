@@ -47,9 +47,9 @@ const healthStatus = computed(() => {
 const loadData = async () => {
   loading.value = true
   try {
-    const [overviewRes, poolsRes] = await Promise.all([storageApi.getOverview(), storageApi.getPools()]) as any[]
-    if (overviewRes.success) overview.value = overviewRes.data as StorageOverview
-    if (poolsRes.success) pools.value = poolsRes.data as StoragePool[]
+    const [overviewRes, poolsRes] = await Promise.all([storageApi.getOverview(), storageApi.getPools()])
+    if (overviewRes.success && overviewRes.data) overview.value = overviewRes.data
+    if (poolsRes.success && poolsRes.data) pools.value = poolsRes.data
   } catch (e) { console.error('Failed to load storage pools', e) }
   finally { loading.value = false }
 }
@@ -68,10 +68,10 @@ const openPathDialog = async () => {
 const browseDirectory = async (path?: string) => {
   browsingLoading.value = true
   try {
-    const result = await storageApi.browseDirectories(path) as any
+    const result = await storageApi.browseDirectories(path)
     if (result.success && result.data) {
       browsingPath.value = result.data.currentPath || ''
-      parentPath.value = result.data.parentPath
+      parentPath.value = result.data.parentPath ?? null
       directories.value = result.data.directories || []
     }
   } catch (e) { console.error('Failed to browse directory', e) }
@@ -109,12 +109,12 @@ const handleCreate = async () => {
       mountPath: poolForm.value.mountPath.trim(),
       description: poolForm.value.description.trim(),
       maxCapacityBytes
-    }) as any
+    })
     if (result.success) {
       ElMessage.success(t('storage.createSuccess'))
       createDialogVisible.value = false
       await loadData()
-    } else { ElMessage.error(result.message || t('common.failed')) }
+    } else { ElMessage.error(result.error?.message || t('common.failed')) }
   } catch (e: any) { ElMessage.error(e.message || t('common.failed')) }
   finally { creating.value = false }
 }
@@ -138,23 +138,23 @@ const handleUpdate = async () => {
       name: poolForm.value.name.trim(),
       description: poolForm.value.description.trim(),
       maxCapacityBytes
-    }) as any
+    })
     if (result.success) {
       ElMessage.success(t('storage.updateSuccess'))
       editDialogVisible.value = false
       await loadData()
-    } else { ElMessage.error(result.message || t('common.failed')) }
+    } else { ElMessage.error(result.error?.message || t('common.failed')) }
   } catch (e: any) { ElMessage.error(e.message || t('common.failed')) }
   finally { updating.value = false }
 }
 
 const handleSetDefault = async (pool: StoragePool) => {
   try {
-    const result = await storageApi.setDefault(pool.id) as any
+    const result = await storageApi.setDefault(pool.id)
     if (result.success) {
       ElMessage.success(t('common.success'))
       await loadData()
-    } else { ElMessage.error(result.message || t('common.failed')) }
+    } else { ElMessage.error(result.error?.message || t('common.failed')) }
   } catch (e: any) { ElMessage.error(e.message || t('common.failed')) }
 }
 
@@ -165,9 +165,9 @@ const handleDelete = async (pool: StoragePool) => {
     // vue-i18n 的占位符就是 {name}，无参 t() 会先把它替换成空串，
     // 事后的 replace 是空操作，确认框里名字永远是空的（E2E 走查实证）
     await ElMessageBox.confirm(t('storage.deletePoolConfirm', { name: pool.name }), t('common.confirm'), { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') })
-    const result = await storageApi.deletePool(pool.id) as any
+    const result = await storageApi.deletePool(pool.id)
     if (result.success) { ElMessage.success(t('storage.deleteSuccess')); await loadData() }
-    else { ElMessage.error(result.message || t('common.failed')) }
+    else { ElMessage.error(result.error?.message || t('common.failed')) }
   } catch (e: any) { if (e !== 'cancel') ElMessage.error(e.message || t('common.failed')) }
 }
 

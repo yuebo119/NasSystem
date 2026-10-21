@@ -217,21 +217,35 @@ const hasMore = computed(() => items.value.length < total.value)
 // onMounted 一次性绑定
 const loadMoreSentinel = ref<HTMLElement | null>(null)
 let scrollObserver: IntersectionObserver | null = null
+// 卸载后不再挂观察器：延后到 nextTick 的 observe 可能在卸载后才跑，届时
+// ref 未必已置空，靠这个显式标志兜底，避免挂出无人 disconnect 的观察器
+let unmounted = false
 
-watch(loadMoreSentinel, (el) => {
-  scrollObserver?.disconnect()
-  scrollObserver = null
-  if (!el) return
-  scrollObserver = new IntersectionObserver((entries) => {
-    if (!entries[0]?.isIntersecting) return
-    // 语义模式没有分页语义（topK 定死），不自动加载
-    if (semanticActive.value || loading.value || !hasMore.value) return
-    void loadMore()
-  }, { rootMargin: '200px' })
-  scrollObserver.observe(el)
+watch(loadMoreSentinel, () => {
+  // 切 tab 时旧分支先销毁、新哨兵后插入，watch 会先收到 null（旧哨兵已离开
+  // DOM）再收到新元素，中间有一帧"没有任何观察者"的空窗；直接同步 observe
+  // 还可能把观察器挂到一个紧接着就被替换掉的过渡元素上。
+  // 延一帧再统一挂：DOM 稳定后重读 ref（不用回调参数，那可能是过渡值），
+  // 保证观察器最终盯住的是真正留在页面里的那个哨兵。空窗期间进入视口的
+  // 滚动由"加载更多"按钮兜底
+  void nextTick(() => {
+    if (unmounted) return
+    scrollObserver?.disconnect()
+    scrollObserver = null
+    const el = loadMoreSentinel.value
+    if (!el) return
+    scrollObserver = new IntersectionObserver((entries) => {
+      if (!entries[0]?.isIntersecting) return
+      // 语义模式没有分页语义（topK 定死），不自动加载
+      if (semanticActive.value || loading.value || !hasMore.value) return
+      void loadMore()
+    }, { rootMargin: '200px' })
+    scrollObserver.observe(el)
+  })
 })
 
 onUnmounted(() => {
+  unmounted = true
   scrollObserver?.disconnect()
   scrollObserver = null
 })

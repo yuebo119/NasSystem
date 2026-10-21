@@ -12,31 +12,40 @@ import { ElMessage } from 'element-plus'
 import { Refresh, InfoFilled, Monitor } from '@element-plus/icons-vue'
 import http from '@/api/http'
 import { getLocale } from '@/locales'
+import type { SystemInfo, SystemStatus } from '@/types'
 
 const { t } = useI18n()
 
 const loading = ref(false)
-const systemInfo = ref<any>(null)
-const systemStatus = ref<any>(null)
+const systemInfo = ref<SystemInfo | null>(null)
+const systemStatus = ref<SystemStatus | null>(null)
 
 // 外网访问配置（ROADMAP Phase 3）
 const remoteProvider = ref('cloudflare')
 const remoteHostname = ref('')
 // 本地端口：留空用后端默认 6050（与服务端同口径），可改
 const remoteLocalPort = ref<number | undefined>(undefined)
-const remoteConfig = ref<{ provider: string; fileName: string; config: string; steps: string[] } | null>(null)
+const remoteConfig = ref<RemoteAccessConfig | null>(null)
 const remoteLoading = ref(false)
+
+/** 外网访问生成结果：后端生成的配置文件全文 + 分步操作说明 */
+interface RemoteAccessConfig {
+  provider: string
+  fileName: string
+  config: string
+  steps: string[]
+}
 
 async function loadSystemInfo() {
   loading.value = true
   try {
     const [infoRes, statusRes] = await Promise.all([
-      http.get('/system/info'),
-      http.get('/system/status')
-    ]) as any[]
+      http.get<SystemInfo>('/system/info'),
+      http.get<SystemStatus>('/system/status')
+    ])
 
-    if (infoRes.success) systemInfo.value = infoRes.data
-    if (statusRes.success) systemStatus.value = statusRes.data
+    if (infoRes.success && infoRes.data) systemInfo.value = infoRes.data
+    if (statusRes.success && statusRes.data) systemStatus.value = statusRes.data
   } catch (e) {
     console.error('Failed to load system info', e)
   } finally {
@@ -48,7 +57,7 @@ async function loadSystemInfo() {
 const generateRemoteConfig = async () => {
   remoteLoading.value = true
   try {
-    const res = await http.get('/system/remote-access/config', {
+    const res = await http.get<RemoteAccessConfig>('/system/remote-access/config', {
       params: {
         provider: remoteProvider.value,
         hostname: remoteHostname.value || undefined,
@@ -57,8 +66,8 @@ const generateRemoteConfig = async () => {
         // 前端拿不到生效域名的回退值，所以文本不能放前端 i18n）
         lang: getLocale() === 'zh-CN' ? 'zh' : 'en'
       }
-    }) as any
-    if (res.success) {
+    })
+    if (res.success && res.data) {
       remoteConfig.value = res.data
     } else {
       ElMessage.error(res.error?.message || t('remoteAccess.generateFailed'))

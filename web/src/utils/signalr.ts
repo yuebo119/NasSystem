@@ -24,7 +24,15 @@ export function getHubConnection(): HubConnection {
     .withAutomaticReconnect()
     .build()
 
-  connection.onreconnected(() => {
+  // 连接走到终态断开时清掉 startPromise：包括 withAutomaticReconnect 的
+  // 重连放弃与显式 stop()。此时 state 已回 Disconnected，下一次
+  // ensureHubStarted 必须重新 start()。缺这一条，初次 start 成功后一直
+  // 处于 resolved 的 startPromise 会让 ensureHubStarted 直接 await 短路
+  // 返回，连接永久停在断开态而无人重启。
+  // 安全性依据 signalr 源码：onclose 只在终态触发——重连窗口内 state 是
+  // Reconnecting、走 _reconnect 分支，onclose 不 firing（HubConnection.js
+  // 的 _close/_reconnect），所以这个重置不会把在途重连打断
+  connection.onclose(() => {
     startPromise = null
   })
 
@@ -123,4 +131,35 @@ export function watchHubConnectionState(
   return () => {
     stateListeners.delete(onChange)
   }
+}
+
+/**
+ * 关闭全局连接并复位单例状态：登出与 401 会话失效时调用。
+ *
+ * 不清的后果：旧 HubConnection 实例带着已失效的令牌留在模块里，下一个
+ * 登录复用它；且 onclose 等模块级回调与 stateListeners 会跨会话累积。
+ * stop() 是尽力而为——连接已断开或从未启动成功时它可能 reject，这里吞掉
+ * 不外抛：登出与 401 的处理链不该被"关连接"这一步拖失败
+ */
+export async function stopHubConnection(): Promise<void> {
+  const conn = connection
+  // 先摘单例再 await stop()：stop 是异步的，这期间若有新的订阅进来，
+  // getHubConnection() 应新建连接而不是拿到正在关闭的旧实例
+  connection = null
+  startPromise = null
+  // stateHooked 必须一起复位：它标记"当前连接已挂过模块级 state 钩子"。
+  // 不复位的话，stop 之后新建的连接会被 ensureStateHooked 直接跳过，
+  // 页面再也收不到连接状态变化（重新登录后实时状态永远显示已断开）
+  stateHooked = false
+  if (conn) {
+    try {
+      // stop() 触发 onclose，模块级 state 钩子会照常把 false 推给各页面
+      // 的监听器，UI 上的"实时同步已断开"即时可见
+      await conn.stop()
+    } catch {
+      /* 连接已断开或未启动成功时 stop() 可能 reject；关闭流程尽力而为 */
+    }
+  }
+  // 兜底清空：stop() 抛错的路径上 onclose 未必走完，防止监听器跨会话残留
+  stateListeners.clear()
 }

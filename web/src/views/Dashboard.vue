@@ -18,6 +18,7 @@ import {
 import { formatSize, getPoolStatusInfo, getFileIcon, getFileIconColor, formatDate, getUsageColor, getFileCategoryColor } from '@/utils/format'
 import { useIsMobile } from '@/utils/useIsMobile'
 import { fileShareApi } from '@/api/fileShare'
+import type { SystemStatus, SystemInfo, FileStatistics } from '@/types'
 
 const { t } = useI18n()
 const userStore = useUserStore()
@@ -97,7 +98,7 @@ async function setDefaultPool(pool: any) {
 const recycleBinItems = ref<any[]>([])
 
 // 文件统计
-const fileStats = ref({
+const fileStats = ref<FileStatistics>({
   totalFiles: 0,
   totalFolders: 0,
   totalSizeBytes: 0,
@@ -111,7 +112,7 @@ const fileStats = ref({
 })
 
 // 系统状态
-const systemStatus = ref({
+const systemStatus = ref<SystemStatus>({
   status: 'Unknown',
   uptime: '0.00:00:00',
   memoryUsageMB: 0,
@@ -122,7 +123,7 @@ const systemStatus = ref({
 
 // 系统信息（分组结构，字段与 /system/info 返回一一对应；
 // 首屏加载完成前各组用空值占位，模板里统一回落 '-')
-const systemInfo = ref<any>({
+const systemInfo = ref<SystemInfo>({
   name: 'NAS System',
   version: '1.0.0',
   machineName: '',
@@ -192,7 +193,7 @@ const formatUptime = (uptime: string): string => {
 // 加载存储概览
 const loadStorageOverview = async () => {
   try {
-    const response = await storageApi.getOverview() as any
+    const response = await storageApi.getOverview()
     if (response.success && response.data) {
       storageOverview.value = response.data
     }
@@ -204,7 +205,7 @@ const loadStorageOverview = async () => {
 // 加载存储池列表
 const loadStoragePools = async () => {
   try {
-    const response = await storageApi.getPools() as any
+    const response = await storageApi.getPools()
     if (response.success && response.data) {
       storagePools.value = response.data
     }
@@ -219,7 +220,7 @@ const loadStoragePools = async () => {
 const loadDrives = async () => {
   drivesError.value = ''
   try {
-    const response = await storageApi.getDrives() as any
+    const response = await storageApi.getDrives()
     if (response.success && response.data) {
       drives.value = response.data
     }
@@ -244,7 +245,7 @@ const driveBarColor = getUsageColor
 // 加载文件统计
 const loadFileStats = async () => {
   try {
-    const response = await fileApi.getStatistics() as any
+    const response = await fileApi.getStatistics()
     if (response.success && response.data) {
       fileStats.value = response.data
     }
@@ -256,7 +257,7 @@ const loadFileStats = async () => {
 // 加载系统状态
 const loadSystemStatus = async () => {
   try {
-    const response = await http.get('/system/status') as any
+    const response = await http.get<SystemStatus>('/system/status')
     if (response.success && response.data) {
       systemStatus.value = response.data
     }
@@ -268,7 +269,7 @@ const loadSystemStatus = async () => {
 // 加载系统信息
 const loadSystemInfo = async () => {
   try {
-    const response = await http.get('/system/info') as any
+    const response = await http.get<SystemInfo>('/system/info')
     if (response.success && response.data) {
       systemInfo.value = response.data
     }
@@ -280,7 +281,7 @@ const loadSystemInfo = async () => {
 // 加载分享列表（概览卡聚合用）
 const loadShares = async () => {
   try {
-    const response = await fileShareApi.getMyShares() as any
+    const response = await fileShareApi.getMyShares()
     if (response.success && response.data) {
       shares.value = response.data
     }
@@ -292,7 +293,7 @@ const loadShares = async () => {
 // 加载最近文件
 const loadRecentFiles = async () => {
   try {
-    const response = await fileApi.getRecentFiles(6) as any
+    const response = await fileApi.getRecentFiles(6)
     if (response.success && response.data) {
       recentFiles.value = response.data
     }
@@ -304,7 +305,7 @@ const loadRecentFiles = async () => {
 // 加载回收站（条目数 + 总大小）
 const loadRecycleBin = async () => {
   try {
-    const response = await fileApi.getRecycleBin() as any
+    const response = await fileApi.getRecycleBin()
     if (response.success && response.data) {
       recycleBinItems.value = response.data
     }
@@ -319,7 +320,7 @@ const refreshingCapacity = ref(false)
 const handleRefreshCapacity = async () => {
   refreshingCapacity.value = true
   try {
-    await storageApi.refreshCapacity() as any
+    await storageApi.refreshCapacity()
     ElMessage.success(t('dashboard.capacityRefreshed'))
     await Promise.all([loadStorageOverview(), loadStoragePools(), loadDrives()])
   } catch {
@@ -334,7 +335,7 @@ const scanning = ref(false)
 const handleScanSync = async () => {
   scanning.value = true
   try {
-    const response = await fileApi.scanAndSync() as any
+    const response = await fileApi.scanAndSync()
     if (response.success) {
       const r = response.data
       ElMessage.success(t('dashboard.scanDone', {
@@ -343,7 +344,7 @@ const handleScanSync = async () => {
       }))
       await Promise.all([loadFileStats(), loadRecentFiles(), loadStorageOverview(), loadStoragePools()])
     } else {
-      ElMessage.error(response.message || t('common.failed'))
+      ElMessage.error(response.error?.message || t('common.failed'))
     }
   } catch (e: any) {
     ElMessage.error(e.message || t('common.failed'))
