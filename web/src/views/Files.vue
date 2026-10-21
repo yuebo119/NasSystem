@@ -22,7 +22,7 @@ import {
 import type { FileItem, FileVersion, OcrText, VersionComparison } from '@/types'
 import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
 import { createPreviewUrlManager } from '@/utils/previewUrl'
-import { useDrawerSize } from '@/utils/useIsMobile'
+import { useDrawerSize, useIsMobile } from '@/utils/useIsMobile'
 
 // ITM-M3 收尾：Files 页 i18n 全量接入
 const { t } = useI18n()
@@ -31,6 +31,11 @@ const router = useRouter()
 const fileStore = useFileStore()
 // 模态统一右侧抽屉：窄屏全宽，宽屏 clamp 随视口连续缩放
 const drawerSize = useDrawerSize()
+// 窄屏（≤768px）表格收敛为 选择/名称/操作 三列：六列总宽 870px 远超手机
+// 视口，且 el-table-v2 超宽列是裁剪而非滚动，行操作按钮被挤到视口外
+// 全部不可达（2026-10-21 移动视口实测 x=405 vs 视口 390）。元信息降级为
+// 名称单元格内的次级行，与 iOS 文件 App 的同款模式
+const isMobile = useIsMobile()
 
 // 对话框状态
 const createFolderDialogVisible = ref(false)
@@ -444,16 +449,31 @@ async function goToSearchResult(item: FileItem) {
   }
 }
 
+// "保留两者"的改名：name.ext → name (2).ext → name (3).ext…
+// 与 macOS Finder 的同款递进规则，在 taken 集合里找到第一个空位
+function renameToNonConflicting(file: File, taken: Set<string>): File {
+  const dot = file.name.lastIndexOf('.')
+  const base = dot > 0 ? file.name.slice(0, dot) : file.name
+  const ext = dot > 0 ? file.name.slice(dot) : ''
+  let n = 2
+  let candidate = `${base} (${n})${ext}`
+  while (taken.has(candidate)) {
+    n++
+    candidate = `${base} (${n})${ext}`
+  }
+  return new File([file], candidate, { type: file.type, lastModified: file.lastModified })
+}
+
 // 上传文件
 async function handleUpload() {
   if (uploadFiles.value.length === 0) {
     ElMessage.warning(t('filesView.selectToUpload'))
     return
   }
-  
+
   // 计算总文件大小
   const totalSize = uploadFiles.value.reduce((sum, file) => sum + (file.raw?.size || 0), 0)
-  
+
   // 检查存储空间
   try {
     const checkResult = await storageApi.checkSpace({ fileSize: totalSize }) as any
@@ -466,36 +486,76 @@ async function handleUpload() {
   } catch (e) {
     console.warn('检查存储空间失败，继续上传', e)
   }
-  
+
+  // 冲突检测：目标目录已存在的同名文件。后端对已存在文件默认 409，
+  // 覆盖上传（overwrite=true）是自动版本功能的唯一触发点，必须给用户
+  // 明确选择而不是让上传静默失败（2026-10-21 E2E 旅程实证的流程断裂）
+  const existingNames = new Set(fileStore.files.map((f: { name: string }) => f.name))
+  const conflicts = uploadFiles.value.filter(f => f.raw && existingNames.has(f.raw.name))
+  // 冲突文件的处理方式：'replace' 覆盖（产版本）/ 'keep-both' 自动改名 / null 尚未决定
+  let conflictMode: 'replace' | 'keep-both' | null = null
+  if (conflicts.length > 0) {
+    try {
+      await ElMessageBox({
+        type: 'warning',
+        title: t('filesView.uploadConflictTitle'),
+        message: t('filesView.uploadConflictMessage', { count: conflicts.length }),
+        confirmButtonText: t('filesView.uploadConflictReplace'),
+        cancelButtonText: t('filesView.uploadConflictKeepBoth'),
+        distinguishCancelAndClose: true
+      })
+      conflictMode = 'replace'
+    } catch (action) {
+      if (action === 'cancel') {
+        conflictMode = 'keep-both'
+      } else {
+        return // 关闭（X）或 ESC：取消整个上传
+      }
+    }
+  }
+
   uploading.value = true
   uploadProgress.value = 0
-  
+
   const total = uploadFiles.value.length
   let completed = 0
   let failed = 0
-  
+
   for (const uploadFile of uploadFiles.value) {
     if (uploadFile.raw) {
       try {
-        await fileApi.upload(uploadFile.raw, fileStore.currentPath, (progress) => {
-          uploadProgress.value = Math.round((completed * 100 + progress) / total)
-        })
+        const isConflict = existingNames.has(uploadFile.raw.name)
+        // 保留两者：前端改到不冲突的名字（macOS Finder 同款 " (2)" 递进）。
+        // 目录列表可能不含全部条目时后端 409 会兜住，计入失败并如实提示
+        let fileToUpload: File = uploadFile.raw
+        if (isConflict && conflictMode === 'keep-both') {
+          fileToUpload = renameToNonConflicting(uploadFile.raw, existingNames)
+          existingNames.add(fileToUpload.name)
+        }
+        await fileApi.upload(
+          fileToUpload,
+          fileStore.currentPath,
+          (progress) => {
+            uploadProgress.value = Math.round((completed * 100 + progress) / total)
+          },
+          isConflict && conflictMode === 'replace'
+        )
         completed++
       } catch (e) {
         failed++
       }
     }
   }
-  
+
   uploading.value = false
   uploadFiles.value = []
-  
+
   if (failed === 0) {
     ElMessage.success(t('filesView.uploadCountSuccess', { count: completed }))
   } else {
     ElMessage.warning(t('filesView.uploadPartial', { ok: completed, fail: failed }))
   }
-  
+
   uploadDialogVisible.value = false
   await fileStore.loadDirectory(fileStore.currentPath)
 }
@@ -930,8 +990,20 @@ const columns = computed<Column<FileItem>[]>(() => {
     cellRenderer: ({ rowData }) => h('div', { class: 'file-name' }, [
       h('span', { style: { color: getFileIconColor(rowData), display: 'inline-flex', flexShrink: 0 } },
         h(getFileIcon(rowData))),
-      h('span', { class: 'file-name-text' }, rowData.name),
-      rowData.isHidden ? h('span', { class: 'hidden-tag' }, t('filesView.hiddenTag')) : null
+      h('div', { class: 'file-name-main' }, [
+        h('span', { class: 'file-name-text' }, rowData.name),
+        rowData.isHidden ? h('span', { class: 'hidden-tag' }, t('filesView.hiddenTag')) : null,
+        // 窄屏次级行：大小·类型·时间（三列在窄屏被收起，信息不能丢）
+        isMobile.value
+          ? h('span', { class: 'file-name-meta' }, [
+              rowData.isFolder ? '-' : formatSize(rowData.sizeBytes),
+              ' · ',
+              rowData.isFolder ? t('filesView.typeFolder') : (rowData.extension || '-'),
+              ' · ',
+              formatDate(rowData.updatedAt || rowData.createdAt)
+            ].join(''))
+          : null
+      ])
     ])
   }
 
@@ -966,7 +1038,7 @@ const columns = computed<Column<FileItem>[]>(() => {
   const actionsColumn: Column<FileItem> = {
     key: 'actions',
     title: t('filesView.colActions'),
-    width: 120,
+    width: isMobile.value ? 72 : 120,
     // 不用 fixed: RIGHT。el-table-v2 的固定列会渲染成独立的行容器
     // （实测固定列所在行只剩一个单元格，与数据行分离），
     // 导致操作按钮与数据行错位，点第 2 行的按钮拿到的是别的行。
@@ -980,7 +1052,10 @@ const columns = computed<Column<FileItem>[]>(() => {
     }, '···')
   }
 
-  return [selectionColumn, nameColumn, sizeColumn, typeColumn, modifiedColumn, actionsColumn]
+  // 窄屏三列：选择/名称/操作。桌面六列全量
+  return isMobile.value
+    ? [selectionColumn, nameColumn, actionsColumn]
+    : [selectionColumn, nameColumn, sizeColumn, typeColumn, modifiedColumn, actionsColumn]
 })
 
 // ─── 网格视图虚拟滚动 ───
@@ -1233,6 +1308,11 @@ function handleCommand(command: string, item: FileItem) {
       break
     case 'share':
       openShareDialog(item)
+      break
+    case 'version':
+      // 历史版本：文件才有（文件夹无版本语义）。入口从预览抽屉补到行菜单，
+      // 否则不可预览的文件类型（压缩包等）到不了版本历史
+      if (!item.isFolder) openVersionHistory(item)
       break
   }
 }
@@ -2000,6 +2080,9 @@ onUnmounted(() => {
         {{ $t('filesView.actPreview') }}
       </button>
       <button class="row-actions-item" @click="runRowAction('share')">{{ $t('filesView.shareTip') }}</button>
+      <button v-if="!rowActionsTarget.isFolder" class="row-actions-item" @click="runRowAction('version')">
+        {{ $t('filesView.versionHistoryBtn') }}
+      </button>
       <button class="row-actions-item" @click="runRowAction('rename')">{{ $t('filesView.actRename') }}</button>
       <button class="row-actions-item" @click="runRowAction('copy')">{{ $t('filesView.copyTip') }}</button>
       <button class="row-actions-item" @click="runRowAction('cut')">{{ $t('filesView.cutTip') }}</button>
@@ -2071,6 +2154,23 @@ onUnmounted(() => {
 }
 
 :deep(.file-name-text) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 窄屏名称列的两级结构：主行文件名 + 次级行元信息（大小·类型·时间）。
+// 三列在窄屏收进名称单元格，信息不丢（iOS 文件 App 同款模式）
+:deep(.file-name-main) {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+:deep(.file-name-meta) {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

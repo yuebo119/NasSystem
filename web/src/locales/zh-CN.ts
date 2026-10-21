@@ -780,6 +780,12 @@ export default {
     storageInsufficient: '存储空间不足！需要 {required}，可用 {available}',
     uploadCountSuccess: '成功上传 {count} 个文件',
     uploadPartial: '上传完成：成功 {ok} 个，失败 {fail} 个',
+    // 上传冲突三选（2026-10-21 E2E 旅程实证：无此对话框时覆盖上传必然 409，
+    // 而覆盖上传是自动版本功能的唯一触发点）
+    uploadConflictTitle: '文件已存在',
+    uploadConflictMessage: '有 {count} 个文件在目标目录已存在。替换将覆盖旧内容并生成历史版本；保留两者会自动改名上传。',
+    uploadConflictReplace: '替换',
+    uploadConflictKeepBoth: '保留两者',
     loadingText: '加载中...',
     loadFailedText: '加载失败',
     scanConfirm: '扫描将以物理文件为准，同步数据库记录。\n\n• 新增的物理文件将被添加到数据库\n• 已删除的物理文件将从数据库移除\n• 文件大小变化将被更新\n\n确定要执行扫描同步吗？',
