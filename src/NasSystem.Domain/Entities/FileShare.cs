@@ -160,6 +160,18 @@ public sealed class FileShare : Entity
     }
 
     /// <summary>
+    /// 以数据库当前值为基准增加下载次数。下载计数的读改写在应用层并行时，
+    /// 各请求持有的实体是进闸前加载的旧值，直接自增会把并发请求的增量
+    /// 覆盖掉（计数丢更新）；也防不住限流判定用的是旧值（MaxDownloads 打穿）。
+    /// 调用方负责在串行区内重读当前值后传进来
+    /// </summary>
+    public void IncrementDownloadCount(int currentCount)
+    {
+        DownloadCount = currentCount + 1;
+        MarkAsModified();
+    }
+
+    /// <summary>
     /// 重新生成分享码
     /// </summary>
     public void RegenerateShareCode()

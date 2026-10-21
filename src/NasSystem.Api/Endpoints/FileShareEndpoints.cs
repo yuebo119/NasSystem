@@ -76,8 +76,12 @@ public static class FileShareEndpoints
     /// </summary>
     public static WebApplication MapPublicShareEndpoints(this WebApplication app)
     {
-        // API 端点放在 /api/v1/public-shares 下
-        var publicShares = app.MapGroup("/api/v1/public-shares").WithTags("公开分享访问");
+        // API 端点放在 /api/v1/public-shares 下。
+        // 整组挂 "share" 限流（按客户端 IP 分区）：这组是匿名面，
+        // /verify 是口令判定端点，零限流即可在线爆破（CONVENTIONS §4.5）
+        var publicShares = app.MapGroup("/api/v1/public-shares")
+            .RequireRateLimiting("share")
+            .WithTags("公开分享访问");
 
         publicShares.MapGet("/{shareCode}", GetPublicShareInfo)
                     .WithName("GetPublicShareInfo")

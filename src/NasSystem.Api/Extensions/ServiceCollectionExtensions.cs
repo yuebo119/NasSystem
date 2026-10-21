@@ -110,6 +110,18 @@ public static class ServiceCollectionExtensions
                 limiterOptions.Window = TimeSpan.FromMinutes(1);
                 limiterOptions.QueueLimit = 0;
             });
+
+            // 公开分享端点（匿名）：/verify 是口令判定端点，零限流即可在线爆破；
+            // 分享码 6 字符也可被枚举。按客户端 IP 分区——共享链接的正常多人
+            // 使用不应互相挤掉，单个来源的失败轰炸必须被拦
+            options.AddPolicy("share", context => RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = environment.IsProduction() ? 20 : int.MaxValue,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0
+                }));
         });
 
         // 上传大小限制（ITM-N2）：Kestrel 全局 500MB，防未限制上传耗尽磁盘。

@@ -5,6 +5,7 @@
 
 namespace NasSystem.Application.FileShares;
 
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
@@ -35,6 +36,12 @@ public sealed class FileShareService(
 
     // 访问令牌签名密钥（复用 JWT 主密钥，ITM-N1：令牌必须带签名防伪造）
     private readonly byte[] _tokenKey = Encoding.UTF8.GetBytes(jwtOptions.Value.SecretKey);
+
+    // 下载计数的按分享闸门。读改写（IsDownloadLimitReached 判定 + IncrementDownloadCount
+    // + SaveChanges）在闸外并发时两个请求都读到同一个旧值：MaxDownloads=1 的分享
+    // 会被并发打穿，且计数丢一次更新。SQLite 单写者 + 单容器部署下进程内串行
+    // 即等价原子（模式同 StorageService.RefreshGates）
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> DownloadGates = new();
 
     #region 管理 API
 
@@ -164,14 +171,32 @@ public sealed class FileShareService(
         if (request.ClearExpiresAt == true)
             expiresAt = null;
         else if (request.ExpiresAt.HasValue)
-            expiresAt = request.ExpiresAt;
+        {
+            if (request.ExpiresAt.Value <= DateTime.UtcNow)
+                return Result<FileShareDto>.Failure(Error.Validation("过期时间必须晚于当前时间"));
+            expiresAt = request.ExpiresAt.Value;
+        }
 
         // 处理下载限制
         int? maxDownloads = share.MaxDownloads;
         if (request.ClearMaxDownloads == true)
             maxDownloads = null;
         else if (request.MaxDownloads.HasValue)
-            maxDownloads = request.MaxDownloads;
+        {
+            // 负数让 IsDownloadLimitReached 恒真（HasValue && Count >= 负数），
+            // 分享秒锁死且 UI 显示正常，无从诊断
+            if (request.MaxDownloads.Value < 0)
+                return Result<FileShareDto>.Failure(Error.Validation("下载次数限制不能为负数"));
+            maxDownloads = request.MaxDownloads.Value;
+        }
+
+        // ITM-N24 家族：不变量必须覆盖所有写入点。Create 有「密码型必须带哈希」
+        // 断言，Update 这条写入点此前没有——把 Public 分享改成 Password 却不带
+        // 口令时，Update 的「哈希非空才覆盖」分支留下空哈希，VerifyPassword 判
+        // PasswordNotRequired，无人能拿令牌，分享对所有人永久 403
+        var effectivePasswordHash = request.ClearPassword == true ? null : passwordHash ?? share.PasswordHash;
+        if (request.AccessType == ShareAccessType.Password && string.IsNullOrEmpty(effectivePasswordHash))
+            return Result<FileShareDto>.Failure(Error.Validation("密码保护的分享必须设置密码"));
 
         share.Update(
             accessType: request.AccessType,
@@ -304,8 +329,8 @@ public sealed class FileShareService(
         if (!passwordHasher.VerifyPassword(password, hash, salt))
             return Result<string>.Failure(FileShareErrors.InvalidPassword());
 
-        // 生成访问令牌
-        var token = GenerateAccessToken(shareCode);
+        // 生成访问令牌（绑定当前口令指纹：改口令后旧令牌立即失效）
+        var token = GenerateAccessToken(shareCode, PasswordFingerprint(share.PasswordHash));
         return Result<string>.Success(token);
     }
 
@@ -362,10 +387,10 @@ public sealed class FileShareService(
         if (!File.Exists(targetFile.PhysicalPath))
             return Result<ShareDownloadTarget>.Failure(FileShareErrors.PhysicalFileNotFound());
 
-        // 增加下载计数
-        share.IncrementDownloadCount();
-        await fileShareRepository.UpdateAsync(share, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        // 增加下载计数（闸内串行化限流判定 + 增量，防并发打穿 MaxDownloads）
+        var recorded = await RecordDownloadAsync(share, cancellationToken);
+        if (recorded.IsFailure)
+            return Result<ShareDownloadTarget>.Failure(recorded.Error);
 
         var stream = new FileStream(targetFile.PhysicalPath, FileMode.Open, FileAccess.Read, System.IO.FileShare.Read);
         var contentType = targetFile.MimeType ?? "application/octet-stream";
@@ -376,6 +401,45 @@ public sealed class FileShareService(
             FileName = targetFile.Name,
             ContentType = contentType
         });
+    }
+
+    /// <summary>
+    /// 登记一次下载：闸内串行化「限流判定 + 增量 + 落库」。
+    /// 读改写在闸外并发时，两个请求都读到同一个旧 DownloadCount：
+    /// MaxDownloads=1 的分享会被并发打穿，计数也丢一次更新。
+    /// SQLite 单写者 + 单容器部署下进程内串行即等价原子
+    /// （模式同 StorageService.RefreshGates）
+    /// </summary>
+    private async Task<Result> RecordDownloadAsync(FileShare share, CancellationToken cancellationToken)
+    {
+        var gate = DownloadGates.GetOrAdd(share.Id, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            // 闸内重读：本请求的 share 实例是进闸前加载的，等待期间前一个
+            // 请求可能已把计数推高（限流也可能刚好用尽）。仓储每次调用都
+            // 从行构造新实例，拿到的是数据库当前值
+            var fresh = await fileShareRepository.GetByShareCodeAsync(share.ShareCode, cancellationToken);
+            if (fresh is null)
+                return Result.Failure(FileShareErrors.ShareCodeNotFound(share.ShareCode));
+
+            if (fresh.IsDownloadLimitReached)
+                return Result.Failure(FileShareErrors.DownloadLimitReached());
+
+            // 以库内当前值为基准自增（保留本请求跟踪实例上的其他待存改动）
+            share.IncrementDownloadCount(fresh.DownloadCount);
+            await fileShareRepository.UpdateAsync(share, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result.Success();
+        }
+        finally
+        {
+            gate.Release();
+            // 无等待者即移除闸门，防字典随分享增删无限增长（竞态窗口内新等待者
+            // 取到同一实例引用，最坏后果是多一次串行等待，不会错）
+            if (gate.CurrentCount == 1)
+                DownloadGates.TryRemove(new KeyValuePair<Guid, SemaphoreSlim>(share.Id, gate));
+        }
     }
 
     /// <summary>
@@ -438,9 +502,10 @@ public sealed class FileShareService(
         if (!Directory.Exists(folder.PhysicalPath))
             return Result<ShareDownloadTarget>.Failure(FileShareErrors.PhysicalFileNotFound());
 
-        share.IncrementDownloadCount();
-        await fileShareRepository.UpdateAsync(share, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        // 同单文件下载：计数走闸内串行（限流判定 + 增量 + 落库）
+        var recorded = await RecordDownloadAsync(share, cancellationToken);
+        if (recorded.IsFailure)
+            return Result<ShareDownloadTarget>.Failure(recorded.Error);
 
         return Result<ShareDownloadTarget>.Success(new ShareDownloadTarget
         {
@@ -525,7 +590,7 @@ public sealed class FileShareService(
             case ShareAccessType.Password:
                 if (string.IsNullOrEmpty(accessToken))
                     return Result.Failure(FileShareErrors.PasswordRequired());
-                if (!ValidateAccessToken(share.ShareCode, accessToken))
+                if (!ValidateAccessToken(share.ShareCode, accessToken, PasswordFingerprint(share.PasswordHash)))
                     return Result.Failure(FileShareErrors.InvalidAccessToken());
                 return Result.Success();
 
@@ -544,16 +609,26 @@ public sealed class FileShareService(
     /// <summary>
     /// 生成带 HMAC-SHA256 签名的访问令牌（ITM-N1：Base64 明文拼接可被任意伪造，必须签名）
     /// </summary>
-    private string GenerateAccessToken(string shareCode)
+    /// <summary>
+    /// 口令指纹：取 PBKDF2 哈希的前 16 字符。令牌 payload 绑它而非明文口令，
+    /// 改口令/清口令（哈希变或变空）即让全部已发令牌失效
+    /// </summary>
+    private static string? PasswordFingerprint(string? passwordHash) =>
+        string.IsNullOrEmpty(passwordHash) ? null : passwordHash[..Math.Min(16, passwordHash.Length)];
+
+    private string GenerateAccessToken(string shareCode, string? passwordFingerprint)
     {
         var expiration = DateTime.UtcNow.AddHours(AccessTokenExpirationHours);
-        var payload = $"{shareCode}:{expiration:O}";
+        // payload 带口令指纹：改口令/清口令后旧令牌立即失效。
+        // 无状态令牌没有版本号可绑，指纹是最小绑定面（公开/内部分享传 null，
+        // 指纹段为空串，与旧令牌格式兼容）
+        var payload = $"{shareCode}:{passwordFingerprint ?? string.Empty}:{expiration:O}";
         var payloadBytes = Encoding.UTF8.GetBytes(payload);
         var signature = HMACSHA256.HashData(_tokenKey, payloadBytes);
         return $"{Convert.ToBase64String(payloadBytes)}.{Convert.ToBase64String(signature)}";
     }
 
-    private bool ValidateAccessToken(string shareCode, string token)
+    private bool ValidateAccessToken(string shareCode, string token, string? expectedFingerprint)
     {
         try
         {
@@ -567,13 +642,20 @@ public sealed class FileShareService(
                 return false;
 
             var data = Encoding.UTF8.GetString(payloadBytes);
-            var separatorIndex = data.IndexOf(':');
-            if (separatorIndex <= 0) return false;
+            // payload = "{shareCode}:{指纹}:{roundtrip 时间}"。指纹取自 Base64
+            // 哈希前 16 字符，不含冒号；roundtrip 时间自带冒号，故两段都取
+            // 前向第一个冒号切分
+            var firstSeparator = data.IndexOf(':');
+            if (firstSeparator <= 0) return false;
+            var secondSeparator = data.IndexOf(':', firstSeparator + 1);
+            if (secondSeparator <= 0) return false;
 
-            var tokenShareCode = data[..separatorIndex];
-            var expirationStr = data[(separatorIndex + 1)..];
+            var tokenShareCode = data[..firstSeparator];
+            var tokenFingerprint = data[(firstSeparator + 1)..secondSeparator];
+            var expirationStr = data[(secondSeparator + 1)..];
 
             if (tokenShareCode != shareCode) return false;
+            if (tokenFingerprint != (expectedFingerprint ?? string.Empty)) return false;
             if (!DateTime.TryParse(expirationStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out var expiration))
                 return false;
 
@@ -660,6 +742,9 @@ public static class FileShareErrors
 
     public static Error ShareNotAccessible() =>
         new("FileShare.NotAccessible", "分享已过期或已达到下载限制");
+
+    public static Error DownloadLimitReached() =>
+        new("FileShare.DownloadLimitReached", "分享已达到下载次数限制");
 
     public static Error PasswordRequired() =>
         new("FileShare.PasswordRequired", "此分享需要密码验证");
