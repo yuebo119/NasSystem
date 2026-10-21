@@ -65,7 +65,7 @@ describe('MainLayout 分组菜单', () => {
     expect(text).toContain('只读保护')
     expect(text).toContain('3-2-1 导出')
     // 协议接入与文字识别拆页后的入口（2026-10-19）
-    expect(text).toContain('WebDAV 挂载')
+    expect(text).toContain('WebDAV')
     expect(text).toContain('文字识别')
     unmount()
   })
@@ -84,8 +84,8 @@ describe('MainLayout 分组菜单', () => {
     expect(text).toContain('个人设置')
     // 文字识别是用户级入口（批量工具对所有人开放），普通用户可见
     expect(text).toContain('文字识别')
-    // WebDAV 挂载在管理组内，普通用户不可见
-    expect(text).not.toContain('WebDAV 挂载')
+    // WebDAV 在管理组内，普通用户不可见
+    expect(text).not.toContain('WebDAV')
     unmount()
   })
 })

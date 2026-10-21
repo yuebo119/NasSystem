@@ -39,7 +39,7 @@ export default {
     users: '用户管理',
     systemConfig: '系统配置',
     systemInfo: '系统信息',
-    webdav: 'WebDAV 挂载',
+    webdav: 'WebDAV',
     ocr: '文字识别',
     settings: '个人设置',
     logout: '退出登录',
@@ -639,9 +639,9 @@ export default {
     running: '运行中'
   },
 
-  // WebDAV 挂载服务（2026-10-19 从系统配置页拆出，仅管理员）
+  // WebDAV 服务（2026-10-19 从系统配置页拆出，仅管理员）
   webdav: {
-    title: 'WebDAV 挂载服务',
+    title: 'WebDAV 服务',
     subtitle: '让资源管理器、Finder、文件 App 像本地磁盘一样访问 NAS',
     serviceTitle: '挂载服务',
     serviceDesc: '挂载后用应用账号登录。删除进回收站、配额检查与实时推送全部生效，大文件不受网页端上传上限约束。',

@@ -39,7 +39,7 @@ export default {
     users: 'Users',
     systemConfig: 'System Config',
     systemInfo: 'System Info',
-    webdav: 'WebDAV Mount',
+    webdav: 'WebDAV',
     ocr: 'Text Recognition',
     settings: 'Preferences',
     logout: 'Logout',
@@ -641,9 +641,9 @@ export default {
     running: 'Running'
   },
 
-  // WebDAV mount service (split from the system config page on 2026-10-19, admin only)
+  // WebDAV service (split from the system config page on 2026-10-19, admin only)
   webdav: {
-    title: 'WebDAV Mount Service',
+    title: 'WebDAV Service',
     subtitle: 'Access the NAS from Explorer, Finder and the Files app like a local drive',
     serviceTitle: 'Mount Service',
     serviceDesc: 'Sign in with your app account after mounting. Deletion goes to the recycle bin, quota checks and real-time push all apply, and large files are not bound by the web upload limit.',

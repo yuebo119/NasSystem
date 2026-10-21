@@ -106,7 +106,7 @@ const routes: RouteRecordRaw[] = [
         path: 'webdav',
         name: 'WebDav',
         component: () => import('@/views/WebDav.vue'),
-        meta: { title: 'WebDAV 挂载', icon: 'Link', requiresAdmin: true }
+        meta: { title: 'WebDAV', icon: 'Link', requiresAdmin: true }
       },
       {
         path: 'system-info',
