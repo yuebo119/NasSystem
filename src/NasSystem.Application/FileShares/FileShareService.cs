@@ -329,6 +329,13 @@ public sealed class FileShareService(
             if (target is null)
                 return Result<ShareDownloadTarget>.Failure(FileShareErrors.FileNotFound(Guid.Empty));
 
+            // 归属校验：分享授权锚在"分享时刻的目录归属"。软删不占唯一索引，
+            // 路径可被他人重建——前缀校验（ITM-N16）放行了"跳出前缀"，
+            // 这里补上"前缀今天仍属分享者"的判定，否则匿名请求可经旧分享码
+            // 读到同名路径上新属主的文件
+            if (target.OwnerId != fileItem.OwnerId)
+                return Result<ShareDownloadTarget>.Failure(FileShareErrors.FileNotFound(Guid.Empty));
+
             // 如果是子文件夹，也打包下载
             if (target.IsFolder)
             {
@@ -459,6 +466,10 @@ public sealed class FileShareService(
 
             var targetFolder = await fileItemRepository.GetByPathAsync(resolved.Value, cancellationToken);
             if (targetFolder is null || !targetFolder.IsFolder)
+                return Result<ShareFolderContentDto>.Failure(FileShareErrors.FolderNotFound());
+
+            // 归属校验（同下载路径）：路径被他人重建后，旧分享码不得浏览到新属主的内容
+            if (targetFolder.OwnerId != fileItem.OwnerId)
                 return Result<ShareFolderContentDto>.Failure(FileShareErrors.FolderNotFound());
             targetParentId = targetFolder.Id;
             currentPath = subPath;
