@@ -139,6 +139,16 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 同上，额外按属主收敛。备份 diff 用：路径前缀只保证"在这棵目录下"，
+    /// 不保证"是这个人建的"（扫描同步会把无主物理文件记给触发者），
+    /// 跨用户场景下前缀内可能混入他人记录
+    /// </summary>
+    Task<IReadOnlyList<FileItemEntry>> GetSubtreeEntriesAsync(
+        string rootPath,
+        Guid ownerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 按扩展名计数（语义索引进度用：图片总量）。含软删过滤
     /// </summary>
     Task<int> CountByExtensionAsync(

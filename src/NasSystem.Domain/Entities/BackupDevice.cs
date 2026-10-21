@@ -35,9 +35,12 @@ public sealed class BackupDevice : Entity
 
     /// <summary>
     /// 备份目录的虚拟路径。设备名与目录名同源：改设备名等于换备份目录，
-    /// 不做目录迁移（历史文件留在旧目录，由用户自行处置）
+    /// 不做目录迁移（历史文件留在旧目录，由用户自行处置）。
+    /// 路径含 UserId：设备名唯一性按用户查重，两个用户注册同名设备时
+    /// 共享同一个备份根会让一方的 diff 回包收录另一方全部文件（清单泄露），
+    /// 且同路径文件互相占位导致一方备份永远传不上来
     /// </summary>
-    public string BackupPath => $"/Backups/{Name}";
+    public string BackupPath => $"/Backups/{UserId:N}/{Name}";
 
     public static BackupDevice Create(
         Guid userId,

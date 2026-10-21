@@ -9,6 +9,7 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using NasSystem.Domain.Entities;
+using NasSystem.Domain.Enums;
 using Xunit;
 
 /// <summary>
@@ -63,7 +64,7 @@ public class ScanSyncTests : ApiTestBase, IDisposable
     public async Task Scan_AddsPhysicallyCreatedFiles()
     {
         // Arrange：登录 + 池就绪 + 物理上放一个目录和文件（不进库）
-        var token = await GetAuthTokenAsync("scanadd" + Guid.NewGuid().ToString("N")[..6]);
+        var token = await GetAuthTokenAsync("scanadd" + Guid.NewGuid().ToString("N")[..6], UserRole.Admin);
         SetAuthToken(token);
         await EnsureClassPoolAsync();
 
@@ -88,7 +89,7 @@ public class ScanSyncTests : ApiTestBase, IDisposable
     public async Task Scan_RemovesPhysicallyDeletedFolderTree()
     {
         // Arrange：经 API 建目录（库 + 物理双真实）并放一个子文件
-        var token = await GetAuthTokenAsync("scandel" + Guid.NewGuid().ToString("N")[..6]);
+        var token = await GetAuthTokenAsync("scandel" + Guid.NewGuid().ToString("N")[..6], UserRole.Admin);
         SetAuthToken(token);
         await EnsureClassPoolAsync();
 
@@ -126,7 +127,7 @@ public class ScanSyncTests : ApiTestBase, IDisposable
         // 软删历史与新记录同路径共存（删了再传同名文件即是）。扫描建对比表的
         // ToDictionary 撞重复键，整个扫描 500（"An item with the same key
         // has already been added"）——回收站积几条同名记录后点"扫描同步"必炸
-        var token = await GetAuthTokenAsync("scandup" + Guid.NewGuid().ToString("N")[..6]);
+        var token = await GetAuthTokenAsync("scandup" + Guid.NewGuid().ToString("N")[..6], UserRole.Admin);
         SetAuthToken(token);
         await EnsureClassPoolAsync();
 
@@ -152,7 +153,7 @@ public class ScanSyncTests : ApiTestBase, IDisposable
     public async Task Scan_BumpsETagOfScannedDirectory()
     {
         // Arrange
-        var token = await GetAuthTokenAsync("scanetag" + Guid.NewGuid().ToString("N")[..6]);
+        var token = await GetAuthTokenAsync("scanetag" + Guid.NewGuid().ToString("N")[..6], UserRole.Admin);
         SetAuthToken(token);
         await EnsureClassPoolAsync();
 

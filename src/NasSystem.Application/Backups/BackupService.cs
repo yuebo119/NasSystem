@@ -114,7 +114,9 @@ public sealed class BackupService(
         // 服务端现状：备份目录（根自身 + 全部后代）一次查回。
         // 相对路径 = 条目路径去掉备份根前缀；只收文件，文件夹由上传时按需创建
         var backupRoot = device.BackupPath;
-        var subtree = await fileItemRepository.GetSubtreeEntriesAsync(backupRoot, cancellationToken);
+        // 归属收敛：BackupPath 已含 UserId 前缀，这里再按 OwnerId 兜一层——
+        // 扫描同步可能把前缀内的无主物理文件记给触发扫描的人（F-011 同源）
+        var subtree = await fileItemRepository.GetSubtreeEntriesAsync(backupRoot, userId, cancellationToken);
         var serverFiles = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in subtree)
         {
@@ -178,6 +180,13 @@ public sealed class BackupService(
         if (device is null || device.UserId != userId)
         {
             return Result.Failure(BackupErrors.DeviceNotFound(deviceId));
+        }
+
+        if (device.IsRevoked)
+        {
+            // 吊销语义覆盖同批次两个入口：plan 已拦，sync-complete 漏拦会让
+            // 被吊销设备继续写 LastSyncAt/统计（ITM-N35 同族：同类问题修覆盖不均匀）
+            return Result.Failure(Error.Forbidden("设备已吊销，请重新注册"));
         }
 
         device.RecordSync(uploadedFileCount);

@@ -595,6 +595,29 @@ public sealed class FileItemRepository(
         return rows.Select(r => new FileItemEntry(r.Path, r.ItemType, r.SizeBytes)).ToList();
     }
 
+    /// <summary>
+    /// 同 <see cref="GetSubtreeEntriesAsync"/>，额外按属主收敛。备份 diff 用：
+    /// 路径前缀只保证"在这棵目录下"，不保证"是这个人建的"——扫描同步会把
+    /// 无主物理文件记给触发扫描的人，跨用户场景下前缀内可能混入他人记录
+    /// </summary>
+    public async Task<IReadOnlyList<FileItemEntry>> GetSubtreeEntriesAsync(
+        string rootPath,
+        Guid ownerId,
+        CancellationToken cancellationToken = default)
+    {
+        var db = await sessions.GetAsync(cancellationToken);
+
+        var prefix = DescendantPrefix(rootPath);
+        var rows = await db.QueryAsync<FileItemEntryRow>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                "SELECT Path, ItemType, SizeBytes FROM FileItems WHERE (Path = {0} OR Path LIKE {1} ESCAPE '#') AND OwnerId = {2}",
+                rootPath, prefix, ownerId),
+            false,
+            cancellationToken);
+
+        return rows.Select(r => new FileItemEntry(r.Path, r.ItemType, r.SizeBytes)).ToList();
+    }
+
     public Task SoftDeleteSubtreeAsync(
         string rootPath,
         DateTime deletedAt,

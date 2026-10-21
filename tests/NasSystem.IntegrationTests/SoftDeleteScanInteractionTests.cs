@@ -15,6 +15,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using NasSystem.Application.Files.Dtos;
+using NasSystem.Domain.Enums;
 using NasSystem.Shared;
 using Xunit;
 
@@ -31,7 +32,7 @@ public class SoftDeleteScanInteractionTests : ApiTestBase
     public async Task Scan_AfterSoftDelete_DoesNotResurrectDeletedFile()
     {
         // Arrange：经 API 创建目录（数据库+物理双真实）→ 软删 → 扫描同步
-        var token = await GetAuthTokenAsync("softdelscanuser");
+        var token = await GetAuthTokenAsync("softdelscanuser", UserRole.Admin);
         SetAuthToken(token);
         await SeedDefaultStoragePoolAsync();
 
@@ -62,7 +63,7 @@ public class SoftDeleteScanInteractionTests : ApiTestBase
     public async Task Restore_AfterScanWithoutResurrection_Succeeds()
     {
         // Arrange：经 API 创建 → 软删 → 扫描 → 恢复
-        var token = await GetAuthTokenAsync("sdrestoreuser");
+        var token = await GetAuthTokenAsync("sdrestoreuser", UserRole.Admin);
         SetAuthToken(token);
         await SeedDefaultStoragePoolAsync();
 

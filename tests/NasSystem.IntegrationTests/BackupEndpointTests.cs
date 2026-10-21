@@ -67,7 +67,10 @@ public class BackupEndpointTests : ApiTestBase, IDisposable
         list.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await list.Content.ReadAsStringAsync();
         body.Should().Contain("testphone");
-        body.Should().Contain("/Backups/testphone", "备份目录必须是 /Backups/{设备名}");
+        // 备份根含 UserId：两个用户注册同名设备时不得共享同一个目录
+        // （共享根会让一方 diff 回包收录另一方全部文件）
+        body.Should().MatchRegex(@"/Backups/[0-9a-f]{32}/testphone",
+            "备份目录必须是 /Backups/{userId}/{设备名}");
         body.Should().Contain(deviceId.ToString());
     }
 
@@ -107,10 +110,12 @@ public class BackupEndpointTests : ApiTestBase, IDisposable
         var deviceId = await RegisterDeviceAsync(token, "planphone");
 
         // 种两个服务端已有文件：一个体积与清单一致（已是最新），
-        // 一个体积不同（需重传），一个清单里没有（孤儿）
-        await SeedBackupFileAsync(username, "/Backups/planphone/DCIM/a.jpg", 1000);
-        await SeedBackupFileAsync(username, "/Backups/planphone/DCIM/b.jpg", 2000);
-        await SeedBackupFileAsync(username, "/Backups/planphone/DCIM/gone.jpg", 500);
+        // 一个体积不同（需重传），一个清单里没有（孤儿）。
+        // 路径用设备真实备份根（含 UserId 段），与 RegisterDeviceAsync 同源
+        var backupRoot = await ReadBackupPathAsync(token, deviceId);
+        await SeedBackupFileAsync(username, $"{backupRoot}/DCIM/a.jpg", 1000);
+        await SeedBackupFileAsync(username, $"{backupRoot}/DCIM/b.jpg", 2000);
+        await SeedBackupFileAsync(username, $"{backupRoot}/DCIM/gone.jpg", 500);
 
         var response = await Client.SendAsync(CreateJsonRequest(
             HttpMethod.Post, $"/api/v1/backup/devices/{deviceId}/plan", token,
@@ -274,6 +279,17 @@ public class BackupEndpointTests : ApiTestBase, IDisposable
         var idStart = start + marker.Length;
         var idEnd = body.IndexOf('"', idStart);
         return Guid.Parse(body[idStart..idEnd]);
+    }
+
+    /// <summary>读设备的真实备份根（含 UserId 段）：种子文件必须落在同一路径下</summary>
+    private async Task<string> ReadBackupPathAsync(string token, Guid deviceId)
+    {
+        var response = await Client.SendAsync(CreateJsonRequest(
+            HttpMethod.Post, $"/api/v1/backup/devices/{deviceId}/plan", token,
+            new { entries = Array.Empty<object>() }));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        return json.GetProperty("data").GetProperty("backupPath").GetString()!;
     }
 
     /// <summary>在设备备份目录下种一个文件记录（diff 输入，不落物理文件）</summary>

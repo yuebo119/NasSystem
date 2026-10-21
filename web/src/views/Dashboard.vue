@@ -1055,7 +1055,8 @@ onUnmounted(() => {
             <span class="action-desc">{{ t('dashboard.actionRefreshCapacityDesc') }}</span>
           </div>
         </div>
-        <div class="action-item clickable" @click="handleScanSync">
+        <!-- 扫描同步管理员专属：端点已升 RequireAdmin，普通用户见了也只会吃 403 -->
+        <div v-if="userStore.isAdmin" class="action-item clickable" @click="handleScanSync">
           <div class="action-icon icon-badge icon-badge--md scan"><el-icon :size="22" :class="{ spinning: scanning }"><Search /></el-icon></div>
           <div class="action-text">
             <span class="action-name">{{ t('dashboard.actionScanSync') }}</span>

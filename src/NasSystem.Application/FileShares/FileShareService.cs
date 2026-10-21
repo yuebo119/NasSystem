@@ -252,6 +252,11 @@ public sealed class FileShareService(
         if (fileItem is null)
             return Result<PublicShareInfoDto>.Failure(FileShareErrors.FileNotFound(share.FileItemId));
 
+        // 与下载/浏览同口径：软删即停止分享出口。信息端点回显文件名/大小/
+        // 属主显示名，已删除文件同样不得经旧分享码披露
+        if (fileItem.IsDeleted)
+            return Result<PublicShareInfoDto>.Failure(FileShareErrors.FileNotFound(share.FileItemId));
+
         // 创建者名称直接用 Include 的导航属性（GetByShareCodeAsync 已 Include CreatedByUser），
         // 不再按 share 单查一次用户表
         string? creatorName = share.CreatedByUser != null
@@ -392,6 +397,12 @@ public sealed class FileShareService(
 
         var fileItem = await fileItemRepository.GetByIdAsync(share.FileItemId, cancellationToken);
         if (fileItem is null)
+            return Result<(FileShare, FileItem)>.Failure(FileShareErrors.FileNotFound(share.FileItemId));
+
+        // 软删（进回收站）即停止分享出口：GetByIdAsync 不论删除态，物理文件
+        // 也仍在盘上，不拦的话「已删除」的文件经旧链接持续可下载/可打包，
+        // 与用户「删除=链接失效」的心智冲突（CONVENTIONS §3.5 删除语义）
+        if (fileItem.IsDeleted)
             return Result<(FileShare, FileItem)>.Failure(FileShareErrors.FileNotFound(share.FileItemId));
 
         return Result<(FileShare, FileItem)>.Success((share, fileItem));

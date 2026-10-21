@@ -129,12 +129,14 @@ public static class FileEndpoints
              .WithDescription("按创建时间倒序取当前用户最近的文件与文件夹，供 Dashboard 最近文件面板使用")
              .RequireAuthorization();
 
-        // 扫描同步
+        // 扫描同步。管理员专属：扫描遍历整个默认池并按"触发者即属主"给无主
+        // 物理文件建档（外部拷入/DB 恢复遗漏/上传记录丢失的文件），普通用户
+        // 触发一次即可把池内他人数据据为己有（ITM-N14 的所有权后果面）
         files.MapPost("/scan", ScanAndSync)
              .WithName("ScanAndSync")
              .WithSummary("扫描并同步文件")
              .WithDescription("扫描存储目录下的物理文件，并同步到数据库。以物理文件为准，数据库为辅。")
-             .RequireAuthorization();
+             .RequireAuthorization("RequireAdmin");
 
         // 识别图片文字（ROADMAP Phase 2）
         files.MapPost("/ocr/{*path}", RecognizeImage)

@@ -4,6 +4,7 @@ import { subscribeDirectory, watchHubConnectionState } from '@/utils/signalr'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useFileStore } from '@/stores/file'
+import { useUserStore } from '@/stores/user'
 import { fileApi } from '@/api/file'
 import { fileVersionApi } from '@/api/fileVersion'
 import { ocrApi } from '@/api/ocr'
@@ -31,6 +32,7 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const fileStore = useFileStore()
+const userStore = useUserStore()
 // 模态统一右侧抽屉：窄屏全宽，宽屏 clamp 随视口连续缩放
 const drawerSize = useDrawerSize()
 // 窄屏（≤768px）表格收敛为 选择/名称/操作 三列：六列总宽 870px 远超手机
@@ -1676,7 +1678,8 @@ onUnmounted(() => {
               <el-icon><Refresh /></el-icon>
             </el-button>
           </el-tooltip>
-          <el-tooltip :content="$t('filesView.scanTip')" placement="bottom">
+          <!-- 扫描同步管理员专属：端点已升 RequireAdmin（无主物理文件的归属归触发者） -->
+          <el-tooltip v-if="userStore.isAdmin" :content="$t('filesView.scanTip')" placement="bottom">
             <el-button @click="handleScanSync" :loading="scanning" type="warning">
               <el-icon><Refresh /></el-icon>
               {{ $t('filesView.scanShort') }}

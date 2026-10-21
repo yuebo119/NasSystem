@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Application.Users.Dtos;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
+using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
 using NasSystem.Domain.Services;
 using PalORM;
@@ -113,13 +114,19 @@ public abstract class ApiTestBase : IClassFixture<NasSystemWebApplicationFactory
 
     protected async Task<string> GetAuthTokenAsync(string username)
     {
+        return await GetAuthTokenAsync(username, UserRole.User);
+    }
+
+    /// <summary>带角色的令牌（管理员端点用：扫描同步/存储/用户管理等 RequireAdmin 路由）</summary>
+    protected async Task<string> GetAuthTokenAsync(string username, UserRole role)
+    {
         using var scope = Factory.Services.CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
 
         var (hash, salt) = passwordHasher.HashPassword("password123");
-        var user = User.Create(username, hash, salt);
+        var user = User.Create(username, hash, salt, role);
         await users.AddAsync(user);
         await unitOfWork.SaveChangesAsync();
 
