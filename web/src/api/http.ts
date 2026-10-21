@@ -44,6 +44,16 @@ http.interceptors.request.use(
 // 响应拦截器
 http.interceptors.response.use(
   (response) => {
+    // 条件请求支持：响应头挂到返回体的 __headers 上（ETag 机制用）。
+    // 用不可枚举属性挂载：JSON 序列化与 deep-equal 都看不到它，
+    // 消费方按 .success/.data 解构或整体比对均不受影响
+    if (response.data && typeof response.data === 'object') {
+      Object.defineProperty(response.data, '__headers', {
+        value: response.headers,
+        enumerable: false,
+        configurable: true
+      })
+    }
     return response.data
   },
   (error: AxiosError<ApiResponse>) => {
@@ -53,6 +63,12 @@ http.interceptors.response.use(
 
     if (response) {
       const { status, data } = response
+
+      if (status === 304) {
+        // Not Modified：条件请求命中（浏览目录的 ETag）。归一成成功空响应，
+        // 让调用方走"复用缓存"分支——落进下面的错误分支会误弹"请求失败"
+        return Promise.resolve({ success: true, data: null, notModified: true })
+      }
 
       if (status === 401) {
         // skipAuthRedirect 的请求（会话校验）不跳转：token 失效由 store

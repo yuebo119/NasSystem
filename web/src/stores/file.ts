@@ -13,7 +13,14 @@ export const useFileStore = defineStore('file', () => {
   const sortBy = ref<'name' | 'size' | 'createdAt' | 'type'>('name')
   const sortDesc = ref(false)
   const showHidden = ref(false)
+  // 文件夹优先：可关（按大小看全目录最大文件时文件夹不再霸顶）
+  const foldersFirst = ref(true)
   const focusItemId = ref<string | null>(null)  // 用于聚焦特定文件
+  // 目录内容缓存（path|showHidden → 内容）：后端 browse 支持 ETag/304，
+  // 304 时复用缓存而非重拉；顺带让"后退"到访过的目录瞬间呈现
+  const contentCache = ref(new Map<string, DirectoryContent>())
+  // 最近一次成功加载（或 304 校验）的时间：状态栏"更新于"用
+  const lastCheckedAt = ref<Date | null>(null)
 
   // 计算属性
   const files = computed(() => directoryContent.value?.items || [])
@@ -30,8 +37,8 @@ export const useFileStore = defineStore('file', () => {
     
     // 排序
     filtered.sort((a, b) => {
-      // 文件夹优先
-      if (a.isFolder !== b.isFolder) {
+      // 文件夹优先（可关）
+      if (foldersFirst.value && a.isFolder !== b.isFolder) {
         return a.isFolder ? -1 : 1
       }
       
@@ -64,11 +71,24 @@ export const useFileStore = defineStore('file', () => {
   async function loadDirectory(path: string = '/') {
     isLoading.value = true
     try {
+      const cacheKey = `${path}|${showHidden.value ? 'hidden' : 'plain'}`
       const response = await fileApi.getDirectory(path, showHidden.value)
-      if (response.success && response.data) {
+      if (response.success) {
+        const isNavigation = path !== currentPath.value
+        if (response.notModified && contentCache.value.has(cacheKey)) {
+          // 304：服务端确认目录未变，复用缓存内容（不重拉全量 JSON）
+          directoryContent.value = contentCache.value.get(cacheKey)!
+        } else if (response.data) {
+          directoryContent.value = response.data
+          contentCache.value.set(cacheKey, response.data)
+        } else {
+          // 304 但本地无缓存（异常路径）：保持现状不清空
+          return
+        }
         currentPath.value = path
-        directoryContent.value = response.data
-        selectedItems.value = []
+        // 仅导航时清选择：同目录刷新（SignalR/手动）保留勾选
+        if (isNavigation) selectedItems.value = []
+        lastCheckedAt.value = new Date()
       }
     } finally {
       isLoading.value = false
@@ -179,7 +199,10 @@ export const useFileStore = defineStore('file', () => {
     sortBy,
     sortDesc,
     showHidden,
+    foldersFirst,
     focusItemId,
+    contentCache,
+    lastCheckedAt,
     files,
     sortedFiles,
     breadcrumbs,

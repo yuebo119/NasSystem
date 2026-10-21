@@ -69,3 +69,32 @@ export async function subscribeDirectory(
     }
   }
 }
+
+/**
+ * 监听底层连接状态：connected 变化时回调。让页面能把"实时同步已断开"
+ * 显示出来（否则掉线是静默的，用户误以为外部变更还会自动出现）。
+ * 连接是全局单例且 onclose/onreconnecting 无法 off，故钩子只在模块级
+ * 挂一次，页面按需增删自己的监听器。返回取消监听函数
+ */
+const stateListeners = new Set<(connected: boolean) => void>()
+let stateHooked = false
+
+function ensureStateHooked(conn: HubConnection) {
+  if (stateHooked) return
+  stateHooked = true
+  conn.onclose(() => stateListeners.forEach(l => l(false)))
+  conn.onreconnecting(() => stateListeners.forEach(l => l(false)))
+  conn.onreconnected(() => stateListeners.forEach(l => l(true)))
+}
+
+export function watchHubConnectionState(
+  onChange: (connected: boolean) => void,
+): () => void {
+  const conn = getHubConnection()
+  ensureStateHooked(conn)
+  stateListeners.add(onChange)
+  onChange(conn.state === 'Connected')
+  return () => {
+    stateListeners.delete(onChange)
+  }
+}

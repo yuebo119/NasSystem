@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick, onMounted, onUnmounted, h } from 'vue'
-import { subscribeDirectory } from '@/utils/signalr'
+import { subscribeDirectory, watchHubConnectionState } from '@/utils/signalr'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useFileStore } from '@/stores/file'
@@ -17,12 +17,13 @@ import {
   Refresh, Upload, Delete, Download,
   CopyDocument, Rank, FolderAdd, Search,
   Grid, List, View, Hide, DeleteFilled, Back,
-  Document, Folder, HomeFilled, Share, Link, Loading, Reading, ArrowDown
+  Document, Folder, HomeFilled, Share, Link, Loading, Reading, ArrowDown, FolderOpened
 } from '@element-plus/icons-vue'
 import type { FileItem, FileVersion, OcrText, VersionComparison } from '@/types'
 import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
 import { createPreviewUrlManager } from '@/utils/previewUrl'
 import OcrImageViewer from '@/components/OcrImageViewer.vue'
+import DirectoryBrowserDialog from '@/components/DirectoryBrowserDialog.vue'
 import { useDrawerSize, useIsMobile } from '@/utils/useIsMobile'
 
 // ITM-M3 收尾：Files 页 i18n 全量接入
@@ -336,6 +337,122 @@ async function handlePaste() {
   }
 }
 
+// ─── 移动到… / 复制到…（2026-10-21 补齐：目标目录点选，不必先导航过去再粘贴）───
+// 剪贴板模型保留为快捷方式；深层路径用目录浏览器一步到位
+const transferDialogVisible = ref(false)
+const transferMode = ref<'move' | 'copy'>('move')
+const transferRunning = ref(false)
+
+function openTransferDialog(mode: 'move' | 'copy') {
+  if (!fileStore.hasSelection) {
+    ElMessage.warning(t('filesView.selectFilesFirst'))
+    return
+  }
+  transferMode.value = mode
+  transferDialogVisible.value = true
+}
+
+async function runTransferTo(destination: string) {
+  const items = [...fileStore.selectedItems]
+  if (items.length === 0) return
+  // 目标不能是所选条目自己或其后代：把 /a 移进 /a/b 会递归出错
+  const invalid = items.find(i => destination === i.path || destination.startsWith(i.path + '/'))
+  if (invalid) {
+    ElMessage.warning(t('filesView.transferInvalidTarget', { name: invalid.name }))
+    return
+  }
+  transferRunning.value = true
+  try {
+    const paths = items.map(i => i.path)
+    const result = transferMode.value === 'move'
+      ? await fileApi.move(paths, destination)
+      : await fileApi.copy(paths, destination)
+    const failed: string[] = (result.data as { failedItems?: string[] } | null)?.failedItems ?? []
+    if (failed.length === 0) {
+      ElMessage.success(t('filesView.transferDone', {
+        action: t(transferMode.value === 'move' ? 'filesView.moveAction' : 'filesView.copyAction'),
+        count: items.length,
+        dest: destination
+      }))
+      transferDialogVisible.value = false
+      fileStore.clearSelection()
+    } else {
+      ElMessage.warning(t('filesView.transferPartial', { ok: items.length - failed.length, fail: failed.length, first: failed[0] }))
+    }
+    await fileStore.loadDirectory(fileStore.currentPath)
+  } catch {
+    // 拦截器已弹错
+  } finally {
+    transferRunning.value = false
+  }
+}
+
+// ─── 文件详情面板（2026-10-21 补齐：/files/info 后端一直可用，此前无 UI 入口）───
+const infoDialogVisible = ref(false)
+const infoLoading = ref(false)
+const infoData = ref<FileItem | null>(null)
+
+async function openInfoDialog(item: FileItem) {
+  infoDialogVisible.value = true
+  infoLoading.value = true
+  infoData.value = null
+  try {
+    const result = await fileApi.getFileInfo(item.path)
+    if (result.success && result.data) infoData.value = result.data
+  } catch {
+    // 拦截器已弹错
+  } finally {
+    infoLoading.value = false
+  }
+}
+
+// 搜索扩展名规范化：allow-create 允许任意输入，统一补前导点（.flac）
+function normalizeSearchExtension(value: string) {
+  if (!value) {
+    searchExtension.value = ''
+    return
+  }
+  searchExtension.value = value.startsWith('.') ? value.toLowerCase() : '.' + value.toLowerCase()
+}
+
+// 实时连接状态：SignalR 断连时状态栏明示（否则"实时同步"静默失效，
+// 用户误以为多标签页/多用户变更会自动出现）
+const realtimeConnected = ref(false)
+
+// 整页拖放上传：拖文件进页面即弹出上传抽屉并灌入文件列表。
+// dragenter/leave 用计数器：子元素的 leave 会把母体也算一次，直接置 false 会闪断
+const pageDragging = ref(false)
+let pageDragCounter = 0
+
+function onPageDragEnter() {
+  pageDragCounter++
+  pageDragging.value = true
+}
+
+function onPageDragOver(event: DragEvent) {
+  // 必须 preventDefault 否则浏览器把 drop 当"打开文件"处理
+  event.preventDefault()
+  pageDragging.value = true
+}
+
+function onPageDragLeave() {
+  pageDragCounter--
+  if (pageDragCounter <= 0) {
+    pageDragCounter = 0
+    pageDragging.value = false
+  }
+}
+
+function onPageDrop(event: DragEvent) {
+  event.preventDefault()
+  pageDragCounter = 0
+  pageDragging.value = false
+  const dropped = Array.from(event.dataTransfer?.files ?? [])
+  if (dropped.length === 0) return
+  uploadFiles.value = dropped.map(f => ({ name: f.name, raw: f, size: f.size, uid: `${f.name}-${f.lastModified}` }) as unknown as UploadFile)
+  uploadDialogVisible.value = true
+}
+
 // 打开上传对话框
 function openUploadDialog() {
   uploadFiles.value = []
@@ -496,6 +613,9 @@ async function handleUpload() {
   // 冲突检测：目标目录已存在的同名文件。后端对已存在文件默认 409，
   // 覆盖上传（overwrite=true）是自动版本功能的唯一触发点，必须给用户
   // 明确选择而不是让上传静默失败（2026-10-21 E2E 旅程实证的流程断裂）
+  // 检测前先拉一次最新目录：本地列表可能停在别的标签页上传新文件之前，
+  //  stale 名单会让冲突漏检、最终被后端 409 计成失败（失败还不知道是哪几个）
+  await fileStore.loadDirectory(fileStore.currentPath)
   const existingNames = new Set(fileStore.files.map((f: { name: string }) => f.name))
   const conflicts = uploadFiles.value.filter(f => f.raw && existingNames.has(f.raw.name))
   // 冲突文件的处理方式：'replace' 覆盖（产版本）/ 'keep-both' 自动改名 / null 尚未决定
@@ -526,6 +646,8 @@ async function handleUpload() {
   const total = uploadFiles.value.length
   let completed = 0
   let failed = 0
+  // 失败文件名单：部分失败时用户必须知道是哪几个（只报数字只能全部重传）
+  const failedNames: string[] = []
 
   for (const uploadFile of uploadFiles.value) {
     if (uploadFile.raw) {
@@ -547,8 +669,9 @@ async function handleUpload() {
           isConflict && conflictMode === 'replace'
         )
         completed++
-      } catch (e) {
+      } catch {
         failed++
+        failedNames.push(uploadFile.name)
       }
     }
   }
@@ -559,7 +682,11 @@ async function handleUpload() {
   if (failed === 0) {
     ElMessage.success(t('filesView.uploadCountSuccess', { count: completed }))
   } else {
-    ElMessage.warning(t('filesView.uploadPartial', { ok: completed, fail: failed }))
+    ElMessage.warning(t('filesView.uploadPartial', {
+      ok: completed,
+      fail: failed,
+      first: failedNames[0] ?? ''
+    }))
   }
 
   uploadDialogVisible.value = false
@@ -1317,6 +1444,10 @@ function handleCommand(command: string, item: FileItem) {
     case 'preview':
       openPreview(item)
       break
+    case 'info':
+      // 详情：/files/info 的元数据面板（MIME/精确时间/隐藏只读标记）
+      openInfoDialog(item)
+      break
     case 'ocr':
       // 行菜单直认：打开预览抽屉（顺带取已有结果）并立即重新识别，
       // 识别结果落在抽屉里的 OCR 区块
@@ -1458,6 +1589,7 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
 
 // ═══ 实时刷新（SignalR 目录订阅，多标签页/多用户变更自动同步）═══
 let unsubscribe: (() => void) | null = null
+let stopRealtimeWatch: (() => void) | null = null
 
 async function resubscribe(path: string) {
   try {
@@ -1469,8 +1601,16 @@ async function resubscribe(path: string) {
         void fileStore.loadDirectory(fileStore.currentPath)
       }
     })
+    realtimeConnected.value = true
+    // 跟随底层连接状态：自动重连失败/掉线时把状态栏的"实时"打成断开，
+    // 而不是让用户误以为外部变更还会自动出现
+    stopRealtimeWatch?.()
+    stopRealtimeWatch = watchHubConnectionState((connected) => {
+      realtimeConnected.value = connected
+    })
   } catch {
-    // SignalR 不可达时静默降级为纯 HTTP 轮询语义（进入目录仍会拉取）
+    // 订阅失败（SignalR 不可达）：降级为纯 HTTP 语义，状态栏明示断开
+    realtimeConnected.value = false
   }
 }
 
@@ -1478,13 +1618,28 @@ onMounted(() => void resubscribe(fileStore.currentPath))
 watch(() => fileStore.currentPath, (path) => void resubscribe(path))
 onUnmounted(() => {
   void unsubscribe?.()
+  stopRealtimeWatch?.()
   // 离开页面前释放预览用的 objectURL，否则指向的 blob 会一直钉在内存里
   revokePreviewUrl()
 })
 </script>
 
 <template>
-  <div class="files-page">
+  <div
+    class="files-page"
+    @dragenter.prevent="onPageDragEnter"
+    @dragover.prevent="onPageDragOver"
+    @dragleave.prevent="onPageDragLeave"
+    @drop.prevent="onPageDrop"
+  >
+    <!-- 整页拖放高亮遮罩：拖文件进页面即提示松开上传 -->
+    <div v-if="pageDragging" class="page-drop-overlay">
+      <div class="page-drop-hint">
+        <el-icon :size="40"><Upload /></el-icon>
+        <span>{{ $t('filesView.dropToUpload') }}</span>
+      </div>
+    </div>
+
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
@@ -1537,7 +1692,18 @@ onUnmounted(() => {
             </el-button>
           </el-tooltip>
         </el-button-group>
-        
+
+        <!-- 移动到… / 复制到…：目标目录点选（深层路径一步到位）。
+             剪贴板的复制/剪切/粘贴保留为快捷方式 -->
+        <el-button size="default" :disabled="!fileStore.hasSelection" @click="openTransferDialog('move')">
+          <el-icon><Folder /></el-icon>
+          {{ $t('filesView.moveTo') }}
+        </el-button>
+        <el-button size="default" :disabled="!fileStore.hasSelection" @click="openTransferDialog('copy')">
+          <el-icon><CopyDocument /></el-icon>
+          {{ $t('filesView.copyTo') }}
+        </el-button>
+
         <el-tooltip :content="$t('filesView.downloadTip')" placement="bottom">
           <el-button @click="downloadSelected" :disabled="!fileStore.hasSelection">
             <el-icon><Download /></el-icon>
@@ -1597,6 +1763,12 @@ onUnmounted(() => {
         <el-tooltip :content="fileStore.showHidden ? $t('filesView.hideHiddenTip') : $t('filesView.showHiddenTip')" placement="bottom">
           <el-button @click="toggleShowHidden" :type="fileStore.showHidden ? 'primary' : 'default'">
             <el-icon><component :is="fileStore.showHidden ? View : Hide" /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <!-- 文件夹优先开关：关掉后文件与文件夹混排（按大小看全目录时文件夹不再霸顶） -->
+        <el-tooltip :content="fileStore.foldersFirst ? $t('filesView.foldersFirstOn') : $t('filesView.foldersFirstOff')" placement="bottom">
+          <el-button @click="fileStore.foldersFirst = !fileStore.foldersFirst" :type="fileStore.foldersFirst ? 'primary' : 'default'">
+            <el-icon><FolderOpened /></el-icon>
           </el-button>
         </el-tooltip>
         <el-tooltip :content="fileStore.viewMode === 'list' ? $t('filesView.toGridTip') : $t('filesView.toListTip')" placement="bottom">
@@ -1693,6 +1865,15 @@ onUnmounted(() => {
       <span v-if="fileStore.hasSelection" class="selection-info">
         {{ $t('filesView.selectedCount', { count: fileStore.selectionCount }) }}
       </span>
+      <!-- 数据新鲜度与实时通道状态：更新时间让用户知道看到的是多久前的，
+           实时断开时明示（否则"外部变更自动同步"静默失效） -->
+      <span v-if="fileStore.lastCheckedAt" class="status-meta">
+        {{ $t('filesView.updatedAt', { time: fileStore.lastCheckedAt.toLocaleTimeString('zh-CN', { hour12: false }) }) }}
+      </span>
+      <span class="status-meta" :class="{ 'realtime-off': !realtimeConnected }">
+        <span class="realtime-dot" :class="{ on: realtimeConnected }" />
+        {{ realtimeConnected ? $t('filesView.realtimeOn') : $t('filesView.realtimeOff') }}
+      </span>
     </div>
 
     <!-- 新建文件夹抽屉 -->
@@ -1745,7 +1926,18 @@ onUnmounted(() => {
             <el-option :label="$t('filesView.typeFolder')" value="folder" />
           </el-select>
           
-          <el-select v-model="searchExtension" :placeholder="$t('filesView.extLabel')" clearable style="width: 120px">
+          <!-- 扩展名筛选：预设组之外可输入任意扩展名（allow-create），
+               后端 extension 参数本就收逗号分隔列表 -->
+          <el-select
+            v-model="searchExtension"
+            :placeholder="$t('filesView.extLabel')"
+            filterable
+            allow-create
+            default-first-option
+            clearable
+            style="width: 150px"
+            @change="normalizeSearchExtension"
+          >
             <el-option :label="$t('filesView.allOption')" value="" />
             <el-option :label="$t('filesView.extImages')" value=".jpg,.jpeg,.png,.gif,.webp" />
             <el-option :label="$t('filesView.extVideos')" value=".mp4,.avi,.mkv,.mov" />
@@ -2147,6 +2339,7 @@ onUnmounted(() => {
       <button v-if="canPreview(rowActionsTarget)" class="row-actions-item" @click="runRowAction('preview')">
         {{ $t('filesView.actPreview') }}
       </button>
+      <button class="row-actions-item" @click="runRowAction('info')">{{ $t('filesView.actInfo') }}</button>
       <button class="row-actions-item" @click="runRowAction('share')">{{ $t('filesView.shareTip') }}</button>
       <button v-if="isImage(rowActionsTarget)" class="row-actions-item" @click="runRowAction('ocr')">
         {{ $t('filesView.ocrTitle') }}
@@ -2160,6 +2353,64 @@ onUnmounted(() => {
       <button class="row-actions-item danger" @click="runRowAction('delete')">{{ $t('filesView.delete') }}</button>
       <button class="row-actions-item danger" @click="runRowAction('permanent-delete')">{{ $t('filesView.permanentDelete') }}</button>
     </div>
+
+    <!-- 移动到… / 复制到…：目标目录点选（复用全站目录浏览器组件） -->
+    <DirectoryBrowserDialog
+      v-model="transferDialogVisible"
+      :title="transferMode === 'move' ? $t('filesView.moveToTitle') : $t('filesView.copyToTitle')"
+      @select="runTransferTo"
+    />
+
+    <!-- 文件详情面板：/files/info 元数据（MIME/精确时间/隐藏只读标记） -->
+    <el-dialog v-model="infoDialogVisible" :title="$t('filesView.infoTitle')" width="480px" align-center>
+      <div v-loading="infoLoading" class="info-panel">
+        <template v-if="infoData">
+          <div class="info-row">
+            <span class="info-key">{{ $t('filesView.colName') }}</span>
+            <span class="info-value">{{ infoData.name }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">{{ $t('filesView.path') }}</span>
+            <span class="info-value mono">{{ infoData.path }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">{{ $t('filesView.type') }}</span>
+            <span class="info-value">{{ infoData.isFolder ? $t('filesView.folder') : $t('filesView.file') }}</span>
+          </div>
+          <div class="info-row" v-if="!infoData.isFolder">
+            <span class="info-key">{{ $t('filesView.infoSize') }}</span>
+            <span class="info-value">{{ formatSize(infoData.sizeBytes) }}</span>
+          </div>
+          <div class="info-row" v-if="infoData.mimeType">
+            <span class="info-key">{{ $t('filesView.mimeType') }}</span>
+            <span class="info-value mono">{{ infoData.mimeType }}</span>
+          </div>
+          <div class="info-row" v-if="infoData.extension">
+            <span class="info-key">{{ $t('filesView.extLabel') }}</span>
+            <span class="info-value mono">{{ infoData.extension }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">{{ $t('filesView.createdAt') }}</span>
+            <span class="info-value">{{ formatDate(infoData.createdAt) }}</span>
+          </div>
+          <div class="info-row" v-if="infoData.updatedAt">
+            <span class="info-key">{{ $t('filesView.modifiedAt') }}</span>
+            <span class="info-value">{{ formatDate(infoData.updatedAt) }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">{{ $t('filesView.flags') }}</span>
+            <span class="info-value">
+              <el-tag v-if="infoData.isHidden" size="small" type="info" style="margin-right: 4px">{{ $t('filesView.hiddenFlag') }}</el-tag>
+              <el-tag v-if="infoData.isReadOnly" size="small" type="warning">{{ $t('filesView.readOnlyFlag') }}</el-tag>
+              <span v-if="!infoData.isHidden && !infoData.isReadOnly">{{ $t('common.none') }}</span>
+            </span>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="infoDialogVisible = false">{{ $t('common.close') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -2173,6 +2424,8 @@ onUnmounted(() => {
   padding: 16px;
   box-shadow: var(--card-shadow, 0 2px 12px rgba(0, 0, 0, 0.06));
   border: 1px solid var(--el-border-color-lighter);
+  // 拖放遮罩的定位锚（absolute inset-0）
+  position: relative;
 }
 
 .toolbar {
@@ -2443,14 +2696,89 @@ onUnmounted(() => {
 .status-bar {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   padding: 12px 0;
   font-size: 12px;
   color: var(--el-text-color-secondary);
   border-top: 1px solid var(--el-border-color-lighter);
   margin-top: auto;
-  
+
   .selection-info {
     color: var(--el-color-primary);
+  }
+
+  // 数据新鲜度与实时通道状态（右端一组）
+  .status-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+
+    &.realtime-off {
+      color: var(--el-color-warning);
+    }
+  }
+
+  .realtime-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--el-color-success);
+
+    &:not(.on) {
+      background: var(--el-color-warning);
+    }
+  }
+}
+
+// 整页拖放上传遮罩：虚线框 + 居中提示，拖入即现、离开即消
+.page-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--el-color-primary) 8%, transparent);
+  border: 2px dashed var(--el-color-primary);
+  border-radius: var(--mac-radius-card);
+  pointer-events: none; // 不拦 drop 事件，事件照常落到根元素
+
+  .page-drop-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: var(--el-color-primary);
+    font-size: 14px;
+    font-weight: 500;
+  }
+}
+
+// 文件详情面板：键值行
+.info-panel {
+  .info-row {
+    display: flex;
+    gap: 16px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+    font-size: 13px;
+
+    &:last-child { border-bottom: none; }
+
+    .info-key {
+      flex-shrink: 0;
+      width: 72px;
+      color: var(--el-text-color-secondary);
+    }
+
+    .info-value {
+      flex: 1;
+      min-width: 0;
+      word-break: break-all;
+
+      &.mono { font-family: monospace; }
+    }
   }
 }
 

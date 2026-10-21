@@ -8,14 +8,34 @@ import type {
   ScanResult
 } from '@/types'
 
+// 浏览目录的条件请求（ETag/304）：后端按 path+userId+version 生成 ETag，
+// 命中 If-None-Match 回 304。这里按 path|hidden 记住上次 ETag，
+// 304 时返回 notModified 让调用方复用缓存（store 的 contentCache）
+const dirEtags = new Map<string, string>()
+
+/** getDirectory 的返回：304 时 data 为 null、notModified 为 true */
+export type DirectoryResult = ApiResponse<DirectoryContent> & { notModified?: boolean }
+
 export const fileApi = {
   // 获取目录内容
-  async getDirectory(path: string, includeHidden = false): Promise<ApiResponse<DirectoryContent>> {
+  async getDirectory(path: string, includeHidden = false): Promise<DirectoryResult> {
     // 后端端点是 /files/browse/{path}
     const encodedPath = path === '/' ? '' : path.replace(/^\//, '')
-    return http.get(`/files/browse/${encodedPath}`, {
-      params: { includeHidden }
-    })
+    const cacheKey = `${path}|${includeHidden ? 'hidden' : 'plain'}`
+    const etag = dirEtags.get(cacheKey)
+    const headers: Record<string, string> = {}
+    if (etag) headers['If-None-Match'] = etag
+
+    const response = await http.get(`/files/browse/${encodedPath}`, {
+      params: { includeHidden },
+      headers
+    }) as DirectoryResult
+    // http 拦截器把 304 归一成 { success: true, data: null, notModified: true }
+    if (response.notModified) return response
+    // 响应头由拦截器挂在 __headers 上（见 api/http.ts）
+    const newEtag = (response as unknown as { __headers?: Record<string, string> }).__headers?.etag
+    if (newEtag) dirEtags.set(cacheKey, newEtag)
+    return response
   },
 
   // 获取文件信息
