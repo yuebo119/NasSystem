@@ -69,6 +69,34 @@ public class UserEndpointsIntegrationTests : ApiTestBase
     }
 
     [Fact]
+    public async Task GetUsers_WithOutOfRangePaging_ClampsInsteadOfDumpingTable()
+    {
+        // 2026-10-21 审计 P2 回归：pageSize/page 曾从端点直通 SQL。
+        // SQLite 的 LIMIT 负值等于无上限，pageSize=-1 会把整表 Users
+        // 一次返回；OFFSET 负值静默归零，page=0 等价于第一页
+        var token = await GetAuthTokenAsync("paging-admin", "password123", UserRole.Admin);
+        SetAuthToken(token);
+
+        // 种超过一页的量：用户总数不足一页时，夹到 20 与不夹（LIMIT -1
+        // 无上限）都返回全表，断言失去区分度
+        for (var i = 0; i < 25; i++)
+            await SeedTestUserAsync($"paging-user-{i}", "password123");
+
+        var negativeSize = await Client.GetAsync("/api/v1/users?page=1&pageSize=-1");
+        var negativeResult = await negativeSize.Content.ReadFromJsonAsync<ApiResponse<PagedResult<UserDto>>>(JsonOptions);
+        negativeResult!.Data!.Items.Count.Should().Be(20, "负 pageSize 必须被夹到默认页大小，不许整表返回");
+        negativeResult.Data.PageSize.Should().Be(20);
+
+        var zeroPage = await Client.GetAsync("/api/v1/users?page=0&pageSize=5");
+        var zeroResult = await zeroPage.Content.ReadFromJsonAsync<ApiResponse<PagedResult<UserDto>>>(JsonOptions);
+        zeroResult!.Data!.Page.Should().Be(1, "page=0 必须按第一页处理");
+
+        var hugeSize = await Client.GetAsync("/api/v1/users?page=1&pageSize=100000");
+        var hugeResult = await hugeSize.Content.ReadFromJsonAsync<ApiResponse<PagedResult<UserDto>>>(JsonOptions);
+        hugeResult!.Data!.PageSize.Should().Be(200, "pageSize 必须有上限夹取");
+    }
+
+    [Fact]
     public async Task Login_WithValidCredentials_ReturnsTokenAndUserInfo()
     {
         // Arrange

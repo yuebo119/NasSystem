@@ -296,6 +296,7 @@ export default {
     done: 'Backup complete, {count} files uploaded',
     partialDone: 'Partially complete: {ok} succeeded, {fail} failed (failed entries retry on next sync)',
     allUpToDate: 'Everything is up to date, nothing to upload',
+    recordFailed: 'Files are backed up, but the sync record failed (last-sync time not updated; files are safe)',
     loadFailed: 'Failed to load devices'
   },
 
@@ -844,6 +845,7 @@ export default {
     extArchives: 'Archives',
     currentDirOnly: 'Current directory only',
     foundResults: '{count} results found',
+    searchTruncated: '(showing first {shown}, narrow your search for the rest)',
     noMatchFound: 'No matching files',
     uploadTitle: 'Upload Files',
     uploadTo: 'Upload to:',
@@ -853,6 +855,8 @@ export default {
     startUpload: 'Start Upload',
     previewFallbackTitle: 'Preview',
     unsupportedPreview: 'Preview is not supported for this file type',
+    thumbnailUnsupported: 'Thumbnails are not supported for this format',
+    thumbnailFailed: 'Thumbnail failed to load (retry available)',
     downloadFileText: 'Download File',
     close: 'Close',
     versionHistoryTitle: 'Version History',

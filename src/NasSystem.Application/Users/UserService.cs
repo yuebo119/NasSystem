@@ -44,7 +44,15 @@ public sealed class UserService(
         string? searchTerm = null,
         CancellationToken cancellationToken = default)
     {
-        var (users, totalCount) = await userRepository.GetPagedAsync(page, pageSize, searchTerm, cancellationToken);
+        // 分页夹取（与 FileService.Browse 同范式）：SQLite 的 LIMIT 负值
+        // 等于无上限、OFFSET 负值静默归零，pageSize=-1 会把整表 Users
+        // 一次返回。同仓 FileItemRepository.SearchAsync 也夹，
+        // 唯独用户列表这条从端点到 SQL 直通（2026-10-21 审计 P2）
+        var safePage = page > 0 ? page : 1;
+        var safePageSize = pageSize > 0 ? pageSize : 20;
+        if (safePageSize > 200) safePageSize = 200;
+
+        var (users, totalCount) = await userRepository.GetPagedAsync(safePage, safePageSize, searchTerm, cancellationToken);
 
         // 已用空间批量实时聚合（一条 GROUP BY）：User.UsedBytes 字段没有生产维护者，
         // 直接映射永远是 0，用户列表的"已使用空间/总使用空间/配额条"全显示 0
@@ -56,7 +64,9 @@ public sealed class UserService(
         var dtos = users
             .Select(u => MapToDto(u, usedSpaceByUser.TryGetValue(u.Id, out var used) ? used : 0))
             .ToList();
-        var result = PagedResult<UserDto>.Create(dtos, page, pageSize, totalCount);
+        // 报出去的 Page/PageSize 用夹取后的值：与真实取回数一致，
+        // 否则调用方按回显值翻页会错位（FileService.Browse 同款取舍）
+        var result = PagedResult<UserDto>.Create(dtos, safePage, safePageSize, totalCount);
 
         return Result<PagedResult<UserDto>>.Success(result);
     }

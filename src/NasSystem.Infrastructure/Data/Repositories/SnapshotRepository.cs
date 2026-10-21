@@ -81,12 +81,20 @@ public sealed class SnapshotRepository(
         int keepCount, CancellationToken cancellationToken = default)
     {
         var db = await sessions.GetAsync(cancellationToken);
+
+        // SQL 侧切片：先 COUNT 再 LIMIT，不再全表物化后内存 Take。
+        // 原实现每轮保留都把 DirectorySnapshots 全表读进内存，
+        // 行数随快照总量线性增长（2026-10-21 审计 P2）
+        var total = (int)await db.CountAsync<DirectorySnapshotRow>(null, cancellationToken);
+        // keepCount 之外的（最旧的）才是淘汰对象；keepCount<=0 时全删
+        if (keepCount >= total)
+            return [];
+
         var rows = await db.From<DirectorySnapshotRow>()
             .OrderBy(s => s.CreatedAt)
+            .Take(total - keepCount)
             .ToListAsync(cancellationToken);
-        var all = rows.Select(r => r.ToDomain()).ToList();
-        // keepCount 之外的（最旧的）才是淘汰对象；keepCount<=0 时全删
-        return keepCount >= all.Count ? [] : all.Take(all.Count - keepCount).ToList();
+        return rows.Select(r => r.ToDomain()).ToList();
     }
 
     public Task AddEntriesAsync(

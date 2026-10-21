@@ -16,8 +16,14 @@ public interface IThumbnailService
     /// <summary>
     /// 获取文件缩略图（带缓存）
     /// </summary>
+    /// <param name="virtualPath">虚拟路径。缓存键的身份依据：所有清除入口
+    /// （删除事件、回收站、端点）持有的都是虚拟路径，键必须同口径，
+    /// 否则清除时前缀恒不匹配（2026-10-21 审计实证：删了文件缓存还在）</param>
+    /// <param name="physicalPath">物理路径。只用于读源文件与新鲜度比对，
+    /// 不进缓存键：物理路径随池迁移/移动会变，键要的是稳定身份</param>
     Task<Result<ThumbnailResult>> GetThumbnailAsync(
-        string filePath,
+        string virtualPath,
+        string physicalPath,
         int width,
         int height,
         Guid userId,
@@ -29,9 +35,9 @@ public interface IThumbnailService
     bool IsThumbnailSupported(string filePath);
 
     /// <summary>
-    /// 清除文件的缩略图缓存
+    /// 清除文件的缩略图缓存（按虚拟路径前缀，清掉该文件全部尺寸）
     /// </summary>
-    Task ClearCacheAsync(string filePath);
+    Task ClearCacheAsync(string virtualPath);
 
     /// <summary>
     /// 清除全部缩略图缓存

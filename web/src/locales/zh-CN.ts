@@ -294,6 +294,9 @@ export default {
     done: '备份完成，本次上传 {count} 个文件',
     partialDone: '备份部分完成：成功 {ok} 个，失败 {fail} 个（失败条目下次同步会自动重试）',
     allUpToDate: '所有文件均已是最新，无需上传',
+    // 文件已上传成功、仅"登记同步完成"失败时的实话提示，
+    // 不让"备份计划失败"掩盖上传成功的事实
+    recordFailed: '文件已备份，但同步登记失败（最近同步时间未更新，不影响文件安全）',
     loadFailed: '加载设备列表失败'
   },
 
@@ -840,6 +843,8 @@ export default {
     extArchives: '压缩包',
     currentDirOnly: '仅当前目录',
     foundResults: '找到 {count} 个结果',
+    // 命中数超过单页封顶时如实提示还有未展示的，不拿已取回数冒充总量
+    searchTruncated: '（已展示前 {shown} 条，其余请缩小范围）',
     noMatchFound: '未找到匹配的文件',
     uploadTitle: '上传文件',
     uploadTo: '上传到:',
@@ -849,6 +854,9 @@ export default {
     startUpload: '开始上传',
     previewFallbackTitle: '预览',
     unsupportedPreview: '此文件类型暂不支持预览',
+    // 缩略图占位图标的原因说明（AuthImage 失败后探 /thumbnails/supported 区分）
+    thumbnailUnsupported: '此格式不支持生成缩略图',
+    thumbnailFailed: '缩略图加载失败（可重试）',
     downloadFileText: '下载文件',
     close: '关闭',
     versionHistoryTitle: '历史版本',

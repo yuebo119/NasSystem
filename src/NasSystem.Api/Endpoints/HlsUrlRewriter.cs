@@ -17,8 +17,13 @@ using System.Text.RegularExpressions;
 /// hls.js 会按播放列表 URL 解析出 /media/stream/v0/... 这类错误路径
 /// （视频路径前缀被吃掉）。方案：variant 与 segment 走 query 参数，
 /// 路径段始终是视频自身路径：
-///   master（无参数）→ v0/index.m3u8 重写为 {视频路径}?variant=0
+///   master（无参数）→ v0/index.m3u8 重写为 {视频文件名}?variant=0
 ///   variant N        → seg000.ts 重写为 {视频文件名}?variant=N&amp;segment=seg000.ts
+/// 两者都用末段文件名而非完整路径：相对 URI 以播放列表 URL 为基准解析，
+/// 基准路径到最后一个 / 为止，完整路径会把父目录段拼重复
+/// （/media/stream/movies/a.mp4 基准下引用 movies/a.mp4 会解析出
+/// /media/stream/movies/movies/a.mp4，2026-10-21 审计实证子目录视频 404）。
+/// 根目录视频两种形态恰好等价，所以缺陷只在子目录暴露。
 /// 段名仍在校验白名单内，query 只是寻址方式，不放开任意文件访问
 /// </remarks>
 internal static partial class HlsUrlRewriter
@@ -36,12 +41,17 @@ internal static partial class HlsUrlRewriter
         string.Join('/', path.Split('/').Select(Uri.EscapeDataString));
 
     /// <summary>
-    /// 重写 master 播放列表：variant 行替换为带 variant query 的视频路径 URI。
+    /// 重写 master 播放列表：variant 行替换为带 variant query 的视频 URI。
     /// 非 variant 行（#EXT 头、注释、空行）原样保留
     /// </summary>
-    public static string RewriteMaster(string masterContent, string videoPath)
+    /// <param name="videoBaseName">
+    /// 视频路径的末段（如 a.mp4）。与 <see cref="RewriteVariant"/> 同口径：
+    /// 相对 URI 以 master 播放列表 URL（.../{视频路径}）为基准解析，
+    /// 传完整路径会把父目录段拼重复
+    /// </param>
+    public static string RewriteMaster(string masterContent, string videoBaseName)
     {
-        var escaped = EscapePath(videoPath);
+        var escaped = EscapePath(videoBaseName);
         var sb = new StringBuilder(masterContent.Length + 64);
         foreach (var line in masterContent.Split('\n'))
         {

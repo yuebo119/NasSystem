@@ -171,6 +171,19 @@ export const publicShareApi = {
     return url
   },
 
+  // 公开下载。token 已内嵌 URL，不需要 Authorization 头，但同样不能用
+  // <a href> 导航：浏览器原生下载不可观测，token 失效或分享已删时页面内
+  // 零反馈（2026-10-21 审计 P2：loading 纯靠 1 秒定时器收场）。走 fetch
+  // 后失败进 catch，与 authenticatedShareApi.download 同型
+  async download(shareCode: string, token?: string, subPath?: string): Promise<Blob> {
+    const response = await fetch(
+      publicShareApi.getDownloadUrl(shareCode, token, subPath))
+    if (!response.ok) {
+      throw new Error(`public share download failed: ${response.status}`)
+    }
+    return response.blob()
+  },
+
   // 获取文件夹内容
   getFolderContent: (shareCode: string, token?: string, subPath?: string) => {
     let url = `/public-shares/${shareCode}/files`

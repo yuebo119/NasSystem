@@ -34,7 +34,8 @@ vi.mock('@/api/fileShare', () => ({
     getInfo: vi.fn(),
     verifyPassword: vi.fn(),
     getFolderContent: vi.fn(),
-    getDownloadUrl: vi.fn(() => '/download')
+    getDownloadUrl: vi.fn(() => '/download'),
+    download: vi.fn()
   },
   // ITM-N23 认证通道：Internal 型分享对已登录用户的唯一合法路径
   authenticatedShareApi: authShare
@@ -49,6 +50,7 @@ import { useUserStore } from '@/stores/user'
 
 const mockGetInfo = vi.mocked(publicShareApi.getInfo)
 const mockGetFolderContent = vi.mocked(publicShareApi.getFolderContent)
+const mockPublicDownload = vi.mocked(publicShareApi.download)
 const mockAuthDownload = vi.mocked(authShare.download)
 const mockAuthFolderContent = vi.mocked(authShare.getFolderContent)
 
@@ -247,6 +249,50 @@ describe('ShareAccess 视图层契约', () => {
       })
 
       expect(mockAuthDownload).toHaveBeenCalledWith('abc', undefined)
+      unmount()
+    })
+
+    // 2026-10-21 全量审计 P2 回归：公开分享下载曾经用 <a href> 原生导航，
+    // 失败（token 失效/分享已删）页面内零反馈，loading 纯靠 1 秒定时器
+    // 收场。这两条锁公开路径也走可观测的 fetch，且失败必须弹错
+    it('未登录用户下载公开分享走 fetch 通道（非 <a href> 导航）', async () => {
+      mockGetInfo.mockResolvedValue(info({ accessType: ShareAccessType.Public }))
+      mockPublicDownload.mockResolvedValue(new Blob(['x']))
+      URL.createObjectURL = vi.fn(() => 'blob:mock')
+      URL.revokeObjectURL = vi.fn()
+
+      const { div, unmount } = await mountShare()
+      await flush(50)
+
+      const button = Array.from(div.querySelectorAll('button')).find(b => b.textContent?.includes('立即下载'))
+      button?.click()
+      await vi.waitFor(() => {
+        if (!mockPublicDownload.mock.calls.length) throw new Error('not called')
+      })
+
+      expect(mockPublicDownload).toHaveBeenCalledWith('abc', undefined, undefined)
+      unmount()
+    })
+
+    it('公开分享下载失败：弹错误提示且 loading 收场', async () => {
+      mockGetInfo.mockResolvedValue(info({ accessType: ShareAccessType.Public }))
+      mockPublicDownload.mockRejectedValue(new Error('public share download failed: 404'))
+      URL.createObjectURL = vi.fn(() => 'blob:mock')
+      URL.revokeObjectURL = vi.fn()
+
+      const { div, unmount } = await mountShare()
+      await flush(50)
+
+      const button = Array.from(div.querySelectorAll('button')).find(b => b.textContent?.includes('立即下载'))
+      button?.click()
+      await vi.waitFor(() => {
+        if (!elMessage.error.mock.calls.length) throw new Error('no error toast')
+      })
+
+      expect(elMessage.error).toHaveBeenCalled()
+      // loading 必须随真实请求结束，不再有 1 秒假定时器：错误出现时
+      // 按钮已恢复可点（vitest 假时间下 1 秒定时器不会自行触发，
+      // 旧实现在这里会看到 loading 类名残留）
       unmount()
     })
 

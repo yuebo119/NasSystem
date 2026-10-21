@@ -51,6 +51,9 @@ const renameTarget = ref<FileItem | null>(null)
 const newName = ref('')
 const searchQuery = ref('')
 const searchResults = ref<FileItem[]>([])
+// 搜索命中总数（服务端口径）。与 items.length 分开：pageSize 封顶 200，
+// 两者相等才是"结果已全量呈现"
+const searchTotal = ref(0)
 const searchLoading = ref(false)
 const searchItemType = ref('')
 const searchExtension = ref('')
@@ -132,6 +135,7 @@ watch(
       }, 300)
     } else {
       searchResults.value = []
+      searchTotal.value = 0
     }
   }
 )
@@ -396,6 +400,10 @@ async function handleSearch() {
     })
     if (result.success && result.data) {
       searchResults.value = result.data.items
+      // 总数取 totalCount 而非 items.length：pageSize 封顶 200，
+      // 用已取回数冒充总量会让用户以为结果已全量呈现
+      // （2026-10-21 审计 P2）
+      searchTotal.value = result.data.totalCount
     }
   } catch (e) {
     ElMessage.error(t('filesView.searchFailed'))
@@ -408,6 +416,7 @@ async function handleSearch() {
 function resetSearch() {
   searchQuery.value = ''
   searchResults.value = []
+  searchTotal.value = 0
   searchItemType.value = ''
   searchExtension.value = ''
   searchInCurrentDir.value = true
@@ -1617,7 +1626,10 @@ onUnmounted(() => {
       
       <div class="search-results" v-loading="searchLoading">
         <div v-if="searchResults.length > 0" class="results-header">
-          {{ $t('filesView.foundResults', { count: searchResults.length }) }}
+          {{ $t('filesView.foundResults', { count: searchTotal }) }}
+          <span v-if="searchTotal > searchResults.length" class="results-truncated">
+            {{ $t('filesView.searchTruncated', { shown: searchResults.length }) }}
+          </span>
         </div>
         <div v-if="searchResults.length > 0" class="results-list">
           <div

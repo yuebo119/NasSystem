@@ -119,11 +119,13 @@ public static class TranscodeEndpoints
                 "application/vnd.apple.mpegurl");
         }
 
-        // ③ master：读磁盘 master.m3u8，variant 行重写为 query 寻址
+        // ③ master：读磁盘 master.m3u8，variant 行重写为 query 寻址。
+        // 传末段文件名而非完整路径：相对 URI 以本 URL 为基准解析，
+        // 完整路径会把父目录段拼重复（movies/a.mp4 → movies/movies/a.mp4）
         var masterPath = Path.Combine(dir, result.Value.PlaylistFileName);
         var masterContent = await File.ReadAllTextAsync(masterPath, cancellationToken);
         return Results.Content(
-            HlsUrlRewriter.RewriteMaster(masterContent, normalized.TrimStart('/')),
+            HlsUrlRewriter.RewriteMaster(masterContent, normalized.Split('/')[^1]),
             "application/vnd.apple.mpegurl");
     }
 

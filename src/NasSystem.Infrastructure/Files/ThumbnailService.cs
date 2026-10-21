@@ -57,19 +57,21 @@ public class ThumbnailService : IThumbnailService
 
     /// <inheritdoc />
     public async Task<Result<ThumbnailResult>> GetThumbnailAsync(
-        string filePath,
+        string virtualPath,
+        string physicalPath,
         int width,
         int height,
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(filePath);
+        ArgumentNullException.ThrowIfNull(virtualPath);
+        ArgumentNullException.ThrowIfNull(physicalPath);
 
-        // 验证文件是否支持缩略图
-        if (!IsThumbnailSupported(filePath))
+        // 验证文件是否支持缩略图（扩展名两种路径同结果，取物理路径）
+        if (!IsThumbnailSupported(physicalPath))
         {
             return Result<ThumbnailResult>.Failure(
-                new Error("Thumbnail.NotSupported", $"文件类型不支持生成缩略图: {Path.GetExtension(filePath)}"));
+                new Error("Thumbnail.NotSupported", $"文件类型不支持生成缩略图: {Path.GetExtension(physicalPath)}"));
         }
 
         // 规范化尺寸：吸附到服务端档位并受选项上限约束
@@ -77,25 +79,27 @@ public class ThumbnailService : IThumbnailService
         width = SnapToAllowedSize(width, _options.MaxWidth);
         height = SnapToAllowedSize(height, _options.MaxHeight);
 
-        // 检查缓存
-        var cacheKey = GenerateCacheKey(filePath, width, height);
+        // 检查缓存。键用虚拟路径：删除事件/回收站/端点三个清除入口持有的
+        // 都是虚拟路径，键与清除同口径才删得掉（2026-10-21 审计前键用
+        // 物理路径，清除侧前缀恒不匹配，缓存只进不出）
+        var cacheKey = GenerateCacheKey(virtualPath, width, height);
         var cachePath = Path.Combine(_options.CacheDirectory, $"{cacheKey}.jpg");
 
         if (File.Exists(cachePath))
         {
             var cacheFileInfo = new FileInfo(cachePath);
-            var sourceFileInfo = new FileInfo(filePath);
+            var sourceFileInfo = new FileInfo(physicalPath);
 
             // 检查缓存是否过期（源文件更新或缓存时间过长）
-            if (sourceFileInfo.Exists && 
+            if (sourceFileInfo.Exists &&
                 cacheFileInfo.LastWriteTimeUtc > sourceFileInfo.LastWriteTimeUtc &&
                 DateTime.UtcNow - cacheFileInfo.LastWriteTimeUtc < TimeSpan.FromHours(_options.CacheExpirationHours))
             {
                 try
                 {
                     var cachedData = await File.ReadAllBytesAsync(cachePath, cancellationToken);
-                    _logger.LogDebug("缩略图命中缓存: {FilePath}", filePath);
-                    
+                    _logger.LogDebug("缩略图命中缓存: {FilePath}", virtualPath);
+
                     return Result<ThumbnailResult>.Success(new ThumbnailResult(
                         Data: cachedData,
                         ContentType: "image/jpeg",
@@ -111,11 +115,11 @@ public class ThumbnailService : IThumbnailService
             }
         }
 
-        // 检查源文件是否存在
-        if (!File.Exists(filePath))
+        // 检查源文件是否存在（物理路径）
+        if (!File.Exists(physicalPath))
         {
             return Result<ThumbnailResult>.Failure(
-                new Error("Thumbnail.FileNotFound", $"源文件不存在: {filePath}"));
+                new Error("Thumbnail.FileNotFound", $"源文件不存在: {physicalPath}"));
         }
 
         try
@@ -123,7 +127,7 @@ public class ThumbnailService : IThumbnailService
             // 同缓存键的并发请求合并到同一个生成任务（无去重时同图被并发重复生成，CPU 尖峰）
             var generationTask = _inFlightGenerations.GetOrAdd(
                 cacheKey,
-                _ => GenerateAndCacheAsync(filePath, cachePath, width, height));
+                _ => GenerateAndCacheAsync(physicalPath, cachePath, width, height));
 
             byte[] thumbnailData;
             try
@@ -137,7 +141,7 @@ public class ThumbnailService : IThumbnailService
                     new KeyValuePair<string, Task<byte[]>>(cacheKey, generationTask));
             }
 
-            _logger.LogDebug("生成缩略图成功: {FilePath} ({Width}x{Height})", filePath, width, height);
+            _logger.LogDebug("生成缩略图成功: {FilePath} ({Width}x{Height})", virtualPath, width, height);
 
             return Result<ThumbnailResult>.Success(new ThumbnailResult(
                 Data: thumbnailData,
@@ -148,7 +152,7 @@ public class ThumbnailService : IThumbnailService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "生成缩略图失败: {FilePath}", filePath);
+            _logger.LogError(ex, "生成缩略图失败: {FilePath}", virtualPath);
             return Result<ThumbnailResult>.Failure(
                 new Error("Thumbnail.GenerationFailed", $"生成缩略图失败: {ex.Message}"));
         }
@@ -196,9 +200,12 @@ public class ThumbnailService : IThumbnailService
     }
 
     /// <inheritdoc />
-    public async Task ClearCacheAsync(string filePath)
+    public async Task ClearCacheAsync(string virtualPath)
     {
-        var cachePattern = GenerateCacheKeyPrefix(filePath);
+        // 键前缀与生成侧同口径（虚拟路径），才匹配得上缓存文件名。
+        // 2026-10-21 审计前生成侧用物理路径建键、清除侧传虚拟路径，
+        // Directory.GetFiles 恒匹配空集合，方法"成功"执行但一条都删不掉
+        var cachePattern = GenerateCacheKeyPrefix(virtualPath);
         var cacheFiles = Directory.GetFiles(_options.CacheDirectory, $"{cachePattern}*.jpg");
 
         foreach (var cacheFile in cacheFiles)
@@ -399,14 +406,25 @@ public class ThumbnailService : IThumbnailService
         return max;
     }
 
+    /// <summary>
+    /// 缓存文件名（不含扩展名）。前缀段是路径哈希，尺寸段拼在后面：
+    /// 同一文件不同尺寸的缓存共前缀，<see cref="ClearCacheAsync"/> 按
+    /// 前缀一次清掉全部尺寸。曾经前缀是 sha256(路径) 而全键是
+    /// sha256(路径|宽|高) 截断——两个不同输入的哈希，前缀从来不是全键的
+    /// 子串，删除匹配恒为空（2026-10-21 审计实证，与传哪条路径无关）
+    /// </summary>
     private static string GenerateCacheKey(string filePath, int width, int height)
     {
-        var input = $"{filePath}|{width}|{height}";
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
-        return Convert.ToHexStringLower(hashBytes)[..32];
+        return $"{HashPath(filePath)}-{width}x{height}";
     }
 
-    private static string GenerateCacheKeyPrefix(string filePath)
+    /// <summary>
+    /// 缓存键前缀：路径哈希前 16 位。与 <see cref="GenerateCacheKey"/>
+    /// 共用同一路径哈希段，前缀才是真前缀
+    /// </summary>
+    private static string GenerateCacheKeyPrefix(string filePath) => HashPath(filePath);
+
+    private static string HashPath(string filePath)
     {
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(filePath));
         return Convert.ToHexStringLower(hashBytes)[..16];

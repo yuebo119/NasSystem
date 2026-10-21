@@ -94,6 +94,7 @@ public static class ThumbnailEndpoints
         var physicalPath = item.PhysicalPath;
 
         var result = await thumbnailService.GetThumbnailAsync(
+            path,
             physicalPath,
             targetWidth,
             targetHeight,

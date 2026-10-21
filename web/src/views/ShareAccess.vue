@@ -105,30 +105,24 @@ const downloadFileName = (subPath?: string): string => {
 const downloadFile = async (subPath?: string) => {
   downloading.value = true
   try {
-    if (isInternalAuthenticated.value) {
-      // 认证下载：Bearer 头无法用 <a href> 带，fetch 落 blob 再转对象 URL
-      const blob = await authenticatedShareApi.download(shareCode.value, subPath)
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = downloadFileName(subPath)
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-    } else {
-      const url = publicShareApi.getDownloadUrl(shareCode.value, accessToken.value || undefined, subPath)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = downloadFileName(subPath)
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-    }
+    // 两条路径都走 fetch + blob：<a href> 原生导航不可观测，token 失效或
+    // 分享已删时页面内零反馈，loading 只能靠定时器假装结束（2026-10-21
+    // 审计 P2）。fetch 后失败进 catch，loading 随真实请求收场
+    const blob = isInternalAuthenticated.value
+      ? await authenticatedShareApi.download(shareCode.value, subPath)
+      : await publicShareApi.download(shareCode.value, accessToken.value || undefined, subPath)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = downloadFileName(subPath)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   } catch (e: any) {
     ElMessage.error(e.message || t('shareAccess.downloadFailed'))
   } finally {
-    setTimeout(() => { downloading.value = false }, 1000)
+    downloading.value = false
   }
 }
 
