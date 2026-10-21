@@ -79,3 +79,7 @@ tools/Benchmark/data/
 # 都是本地运行产物，误入库会把百 MB 级二进制塞进版本库
 src/NasSystem.Api/models/
 src/NasSystem.Api/temp/
+
+# 审计过程草稿：端点审计脚本、容器探针输出、e2e 日志（本次全量审计产生，
+# 结论已入提交与测试，原始日志留本地备查，不入库）
+tmp/
