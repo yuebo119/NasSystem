@@ -182,6 +182,48 @@ public class VersionAtomicityRegressionTests
     }
 
     [Fact]
+    public async Task VersionSnapshot_SurvivesSubsequentOverwrite_ContentUnchanged()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"VerLink_{Guid.NewGuid():N}.db");
+        var storageRoot = Path.Combine(Path.GetTempPath(), $"VerLinkStore_{Guid.NewGuid():N}");
+        var (provider, userId, fileItemId, _) = await BuildWorldAsync(dbPath, storageRoot);
+        try
+        {
+            string snapshotPath;
+            using (var scope = provider.CreateScope())
+            {
+                var versions = scope.ServiceProvider.GetRequiredService<IFileVersionService>();
+                var fileItems = scope.ServiceProvider.GetRequiredService<IFileItemRepository>();
+                var versionRepo = scope.ServiceProvider.GetRequiredService<IFileVersionRepository>();
+                var item = (await fileItems.GetByIdAsync(fileItemId))!;
+                await versions.CreateAutoVersionAsync(item, storageRoot, userId);
+                snapshotPath = (await versionRepo.GetByFileItemIdAsync(fileItemId))[0].StoragePath;
+            }
+
+            // 用生产管线的写形态覆盖活动文件：临时文件 + rename 替换
+            // （上传/WebDAV PUT/版本恢复都是这个形态）。硬链接与源同 inode，
+            // 原地截断写（File.WriteAllTextAsync 的 FileMode.Create）会连快照
+            // 一起改——那正是 FileVersionStore remarks 警告的违规写路径，
+            // 本断言锁住"生产写形态下快照不变"这个契约
+            var physicalPath = Path.Combine(storageRoot, "target.txt");
+            var tempPath = physicalPath + ".uploading-test";
+            await File.WriteAllTextAsync(tempPath, "v2 content replaces v1");
+            File.Move(tempPath, physicalPath, overwrite: true);
+
+            // 哨兵：版本快照内容不得被随后的覆盖改写。FileVersionStore 的前提是
+            // "所有写路径都是临时文件 + rename"，新增任何原地截断写都会静默
+            // 篡改全部历史版本——这条断言就是那个前提的机械守护（F-026）
+            (await File.ReadAllTextAsync(snapshotPath)).Should().Be("v1 content",
+                "版本快照必须保持创建时刻的内容：原地写路径会静默篡改历史版本");
+        }
+        finally
+        {
+            try { Directory.Delete(storageRoot, recursive: true); } catch { }
+            try { File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
     public async Task CreateAutoVersion_Concurrent_BothVersionsLand()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"VerConc_{Guid.NewGuid():N}.db");

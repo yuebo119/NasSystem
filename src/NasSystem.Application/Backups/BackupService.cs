@@ -112,7 +112,11 @@ public sealed class BackupService(
         }
 
         // 服务端现状：备份目录（根自身 + 全部后代）一次查回。
-        // 相对路径 = 条目路径去掉备份根前缀；只收文件，文件夹由上传时按需创建
+        // 相对路径 = 条目路径去掉备份根前缀；只收文件。
+        // 注意：文件夹并非"上传时按需创建"——UploadFileAsync 要求目标父目录的
+        // 库记录存在且归属本人（不存在即 NotFound）。客户端必须先用
+        // POST /files/folder 逐级建目录再传文件（2026-10-22 审计修正此注释，
+        // 原表述与实现矛盾，按文档直传嵌套路径必 404）
         var backupRoot = device.BackupPath;
         // 归属收敛：BackupPath 已含 UserId 前缀，这里再按 OwnerId 兜一层——
         // 扫描同步可能把前缀内的无主物理文件记给触发扫描的人（F-011 同源）
@@ -212,8 +216,14 @@ public sealed class BackupService(
 
     /// <summary>
     /// 相对路径规范化：统一正斜杠、去首尾斜杠与 ./ 段。
-    /// 返回 null 表示该项应跳过（空路径、纯 .. 逃逸、含盘符等）
+    /// 返回 null 表示该项应跳过（空路径、纯 .. 逃逸）
     /// </summary>
+    /// <remarks>
+    /// 不拒盘符/绝对路径：这些条目只作为 diff 字典键与回包出现，真正的落地
+    /// 路径由客户端拼 BackupPath 再走上传端点，上传侧有 NormalizePath 与
+    /// 归属校验，"C:/x" 只会成为怪异文件名而非逃逸。此前注释声称拒盘符
+    /// 但实现没有（SPD-5：注释与代码矛盾会误导后续维护者以为有防护）
+    /// </remarks>
     private static string? NormalizeRelativePath(string? relativePath)
     {
         if (string.IsNullOrWhiteSpace(relativePath))

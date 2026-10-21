@@ -8,6 +8,7 @@
 namespace NasSystem.Application.Files;
 
 using NasSystem.Application.Common;
+using Microsoft.Extensions.Logging;
 using NasSystem.Application.Files.Dtos;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
@@ -399,9 +400,14 @@ public sealed partial class FileService
                 movedFromPaths.Add(GetParentPath(normalized));
                 results.Add(MapToDto(item));
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // 移动失败，跳过此项
+                // 移动失败跳过该项（批量语义：不影响其余项）。必须记日志：
+                // 静默跳过时用户看到"移动成功 n 项"，失败的项无影无踪，
+                // 也无从知道失败了几个、哪些（lessons II.2 吞异常部分成功）
+                _logger.LogWarning(ex,
+                    "批量移动跳过失败项: Source={Source}, Destination={Destination}",
+                    normalized, destPath);
                 continue;
             }
         }
@@ -598,8 +604,13 @@ public sealed partial class FileService
             await _fileRepository.AddAsync(newFile, cancellationToken);
             return newFile;
         }
-        catch
+        catch (Exception ex)
         {
+            // 静默返回 null 会让调用方把"复制失败"当成"源不存在"跳过，
+            // 用户看不到任何失败迹象。记日志保留可诊断性（ lessons II.2）
+            _logger.LogWarning(ex,
+                "复制文件失败: Source={Source}, Target={Target}",
+                source.Path, newPath);
             return null;
         }
     }
@@ -662,8 +673,12 @@ public sealed partial class FileService
 
             return newFolder;
         }
-        catch
+        catch (Exception ex)
         {
+            // 同 CopyFileAsync：静默返回 null 会把失败伪装成"源不存在"
+            _logger.LogWarning(ex,
+                "复制文件夹失败: Source={Source}, Target={Target}",
+                sourceFolder.Path, newPath);
             return null;
         }
     }

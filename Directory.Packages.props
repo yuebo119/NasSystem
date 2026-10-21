@@ -1,6 +1,10 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- 传递依赖钉住：只加 PackageVersion 条目对传递依赖不生效（NuGet 的
+         CPM 语义是"直接引用才用中央版本"）。开启后中央文件里的版本同样
+         作用于传递依赖，ImageSharp 3.1.12 → 3.2.0 的漏洞修复才能落地 -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
     <!-- PalORM.Sqlite 6.5.0 依赖 Microsoft.Data.Sqlite.Core 11.0.0-rc.1，
@@ -12,6 +16,14 @@
          基准两臂才口径对等。原生引擎仍是 PalORM 的 SQLite3MC 包。 -->
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0-rc.2.26504.105" />
     <PackageVersion Include="Microsoft.Data.Sqlite.Core" Version="11.0.0-rc.2.26504.105" />
+    <!-- ImageSharp 经 ElBruno.LocalEmbeddings.ImageEmbeddings（CLIP 预处理）传递进入，
+         3.1.12 带 5 条已知漏洞 advisory（NU1902×2 中危 / NU1903×3 高危：
+         ICC CLUT 维度未校验越界读、HistogramEqualization 索引未校验、
+         BigTIFF IFD 计数死循环、TIFF CCITT T6 编码器缓冲区溢出）。
+         全部修复版为 3.2.0（GitHub Advisory 实测：vulnerable < 3.2.0，
+         patched 3.2.0）。同 Microsoft.Data.Sqlite 的模式向上钉版本：
+         ElBruno 对 ImageSharp 无上界约束，还原不会降级 -->
+    <PackageVersion Include="SixLabors.ImageSharp" Version="3.2.0" />
     <PackageVersion Include="SkiaSharp" Version="4.153.1" />
     <PackageVersion Include="coverlet.MTP" Version="10.1.0" />
     <!-- OCR（ROADMAP Phase 2）：SimdPaddleOCR 纯 C# PP-OCRv6 推理，

@@ -57,7 +57,9 @@ public sealed class FfmpegTranscodeService : ITranscodeService
     private readonly string _cacheRoot;
 
     /// <summary>媒体探测缓存：物理路径 → （结果， 探测时间）</summary>
-    private readonly Dictionary<string, (MediaProbeResult Result, DateTime At)> _probeCache = new();
+    // 元组字段名不叫 Result：门禁 NAS-G7 的 .Result 正则无法区分元组字段与
+    // Task.Result，曾把这里误报成同步阻塞异步（2026-10-22 审计实测）
+    private readonly Dictionary<string, (MediaProbeResult Probe, DateTime At)> _probeCache = new();
 
     /// <summary>硬件编码探测缓存：编码器名 → （可用， 探测时间）</summary>
     private readonly Dictionary<string, (bool Usable, DateTime At)> _encoderCache = new();
@@ -118,7 +120,7 @@ public sealed class FfmpegTranscodeService : ITranscodeService
         if (_probeCache.TryGetValue(physicalPath, out var cached)
             && DateTime.UtcNow - cached.At < ProbeCacheTtl)
         {
-            return cached.Result;
+            return cached.Probe;
         }
 
         // -i 不带输出：ffmpeg 打印流信息到 stderr 后以错误码退出（无输出目标），
