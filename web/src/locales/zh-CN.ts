@@ -878,6 +878,8 @@ export default {
     actRename: '重命名',
     actInfo: '详情',
     infoTitle: '文件详情',
+    infoPath: '路径',
+    infoCreatedAt: '创建时间',
     infoSize: '大小',
     mimeType: 'MIME 类型',
     modifiedAt: '修改时间',

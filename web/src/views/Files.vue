@@ -2370,12 +2370,12 @@ onUnmounted(() => {
             <span class="info-value">{{ infoData.name }}</span>
           </div>
           <div class="info-row">
-            <span class="info-key">{{ $t('filesView.path') }}</span>
+            <span class="info-key">{{ $t('filesView.infoPath') }}</span>
             <span class="info-value mono">{{ infoData.path }}</span>
           </div>
           <div class="info-row">
-            <span class="info-key">{{ $t('filesView.type') }}</span>
-            <span class="info-value">{{ infoData.isFolder ? $t('filesView.folder') : $t('filesView.file') }}</span>
+            <span class="info-key">{{ $t('filesView.colType') }}</span>
+            <span class="info-value">{{ infoData.isFolder ? $t('filesView.typeFolder') : $t('filesView.typeFile') }}</span>
           </div>
           <div class="info-row" v-if="!infoData.isFolder">
             <span class="info-key">{{ $t('filesView.infoSize') }}</span>
@@ -2390,11 +2390,11 @@ onUnmounted(() => {
             <span class="info-value mono">{{ infoData.extension }}</span>
           </div>
           <div class="info-row">
-            <span class="info-key">{{ $t('filesView.createdAt') }}</span>
+            <span class="info-key">{{ $t('filesView.infoCreatedAt') }}</span>
             <span class="info-value">{{ formatDate(infoData.createdAt) }}</span>
           </div>
           <div class="info-row" v-if="infoData.updatedAt">
-            <span class="info-key">{{ $t('filesView.modifiedAt') }}</span>
+            <span class="info-key">{{ $t('filesView.colModified') }}</span>
             <span class="info-value">{{ formatDate(infoData.updatedAt) }}</span>
           </div>
           <div class="info-row">

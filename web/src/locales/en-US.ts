@@ -875,6 +875,8 @@ export default {
     actRename: 'Rename',
     actInfo: 'Details',
     infoTitle: 'File Details',
+    infoPath: 'Path',
+    infoCreatedAt: 'Created',
     infoSize: 'Size',
     mimeType: 'MIME type',
     modifiedAt: 'Modified',

@@ -9,11 +9,14 @@ import type {
 } from '@/types'
 
 // 浏览目录的条件请求（ETag/304）：后端按 path+userId+version 生成 ETag，
-// 命中 If-None-Match 回 304。这里按 path|hidden 记住上次 ETag，
-// 304 时返回 notModified 让调用方复用缓存（store 的 contentCache）
+// 命中 If-None-Match 回 304。这里按 path|hidden 记 ETag，同时缓存上次
+// 内容——304 时把缓存内容连同 notModified 标志一起返回，对调用方
+// （store/目录浏览器/文件选择器）透明：它们照常拿到数据，无需各自
+// 实现缓存。notModified 标志保留是让 store 区分"内容没变"（不清选择）
 const dirEtags = new Map<string, string>()
+const dirContents = new Map<string, DirectoryContent>()
 
-/** getDirectory 的返回：304 时 data 为 null、notModified 为 true */
+/** getDirectory 的返回：304 时 data 为缓存内容、notModified 为 true */
 export type DirectoryResult = ApiResponse<DirectoryContent> & { notModified?: boolean }
 
 export const fileApi = {
@@ -26,15 +29,28 @@ export const fileApi = {
     const headers: Record<string, string> = {}
     if (etag) headers['If-None-Match'] = etag
 
-    const response = await http.get(`/files/browse/${encodedPath}`, {
+    let response = await http.get(`/files/browse/${encodedPath}`, {
       params: { includeHidden },
       headers
     }) as DirectoryResult
     // http 拦截器把 304 归一成 { success: true, data: null, notModified: true }
-    if (response.notModified) return response
-    // 响应头由拦截器挂在 __headers 上（见 api/http.ts）
-    const newEtag = (response as unknown as { __headers?: Record<string, string> }).__headers?.etag
-    if (newEtag) dirEtags.set(cacheKey, newEtag)
+    if (response.notModified) {
+      const cached = dirContents.get(cacheKey)
+      if (cached) {
+        return { success: true, data: cached, timestamp: '', notModified: true }
+      }
+      // 304 但本地无缓存（异常路径）：退化为一次无条件全量请求，
+      // 保证调用方拿到数据而不是空
+      response = await http.get(`/files/browse/${encodedPath}`, {
+        params: { includeHidden }
+      }) as DirectoryResult
+    }
+    if (response.data) {
+      dirContents.set(cacheKey, response.data)
+      // 响应头由拦截器以不可枚举 __headers 挂载（见 api/http.ts）
+      const newEtag = (response as unknown as { __headers?: Record<string, string> }).__headers?.etag
+      if (newEtag) dirEtags.set(cacheKey, newEtag)
+    }
     return response
   },
 

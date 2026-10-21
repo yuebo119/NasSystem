@@ -464,11 +464,12 @@ onMounted(loadSnapshots)
 .el-pagination {
   margin-top: 16px;
   justify-content: flex-end;
+}
 
-  // diff 抽屉内的分页器：表格已 max-height 滚动，分页贴右即可
-  &.diff-pagination {
-    margin-top: 12px;
-  }
+/* diff 抽屉内的分页器：表格已 max-height 滚动，分页贴右即可
+   （本页 style 为纯 CSS，不用 // 注释与 & 嵌套） */
+.el-pagination.diff-pagination {
+  margin-top: 12px;
 }
 
 .form-hint {

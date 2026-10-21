@@ -230,21 +230,23 @@ loadSwitch()
   color: var(--el-text-color-secondary);
   line-height: 1.5;
   margin-top: 8px;
+}
 
-  // 单张识别入口互链：媒体库/文件页
-  &.cross-links {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
+/* 单张识别入口互链：媒体库/文件页（本页 style 为纯 CSS，不用 // 注释与嵌套） */
+.form-hint.cross-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 
-    a {
-      color: var(--el-color-primary);
-      text-decoration: none;
+.form-hint.cross-links a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
 
-      &:hover { text-decoration: underline; }
-    }
-  }
+.form-hint.cross-links a:hover {
+  text-decoration: underline;
 }
 
 .batch-result {

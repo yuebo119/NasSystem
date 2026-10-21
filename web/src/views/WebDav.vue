@@ -317,14 +317,6 @@ function itemOf(key: string): SystemConfigItem | undefined {
   margin-bottom: 16px;
   background: var(--el-bg-color);
 
-  // 加载失败卡：danger 淡底 + 同色描边，与空态/正常卡视觉分层
-  &.error-card {
-    border-color: color-mix(in srgb, var(--el-color-danger) 40%, transparent);
-    background: color-mix(in srgb, var(--el-color-danger) 5%, var(--el-bg-color));
-
-    .card-name { color: var(--el-color-danger); }
-  }
-
   .card-title {
     margin: 0 0 12px;
     font-size: 16px;
