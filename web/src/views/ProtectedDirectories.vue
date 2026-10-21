@@ -13,6 +13,7 @@ import { Lock, Refresh, Plus } from '@element-plus/icons-vue'
 import { protectedDirectoryApi } from '@/api/snapshot'
 import { fileApi } from '@/api/file'
 import { formatDate } from '@/utils/format'
+import { useDrawerSize } from '@/utils/useIsMobile'
 import type { ProtectedDirectory } from '@/types'
 
 const { t } = useI18n()
@@ -20,6 +21,8 @@ const { t } = useI18n()
 const dirs = ref<ProtectedDirectory[]>([])
 const loading = ref(false)
 const markDialogVisible = ref(false)
+// 模态统一右侧抽屉：窄屏全宽，宽屏 clamp 随视口连续缩放（与 Users/Storage 一致）
+const drawerSize = useDrawerSize()
 const markForm = reactive({ path: '', note: '' })
 const marking = ref(false)
 
@@ -93,9 +96,9 @@ onMounted(load)
 
 <template>
   <div class="protected-page">
-    <div class="page-header">
+    <div class="page-header page-header--with-actions">
       <div class="header-left">
-        <h2>{{ $t('protected.title') }}</h2>
+        <h1>{{ $t('protected.title') }}</h1>
         <p>{{ $t('protected.subtitle') }}</p>
       </div>
       <div class="header-actions">
@@ -108,7 +111,7 @@ onMounted(load)
 
     <el-alert type="info" :closable="false" show-icon :title="$t('protected.desc')" class="protected-alert" />
 
-    <el-table :data="dirs" v-loading="loading" border>
+    <el-table :data="dirs" v-loading="loading">
       <el-table-column prop="path" :label="$t('protected.path')" min-width="220" />
       <el-table-column prop="note" :label="$t('protected.note')" min-width="160">
         <template #default="{ row }">{{ asProtected(row).note || $t('common.none') }}</template>
@@ -127,8 +130,9 @@ onMounted(load)
 
     <el-empty v-if="dirs.length === 0 && !loading" :description="$t('protected.empty')" />
 
-    <!-- 标记保护对话框 -->
-    <el-dialog v-model="markDialogVisible" :title="$t('protected.mark')" width="480px">
+    <!-- 标记保护抽屉：全站模态统一右侧抽屉（main.scss 的 .el-drawer 覆盖），
+         原 el-dialog 是 mac 化改造的漏网之鱼（EP 默认 4px 圆角、无头脚发丝线） -->
+    <el-drawer v-model="markDialogVisible" :title="$t('protected.mark')" :size="drawerSize('420px', '38vw', '560px')" :mask-closable="false">
       <el-form label-position="top">
         <el-form-item :label="$t('protected.path')" required>
           <el-input v-model="markForm.path" placeholder="/Docs" />
@@ -144,42 +148,14 @@ onMounted(load)
           {{ $t('common.confirm') }}
         </el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 
 <style scoped>
-.protected-page {
-  padding: 16px;
-}
+.protected-page { }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
-  gap: 12px;
-  flex-wrap: wrap;
 
-  .header-left {
-    h2 {
-      margin: 0 0 4px;
-      font-size: 20px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-    }
-    p {
-      margin: 0;
-      font-size: 13px;
-      color: var(--el-text-color-secondary);
-    }
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 8px;
-  }
-}
 
 .protected-alert {
   margin-bottom: 16px;

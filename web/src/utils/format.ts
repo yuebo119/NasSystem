@@ -111,13 +111,42 @@ export function getFileIconColor(item: IconItem): string {
 
 // 存储池状态语义（后端枚举口径）：1=Healthy 2=Degraded 3=Critical 4=Rebuilding 5=Offline
 // 修正记录：原 Storage.vue 将 2/3/4 分别解释为警告/错误/离线，与枚举不符；默认分支原两视图相反（未知 vs 良好），此处统一
+// 2026-10-21 设计审计：color 由十六进制改为语义变量引用——原 #67C23A/#E6A23C/#F56C6C 是
+// EP 默认色板，与 mac 主色阶梯无关且暗色不跟随；语义变量亮暗各自定义，换肤自动生效
 export function getPoolStatusInfo(status: number): { text: string; type: 'success' | 'warning' | 'danger' | 'info'; color: string } {
   switch (status) {
-    case 1: return { text: i18n.global.t('storage.healthy'), type: 'success', color: '#67C23A' }
-    case 2: return { text: i18n.global.t('dashboard.degraded'), type: 'warning', color: '#E6A23C' }
-    case 3: return { text: i18n.global.t('dashboard.critical'), type: 'danger', color: '#F56C6C' }
-    case 4: return { text: i18n.global.t('dashboard.rebuilding'), type: 'info', color: '#409EFF' }
-    case 5: return { text: i18n.global.t('dashboard.offline'), type: 'info', color: '#909399' }
-    default: return { text: i18n.global.t('dashboard.unknown'), type: 'info', color: '#909399' }
+    case 1: return { text: i18n.global.t('storage.healthy'), type: 'success', color: 'var(--el-color-success)' }
+    case 2: return { text: i18n.global.t('dashboard.degraded'), type: 'warning', color: 'var(--el-color-warning)' }
+    case 3: return { text: i18n.global.t('dashboard.critical'), type: 'danger', color: 'var(--el-color-danger)' }
+    case 4: return { text: i18n.global.t('dashboard.rebuilding'), type: 'info', color: 'var(--el-color-primary)' }
+    case 5: return { text: i18n.global.t('dashboard.offline'), type: 'info', color: 'var(--el-text-color-placeholder)' }
+    default: return { text: i18n.global.t('dashboard.unknown'), type: 'info', color: 'var(--el-text-color-placeholder)' }
   }
+}
+
+/**
+ * 用量/健康语义色：90% 以上危险、70% 以上警告、否则健康。
+ * 2026-10-21 设计审计收敛点：Dashboard driveBarColor、Storage getUsageColor/
+ * healthStatus 三处各写各的十六进制（#ef4444/#f59e0b/#10b981 vs #F56C6C/#E6A23C/
+ * #67C23A 两套），阈值逻辑相同必然漂移。返回语义变量引用，亮暗双模自动跟随。
+ * 需要透明度变体时用 color-mix 派生，不要拼字符串后缀（var() 后接 '20' 是非法值）
+ */
+export function getUsageColor(percentage: number): string {
+  if (percentage >= 90) return 'var(--el-color-danger)'
+  if (percentage >= 70) return 'var(--el-color-warning)'
+  return 'var(--el-color-success)'
+}
+
+/**
+ * 文件大类代表色：从 getFileIconColor 派生（取大类代表扩展名），
+ * 保证"统计磁贴按大类展示"与"文件列表按具体扩展名展示"颜色一致。
+ * 2026-10-21 设计审计：Dashboard 文件统计磁贴原自造一套（图片绿/视频蓝/
+ * 音频琥珀），与同屏最近文件列表的共享函数色（图片青/视频紫/音频粉）
+ * 互相冲突，同屏两种绿，用户无法建立"颜色=类型"的心智模型
+ */
+export function getFileCategoryColor(category: 'image' | 'video' | 'audio' | 'document' | 'other'): string {
+  const representative: Record<string, string> = {
+    image: '.jpg', video: '.mp4', audio: '.mp3', document: '.doc', other: '.dat'
+  }
+  return getFileIconColor({ isFolder: false, extension: representative[category] })
 }

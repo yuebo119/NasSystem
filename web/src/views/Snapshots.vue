@@ -12,12 +12,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Right } from '@element-plus/icons-vue'
 import { snapshotApi } from '@/api/snapshot'
 import { formatSize, formatDate } from '@/utils/format'
+import { useDrawerSize } from '@/utils/useIsMobile'
 import type { Snapshot, SnapshotEntry, SnapshotDiff, SnapshotDiffItem } from '@/types'
 
 const { t } = useI18n()
 
 // ---- 快照列表 ----
 const snapshots = ref<Snapshot[]>([])
+// 模态统一右侧抽屉尺寸（与 Users/Storage 一致）
+const drawerSize = useDrawerSize()
 const snapshotsTotal = ref(0)
 const snapshotsPage = ref(1)
 const snapshotsPageSize = ref(20)
@@ -210,7 +213,7 @@ onMounted(loadSnapshots)
   <div class="snapshots-page">
     <div class="page-header">
       <div class="header-left">
-        <h2>{{ $t('snapshot.title') }}</h2>
+        <h1>{{ $t('snapshot.title') }}</h1>
         <p>{{ $t('snapshot.subtitle') }}</p>
       </div>
     </div>
@@ -227,7 +230,7 @@ onMounted(loadSnapshots)
       </el-button>
     </div>
 
-    <el-table :data="snapshots" v-loading="snapshotsLoading" border>
+    <el-table :data="snapshots" v-loading="snapshotsLoading">
       <el-table-column :label="$t('snapshot.name')" min-width="160">
         <template #default="{ row }">
           {{ snapshotLabel(asSnapshot(row)) }}
@@ -274,7 +277,7 @@ onMounted(loadSnapshots)
     />
 
     <!-- 创建快照对话框 -->
-    <el-dialog v-model="createDialogVisible" :title="$t('snapshot.create')" width="480px">
+    <el-drawer v-model="createDialogVisible" :title="$t('snapshot.create')" :size="drawerSize('420px', '38vw', '560px')" :mask-closable="false">
       <el-form label-position="top">
         <el-form-item :label="$t('snapshot.rootPath')" required>
           <el-input v-model="createForm.rootPath" placeholder="/" />
@@ -290,14 +293,14 @@ onMounted(loadSnapshots)
           {{ $t('common.confirm') }}
         </el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
 
     <!-- 快照详情抽屉（条目分页） -->
     <el-drawer v-model="detailVisible" :title="$t('snapshot.detail')" size="520px">
       <template #header>
         <span>{{ detailSnapshot ? snapshotLabel(detailSnapshot) : '' }}</span>
       </template>
-      <el-table :data="detailEntries" v-loading="detailLoading" border size="small">
+      <el-table :data="detailEntries" v-loading="detailLoading" size="small">
         <el-table-column prop="relativePath" :label="$t('snapshot.path')" min-width="220" />
         <el-table-column :label="$t('snapshot.type')" width="70">
           <template #default="{ row }">
@@ -320,7 +323,7 @@ onMounted(loadSnapshots)
     </el-drawer>
 
     <!-- 对比对话框 -->
-    <el-dialog v-model="diffDialogVisible" :title="$t('snapshot.compare')" width="760px">
+    <el-drawer v-model="diffDialogVisible" :title="$t('snapshot.compare')" :size="drawerSize('560px', '60vw', '720px')" :mask-closable="false">
       <div class="diff-picker">
         <el-select v-model="diffBaseId" :placeholder="$t('snapshot.baseSnapshot')">
           <el-option
@@ -363,7 +366,7 @@ onMounted(loadSnapshots)
           </el-checkbox>
         </div>
 
-        <el-table :data="visibleDiffItems()" border size="small" max-height="360">
+        <el-table :data="visibleDiffItems()" size="small" max-height="360">
           <el-table-column prop="relativePath" :label="$t('snapshot.path')" min-width="240" />
           <el-table-column :label="$t('snapshot.change')" width="90">
             <template #default="{ row }">
@@ -384,7 +387,7 @@ onMounted(loadSnapshots)
           </el-table-column>
         </el-table>
       </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 
@@ -393,28 +396,7 @@ onMounted(loadSnapshots)
   padding: 16px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
-  gap: 12px;
-  flex-wrap: wrap;
 
-  .header-left {
-    h2 {
-      margin: 0 0 4px;
-      font-size: 20px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-    }
-    p {
-      margin: 0;
-      font-size: 13px;
-      color: var(--el-text-color-secondary);
-    }
-  }
-}
 
 .toolbar {
   display: flex;

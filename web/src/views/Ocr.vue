@@ -95,7 +95,7 @@ loadSwitch()
   <div class="ocr-page">
     <div class="page-header">
       <div class="header-left">
-        <h2>{{ $t('ocr.title') }}</h2>
+        <h1>{{ $t('ocr.title') }}</h1>
         <p>{{ $t('ocr.subtitle') }}</p>
       </div>
     </div>
@@ -162,32 +162,11 @@ loadSwitch()
   max-width: 860px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
-  gap: 12px;
-  flex-wrap: wrap;
 
-  .header-left {
-    h2 {
-      margin: 0 0 4px;
-      font-size: 20px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-    }
-    p {
-      margin: 0;
-      font-size: 13px;
-      color: var(--el-text-color-secondary);
-    }
-  }
-}
 
 .card {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 12px;
+  border-radius: var(--mac-radius-card);
   padding: 16px;
   margin-bottom: 16px;
   background: var(--el-bg-color);
@@ -204,7 +183,7 @@ loadSwitch()
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 
   .card-name {
     font-weight: 600;
@@ -262,7 +241,7 @@ loadSwitch()
 
 .how-list {
   margin: 0;
-  padding-left: 20px;
+  padding-left: 16px;
   font-size: 13px;
   color: var(--el-text-color-regular);
   line-height: 1.8;

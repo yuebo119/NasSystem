@@ -290,7 +290,7 @@ async function handleLogout() {
   background: var(--mac-vibrancy-bg);
   backdrop-filter: var(--mac-vibrancy-blur);
   -webkit-backdrop-filter: var(--mac-vibrancy-blur);
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width var(--mac-duration-base) cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
   border-right: 1px solid var(--mac-hairline);
 }
@@ -313,7 +313,7 @@ async function handleLogout() {
   .logo-icon {
     width: 40px;
     height: 40px;
-    border-radius: 12px;
+    border-radius: var(--mac-radius-card);
     // mac 风图标底：强调色渐变（跟随亮暗主色）
     background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3));
     display: flex;
@@ -325,7 +325,7 @@ async function handleLogout() {
   }
 
   .logo-text {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 700;
     color: var(--el-text-color-primary);
     white-space: nowrap;
@@ -383,7 +383,7 @@ async function handleLogout() {
     transition: background 0.15s ease, color 0.15s ease;
 
     .menu-icon {
-      font-size: 18px;
+      font-size: 16px;
       margin-right: 12px;
     }
 
@@ -495,7 +495,7 @@ async function handleLogout() {
     }
 
     .user-role {
-      font-size: 11px;
+      font-size: 12px;
       color: var(--el-text-color-secondary);
       margin-top: 1px;
     }
@@ -507,7 +507,7 @@ async function handleLogout() {
   background: var(--el-bg-color-page);
   overflow: auto;
   padding: 24px;
-  transition: background-color 0.3s ease;
+  transition: background-color var(--mac-duration-base) ease;
 }
 
 // 窄屏顶栏与汉堡：桌面隐藏
@@ -550,7 +550,7 @@ async function handleLogout() {
     z-index: 2001;
     width: 240px;
     transform: translateX(-100%);
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform var(--mac-duration-base) cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: var(--card-shadow-hover);
 
     &.mobile-open {
@@ -589,7 +589,7 @@ async function handleLogout() {
 // 页面切换动画
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--mac-duration-fast) ease;
 }
 
 .fade-enter-from,

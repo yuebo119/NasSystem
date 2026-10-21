@@ -312,7 +312,7 @@ onMounted(() => {
         <div v-else-if="shareInfo && canAccess && shareInfo.isFolder" class="folder-state">
           <div class="folder-header">
             <div class="folder-title">
-              <el-icon :size="28" color="#ffc107"><Folder /></el-icon>
+              <el-icon :size="28" :color="getFileIconColor({ isFolder: true })"><Folder /></el-icon>
               <div class="title-text">
                 <h2>{{ shareInfo.fileName }}</h2>
                 <div class="breadcrumb" v-if="currentPath">
@@ -372,7 +372,7 @@ onMounted(() => {
             </div>
             
             <div v-if="folderContent.items.length === 0" class="empty-folder">
-              <el-icon :size="48" color="#dcdfe6"><FolderOpened /></el-icon>
+              <el-icon :size="48" color="var(--el-text-color-placeholder)"><FolderOpened /></el-icon>
               <p>{{ $t('shareAccess.emptyFolder') }}</p>
             </div>
           </div>
@@ -402,7 +402,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 24px;
   position: relative;
   overflow: hidden;
 }
@@ -420,17 +420,17 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 24px;
   color: var(--el-text-color-primary);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
 
   .brand-icon {
     width: 40px;
     height: 40px;
     background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3));
-    border-radius: 10px;
+    border-radius: var(--mac-radius-card);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -440,7 +440,7 @@ onMounted(() => {
 
 .share-card {
   background: var(--el-bg-color);
-  border-radius: 16px;
+  border-radius: var(--mac-radius-container);
   box-shadow: var(--card-shadow);
   border: 1px solid var(--mac-hairline);
   overflow: hidden;
@@ -456,15 +456,15 @@ onMounted(() => {
   .spinner {
     width: 48px;
     height: 48px;
-    border: 3px solid #e5e7eb;
-    border-top-color: #6366f1;
+    border: 3px solid var(--mac-hairline);
+    border-top-color: var(--el-color-primary);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     margin: 0 auto 20px;
   }
   
   p {
-    color: #6b7280;
+    color: var(--el-text-color-secondary);
     margin: 0;
   }
 }
@@ -485,25 +485,25 @@ onMounted(() => {
     margin: 0 auto 20px;
     
     &.error {
-      background: linear-gradient(135deg, #fef2f2, #fee2e2);
-      color: #ef4444;
+      background: color-mix(in srgb, var(--el-color-danger) 12%, transparent);
+      color: var(--el-color-danger);
     }
     
     &.warning {
-      background: linear-gradient(135deg, #fffbeb, #fef3c7);
-      color: #f59e0b;
+      background: color-mix(in srgb, var(--el-color-warning) 12%, transparent);
+      color: var(--el-color-warning);
     }
   }
   
   h2 {
     margin: 0 0 8px;
-    font-size: 20px;
-    color: #1f2937;
+    font-size: 16px;
+    color: var(--el-text-color-primary);
   }
   
   p {
     margin: 0 0 24px;
-    color: #6b7280;
+    color: var(--el-text-color-secondary);
   }
 }
 
@@ -511,8 +511,8 @@ onMounted(() => {
 .file-icon-wrapper {
   width: 100px;
   height: 100px;
-  background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
-  border-radius: 20px;
+  background: var(--el-fill-color-light);
+  border-radius: var(--mac-radius-container);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -521,22 +521,22 @@ onMounted(() => {
   &.large {
     width: 120px;
     height: 120px;
-    border-radius: 24px;
+    border-radius: var(--mac-radius-container);
   }
 }
 
 .file-name {
   margin: 0 0 8px;
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   word-break: break-all;
   line-height: 1.4;
 }
 
 .file-size {
   margin: 0 0 24px;
-  color: #6b7280;
+  color: var(--el-text-color-secondary);
   font-size: 14px;
 }
 
@@ -549,26 +549,26 @@ onMounted(() => {
     align-items: center;
     gap: 6px;
     padding: 8px 16px;
-    background: linear-gradient(135deg, #fef3c7, #fde68a);
-    color: #92400e;
-    border-radius: 20px;
+    background: color-mix(in srgb, var(--el-color-warning) 14%, transparent);
+    color: var(--el-color-warning);
+    border-radius: var(--mac-radius-pill);
     font-size: 13px;
     font-weight: 500;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
   
   .password-input {
     margin-bottom: 16px;
     
     :deep(.el-input__wrapper) {
-      border-radius: 12px;
+      border-radius: var(--mac-radius-card);
       padding: 4px 16px;
     }
   }
   
   .verify-btn {
     width: 100%;
-    border-radius: 12px;
+    border-radius: var(--mac-radius-card);
     height: 48px;
     font-size: 16px;
   }
@@ -577,17 +577,17 @@ onMounted(() => {
 // 登录区域
 .login-section {
   .lock-badge.internal {
-    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
-    color: #1e40af;
+    background: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+    color: var(--el-color-primary);
   }
   
   .login-hint {
     margin: 20px 0;
-    color: #6b7280;
+    color: var(--el-text-color-secondary);
   }
   
   .el-button {
-    border-radius: 12px;
+    border-radius: var(--mac-radius-card);
     height: 48px;
     padding: 0 48px;
     font-size: 16px;
@@ -599,15 +599,10 @@ onMounted(() => {
   .download-btn {
     width: 200px;
     height: 52px;
-    border-radius: 14px;
+    border-radius: var(--mac-radius-control);
     font-size: 16px;
     font-weight: 500;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
     border: none;
-    
-    &:hover {
-      background: linear-gradient(135deg, #4f46e5, #7c3aed);
-    }
   }
 }
 
@@ -619,8 +614,8 @@ onMounted(() => {
   gap: 6px;
   margin-top: 28px;
   padding-top: 20px;
-  border-top: 1px solid #e5e7eb;
-  color: #9ca3af;
+  border-top: 1px solid var(--mac-hairline);
+  color: var(--el-text-color-placeholder);
   font-size: 13px;
 }
 
@@ -641,30 +636,30 @@ onMounted(() => {
     .folder-title {
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 16px;
       
       .title-text {
         h2 {
           margin: 0;
-          font-size: 18px;
-          color: #1f2937;
+          font-size: 16px;
+          color: var(--el-text-color-primary);
         }
         
         .breadcrumb {
           margin-top: 4px;
           font-size: 12px;
-          color: #9ca3af;
+          color: var(--el-text-color-placeholder);
           
           .root, .crumb {
             cursor: pointer;
             
             &:hover:not(.active) {
-              color: #6366f1;
+              color: var(--el-color-primary);
             }
           }
           
           .active {
-            color: #6b7280;
+            color: var(--el-text-color-secondary);
             cursor: default;
           }
           
@@ -690,10 +685,10 @@ onMounted(() => {
     .file-item {
       display: flex;
       align-items: center;
-      gap: 14px;
-      padding: 14px 16px;
-      border-radius: 12px;
-      transition: all 0.2s;
+      gap: 16px;
+      padding: 16px;
+      border-radius: var(--mac-radius-card);
+      transition: all var(--mac-duration-fast);
       
       &.clickable {
         cursor: pointer;
@@ -707,7 +702,7 @@ onMounted(() => {
         width: 44px;
         height: 44px;
         background: var(--el-fill-color-light);
-        border-radius: 10px;
+        border-radius: var(--mac-radius-card);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -721,7 +716,7 @@ onMounted(() => {
         .item-name {
           display: block;
           font-weight: 500;
-          color: #1f2937;
+          color: var(--el-text-color-primary);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -729,16 +724,16 @@ onMounted(() => {
         
         .item-meta {
           font-size: 12px;
-          color: #9ca3af;
+          color: var(--el-text-color-placeholder);
         }
       }
       
       .arrow-icon {
-        color: #d1d5db;
+        color: var(--el-text-color-placeholder);
       }
       
       .el-button {
-        border-radius: 8px;
+        border-radius: var(--mac-radius-control);
       }
     }
     
@@ -748,7 +743,7 @@ onMounted(() => {
       
       p {
         margin: 12px 0 0;
-        color: #9ca3af;
+        color: var(--el-text-color-placeholder);
       }
     }
   }
@@ -756,7 +751,7 @@ onMounted(() => {
   .share-info {
     padding: 16px 28px;
     margin: 0;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--mac-hairline);
   }
 }
 
@@ -778,7 +773,7 @@ onMounted(() => {
   }
   
   .file-name {
-    font-size: 18px;
+    font-size: 16px;
   }
   
   .folder-state {

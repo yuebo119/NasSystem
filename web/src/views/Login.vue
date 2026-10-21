@@ -146,7 +146,7 @@ async function handleLogin() {
   width: 400px;
   padding: 40px;
   background: var(--el-bg-color);
-  border-radius: 16px;
+  border-radius: var(--mac-radius-container);
   box-shadow: var(--card-shadow);
   border: 1px solid var(--mac-hairline);
   position: relative;
@@ -187,7 +187,7 @@ async function handleLogin() {
     width: 64px;
     height: 64px;
     margin: 0 auto 16px;
-    border-radius: 16px;
+    border-radius: var(--mac-radius-container);
     background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3));
     display: flex;
     align-items: center;
@@ -197,7 +197,7 @@ async function handleLogin() {
 
   h1 {
     margin: 0 0 4px;
-    font-size: 22px;
+    font-size: 24px;
     color: var(--el-text-color-primary);
     letter-spacing: -0.3px;
   }

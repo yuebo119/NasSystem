@@ -55,15 +55,18 @@ const resetPasswordForm = ref({
   confirmPassword: ''
 })
 
+// 角色色走语义变量。2026-10-21 设计审计：原 #409eff/#e6a23c/#f56c6c 是
+// Element Plus 默认色板，与 mac 主色阶梯无关；且白字叠 #e6a23c 实测对比度
+// 约 2.1:1，亮暗两模都低于图形文本 3:1 下限。语义变量亮暗各自定义
 const roles = [
-  { value: 'User', label: () => t('users.roles.user'), desc: () => t('users.roleDesc.user'), color: '#409eff' },
-  { value: 'Admin', label: () => t('users.roles.admin'), desc: () => t('users.roleDesc.admin'), color: '#e6a23c' },
-  { value: 'SuperAdmin', label: () => t('users.roles.superAdmin'), desc: () => t('users.roleDesc.superAdmin'), color: '#f56c6c' }
+  { value: 'User', label: () => t('users.roles.user'), desc: () => t('users.roleDesc.user'), color: 'var(--el-color-primary)' },
+  { value: 'Admin', label: () => t('users.roles.admin'), desc: () => t('users.roleDesc.admin'), color: 'var(--el-color-warning)' },
+  { value: 'SuperAdmin', label: () => t('users.roles.superAdmin'), desc: () => t('users.roleDesc.superAdmin'), color: 'var(--el-color-danger)' }
 ]
 
 const getRoleInfo = (role: string) => {
   const r = roles.find(item => item.value === role)
-  return r ? { value: role, label: r.label(), desc: r.desc(), color: r.color } : { value: role, label: role, desc: '', color: '#909399' }
+  return r ? { value: role, label: r.label(), desc: r.desc(), color: r.color } : { value: role, label: role, desc: '', color: 'var(--el-text-color-placeholder)' }
 }
 
 const getRoleTagType = (role: string): 'danger' | 'warning' | 'info' | 'success' | 'primary' => {
@@ -252,7 +255,7 @@ onMounted(() => {
 
 <template>
   <div class="users-page">
-    <div class="page-header">
+    <div class="page-header page-header--with-actions">
       <div class="header-left">
         <h1>{{ t('users.title') }}</h1>
         <p>{{ t('users.subtitle') }}</p>
@@ -266,20 +269,28 @@ onMounted(() => {
     <!-- 统计卡片 -->
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-icon users"><el-icon :size="24"><UserFilled /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ totalCount }}</div><div class="stat-label">{{ t('users.totalUsers') }}</div></div>
+        <div class="stat-content">
+          <div class="stat-icon icon-badge icon-badge--lg users"><el-icon :size="28"><UserFilled /></el-icon></div>
+          <div class="stat-info"><div class="stat-value">{{ totalCount }}</div><div class="stat-label">{{ t('users.totalUsers') }}</div></div>
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon admins"><el-icon :size="24"><Setting /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ stats.adminCount }}</div><div class="stat-label">{{ t('users.adminCount') }}</div></div>
+        <div class="stat-content">
+          <div class="stat-icon icon-badge icon-badge--lg admins"><el-icon :size="28"><Setting /></el-icon></div>
+          <div class="stat-info"><div class="stat-value">{{ stats.adminCount }}</div><div class="stat-label">{{ t('users.adminCount') }}</div></div>
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon enabled"><el-icon :size="24"><User /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ stats.enabledCount }}</div><div class="stat-label">{{ t('users.enabledCount') }}</div></div>
+        <div class="stat-content">
+          <div class="stat-icon icon-badge icon-badge--lg enabled"><el-icon :size="28"><User /></el-icon></div>
+          <div class="stat-info"><div class="stat-value">{{ stats.enabledCount }}</div><div class="stat-label">{{ t('users.enabledCount') }}</div></div>
+        </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon storage"><el-icon :size="24"><User /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ formatSize(stats.totalUsedBytes) }}</div><div class="stat-label">{{ t('users.totalUsedSpace') }}</div></div>
+        <div class="stat-content">
+          <div class="stat-icon icon-badge icon-badge--lg storage"><el-icon :size="28"><User /></el-icon></div>
+          <div class="stat-info"><div class="stat-value">{{ formatSize(stats.totalUsedBytes) }}</div><div class="stat-label">{{ t('users.totalUsedSpace') }}</div></div>
+        </div>
       </div>
     </div>
 
@@ -343,7 +354,7 @@ onMounted(() => {
       </div>
 
       <div v-if="users.length === 0 && !loading" class="empty-state">
-        <el-icon :size="64" color="#d1d5db"><UserFilled /></el-icon>
+        <el-icon :size="64" color="var(--el-text-color-placeholder)"><UserFilled /></el-icon>
         <h3>{{ t('users.noUsers') }}</h3>
         <p>{{ t('users.createFirstUser') }}</p>
         <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon>{{ t('users.createUser') }}</el-button>
@@ -386,7 +397,7 @@ onMounted(() => {
                 <el-option v-for="r in roles" :key="r.value" :label="r.label()" :value="r.value">
                   <div style="display: flex; justify-content: space-between; align-items: center">
                     <span>{{ r.label() }}</span>
-                    <span style="font-size: 12px; color: #909399">{{ r.desc() }}</span>
+                    <span style="font-size: 12px; color: var(--el-text-color-placeholder)">{{ r.desc() }}</span>
                   </div>
                 </el-option>
               </el-select>
@@ -469,32 +480,28 @@ onMounted(() => {
 <style lang="scss" scoped>
 .users-page { padding: 0; }
 
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;
-  .header-left { h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; } p { margin: 0; color: var(--el-text-color-secondary); font-size: 14px; } }
-  .header-actions { display: flex; gap: 12px; }
-}
 
-.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-.stat-card { background: var(--el-bg-color); border-radius: 12px; padding: 20px; border: 1px solid var(--el-border-color-lighter); display: flex; align-items: center; gap: 16px;
-  .stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white;
-    &.users { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
-    &.admins { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
-    &.enabled { background: linear-gradient(135deg, #10b981, #34d399); }
-    &.storage { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
-  }
-  .stat-info { .stat-value { font-size: 24px; font-weight: 700; } .stat-label { font-size: 13px; color: var(--el-text-color-secondary); } }
+
+// 统计卡的网格/卡片 chrome/图标阶梯/数值字号全部走 main.scss 的全局契约
+//（.stats-grid auto-fit + .stat-card + .icon-badge--lg + 24px/700 数值），
+// 此处只留本页的图标语气渐变
+.stat-icon {
+  &.users { background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
+  &.admins { background: linear-gradient(135deg, var(--el-color-warning), var(--el-color-warning-light-3)); }
+  &.enabled { background: linear-gradient(135deg, var(--el-color-success), var(--el-color-success-light-3)); }
+  &.storage { background: linear-gradient(135deg, var(--el-color-success), var(--el-color-success-light-3)); }
 }
 
 .search-bar { margin-bottom: 16px; }
 
 .users-list { display: flex; flex-direction: column; gap: 12px; }
-.user-card { background: var(--el-bg-color); border-radius: 12px; padding: 20px 24px; border: 1px solid var(--el-border-color-lighter); display: flex; align-items: center; gap: 20px; transition: all 0.2s;
-  &:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.user-card { background: var(--el-bg-color); border-radius: var(--mac-radius-card); padding: 20px 24px; border: 1px solid var(--mac-hairline); box-shadow: var(--card-shadow); display: flex; align-items: center; gap: 24px; transition: box-shadow var(--mac-duration-fast) ease, transform var(--mac-duration-fast) ease;
+  &:hover { box-shadow: var(--card-shadow-hover); }
   &.disabled { opacity: 0.6; }
   
   .user-avatar { position: relative;
     .status-dot { position: absolute; bottom: 2px; right: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--el-text-color-placeholder); border: 2px solid var(--el-bg-color);
-      &.online { background: #10b981; }
+      &.online { background: var(--el-color-success); }
     }
   }
   
@@ -511,11 +518,11 @@ onMounted(() => {
     .stat-item { display: flex; flex-direction: column; gap: 4px;
       .label { font-size: 12px; color: var(--el-text-color-secondary); }
       .value { font-size: 14px; font-weight: 500; }
-      .quota-bar { width: 80px; height: 4px; background: var(--el-fill-color); border-radius: 2px; overflow: hidden;
-        .quota-fill { height: 100%; background: linear-gradient(90deg, #10b981, #34d399); border-radius: 2px; }
+      .quota-bar { width: 80px; height: 4px; background: var(--el-fill-color); border-radius: var(--mac-radius-pill); overflow: hidden;
+        .quota-fill { height: 100%; background: linear-gradient(90deg, var(--el-color-success), var(--el-color-success-light-3)); border-radius: var(--mac-radius-pill); }
       }
       .quota-text { font-size: 12px; color: var(--el-text-color-secondary);
-        &.unlimited { color: #10b981; }
+        &.unlimited { color: var(--el-color-success); }
       }
     }
   }
@@ -523,17 +530,15 @@ onMounted(() => {
   .user-actions { display: flex; align-items: center; gap: 4px; }
 }
 
-.empty-state { text-align: center; padding: 60px 20px; background: var(--el-bg-color); border-radius: 12px; border: 2px dashed var(--el-border-color);
-  h3 { margin: 16px 0 8px; font-size: 18px; } p { margin: 0 0 20px; color: var(--el-text-color-secondary); }
+.empty-state { text-align: center; padding: 60px 20px; background: var(--el-bg-color); border-radius: var(--mac-radius-card); border: 2px dashed var(--el-border-color);
+  h3 { margin: 16px 0 8px; font-size: 16px; } p { margin: 0 0 20px; color: var(--el-text-color-secondary); }
 }
 
 .pagination-wrapper { margin-top: 20px; display: flex; justify-content: flex-end; }
 
 .form-tip { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px; }
 
-@media (max-width: 1200px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 768px) { 
-  .stats-grid { grid-template-columns: 1fr; }
   .user-card { flex-wrap: wrap; .user-stats { width: 100%; order: 3; } .user-actions { width: 100%; justify-content: flex-end; order: 4; } }
 }
 </style>

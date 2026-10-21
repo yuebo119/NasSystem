@@ -301,7 +301,9 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
 
 <template>
   <div class="config-page" v-loading="loading">
-    <h2 class="page-title">{{ $t('config.title') }}</h2>
+    <div class="page-header">
+      <h1>{{ $t('config.title') }}</h1>
+    </div>
 
     <!-- ① 协议接入入口：WebDAV/SMB 已拆独立页（/webdav），此处只留导航 -->
     <router-link to="/webdav" class="service-row-link">
@@ -504,12 +506,7 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
   margin: 0 auto;
   padding: 16px;
 
-  .page-title {
-    font-size: 20px;
-    font-weight: 600;
-    margin: 0 0 16px;
-    color: var(--el-text-color-primary);
-  }
+  
 
   .service-row-link {
     display: block;
@@ -519,7 +516,7 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
 
   .service-card {
     border: 1px solid var(--el-border-color-lighter);
-    border-radius: 12px;
+    border-radius: var(--mac-radius-card);
     padding: 14px;
     background: var(--el-bg-color);
 
@@ -539,7 +536,7 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
 
       .service-name {
         font-weight: 600;
@@ -555,7 +552,7 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
       gap: 8px;
       padding: 8px 10px;
       background: var(--el-fill-color-light);
-      border-radius: 8px;
+      border-radius: var(--mac-radius-control);
       margin-bottom: 8px;
 
       code {
@@ -578,14 +575,14 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
 
   .config-card {
     border: 1px solid var(--el-border-color-lighter);
-    border-radius: 12px;
+    border-radius: var(--mac-radius-card);
     padding: 16px;
     margin-bottom: 16px;
     background: var(--el-bg-color);
 
     .card-title {
       margin: 0 0 12px;
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 600;
       color: var(--el-text-color-primary);
     }
@@ -610,7 +607,7 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
 
   .readonly-list {
     margin: 0;
-    padding-left: 20px;
+    padding-left: 16px;
     font-size: 13px;
     color: var(--el-text-color-regular);
 
@@ -652,36 +649,6 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
     }
   }
 
-  .save-bar {
-    position: sticky;
-    bottom: 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    border-radius: 12px;
-    background: var(--el-bg-color);
-    border: 1px solid var(--el-border-color-lighter);
-    transition: border-color 0.2s;
-
-    &.dirty {
-      border-color: var(--el-color-primary);
-    }
-
-    .dirty-hint {
-      font-size: 13px;
-      color: var(--el-color-primary);
-    }
-
-    .saved-hint {
-      font-size: 12px;
-      color: var(--el-text-color-secondary);
-    }
-
-    .save-actions {
-      display: flex;
-      gap: 8px;
-    }
-  }
+  
 }
 </style>

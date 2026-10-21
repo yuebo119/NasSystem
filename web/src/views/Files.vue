@@ -1706,7 +1706,7 @@ onUnmounted(() => {
         </div>
         <!-- 其他文件 -->
         <div v-else class="preview-unsupported">
-          <el-icon :size="64" color="#909399"><Document /></el-icon>
+          <el-icon :size="64" color="var(--el-text-color-placeholder)"><Document /></el-icon>
           <p>{{ $t('filesView.unsupportedPreview') }}</p>
           <el-button type="primary" @click="downloadFile(previewItem)">{{ $t('filesView.downloadFileText') }}</el-button>
         </div>
@@ -2014,8 +2014,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: var(--el-bg-color);
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: var(--mac-radius-card);
+  padding: 16px;
   box-shadow: var(--card-shadow, 0 2px 12px rgba(0, 0, 0, 0.06));
   border: 1px solid var(--el-border-color-lighter);
 }
@@ -2040,7 +2040,7 @@ onUnmounted(() => {
   margin-bottom: 16px;
   padding: 12px 16px;
   background: var(--el-fill-color-light);
-  border-radius: 8px;
+  border-radius: var(--mac-radius-control);
   border: 1px solid var(--el-border-color-lighter);
 
   .breadcrumb-item {
@@ -2048,7 +2048,7 @@ onUnmounted(() => {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    transition: color 0.2s;
+    transition: color var(--mac-duration-fast);
     
     &:hover {
       color: var(--el-color-primary);
@@ -2077,10 +2077,10 @@ onUnmounted(() => {
 }
 
 :deep(.hidden-tag) {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--mac-radius-pill);
   background: var(--el-fill-color);
   color: var(--el-text-color-secondary);
   flex-shrink: 0;
@@ -2108,7 +2108,7 @@ onUnmounted(() => {
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--mac-radius-pill);
   background: transparent;
   color: var(--el-text-color-regular);
   cursor: pointer;
@@ -2127,10 +2127,12 @@ onUnmounted(() => {
   z-index: 3000;
   min-width: 140px;
   padding: 4px 0;
-  background: var(--el-bg-color-overlay);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  box-shadow: var(--el-box-shadow-light);
+  background: var(--mac-vibrancy-bg);
+  backdrop-filter: var(--mac-vibrancy-blur);
+  -webkit-backdrop-filter: var(--mac-vibrancy-blur);
+  border: 1px solid var(--mac-hairline);
+  border-radius: var(--mac-radius-popover);
+  box-shadow: var(--card-shadow-hover);
 
   .row-actions-item {
     display: block;
@@ -2195,9 +2197,9 @@ onUnmounted(() => {
     align-items: center;
     height: 144px;   // 与 JS 的 GRID_ROW_HEIGHT 一致，两边必须同源
     padding: 16px 8px;
-    border-radius: 12px;
+    border-radius: var(--mac-radius-card);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--mac-duration-fast) ease;
     border: 1px solid transparent;
     box-sizing: border-box;
 
@@ -2228,7 +2230,7 @@ onUnmounted(() => {
     }
 
     .grid-item-size {
-      font-size: 11px;
+      font-size: 12px;
       color: var(--el-text-color-secondary);
       margin-top: 4px;
       flex-shrink: 0;
@@ -2269,9 +2271,9 @@ onUnmounted(() => {
       align-items: center;
       gap: 12px;
       padding: 12px;
-      border-radius: 8px;
+      border-radius: var(--mac-radius-control);
       cursor: pointer;
-      transition: background 0.2s;
+      transition: background var(--mac-duration-fast);
       
       &:hover {
         background: var(--el-fill-color-light);
@@ -2333,7 +2335,7 @@ onUnmounted(() => {
   padding: 12px;
   margin-bottom: 16px;
   background: var(--el-fill-color-light);
-  border-radius: 8px;
+  border-radius: var(--mac-radius-control);
   font-size: 14px;
   color: var(--el-text-color-secondary);
   
@@ -2358,13 +2360,13 @@ onUnmounted(() => {
     max-width: 100%;
     max-height: 70vh;
     object-fit: contain;
-    border-radius: 8px;
+    border-radius: var(--mac-radius-control);
   }
   
   .preview-video {
     max-width: 100%;
     max-height: 70vh;
-    border-radius: 8px;
+    border-radius: var(--mac-radius-control);
   }
   
   .preview-audio {
@@ -2375,8 +2377,8 @@ onUnmounted(() => {
     width: 100%;
     max-height: 70vh;
     overflow: auto;
-    background: #1e1e1e;
-    border-radius: 8px;
+    background: var(--el-fill-color-light);
+    border-radius: var(--mac-radius-control);
     
     pre {
       margin: 0;
@@ -2386,7 +2388,7 @@ onUnmounted(() => {
         font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
         font-size: 13px;
         line-height: 1.6;
-        color: #d4d4d4;
+        color: var(--el-text-color-primary);
         white-space: pre-wrap;
         word-break: break-all;
       }
@@ -2406,7 +2408,7 @@ onUnmounted(() => {
     width: 100%;
     margin-top: 16px;
     border: 1px solid var(--el-border-color-lighter);
-    border-radius: 8px;
+    border-radius: var(--mac-radius-control);
     padding: 12px;
 
     .ocr-header {
@@ -2462,8 +2464,8 @@ onUnmounted(() => {
   gap: 12px;
   padding: 16px;
   background: var(--el-fill-color-light);
-  border-radius: 12px;
-  margin-bottom: 20px;
+  border-radius: var(--mac-radius-card);
+  margin-bottom: 16px;
   border: 1px solid var(--el-border-color-lighter);
   
   .share-target-info {
@@ -2472,7 +2474,7 @@ onUnmounted(() => {
     
     .share-target-name {
       font-weight: 500;
-      font-size: 15px;
+      font-size: 14px;
       color: var(--el-text-color-primary);
     }
     
@@ -2493,7 +2495,7 @@ onUnmounted(() => {
   gap: 12px;
   padding: 16px;
   background: var(--el-fill-color-light);
-  border-radius: 12px;
+  border-radius: var(--mac-radius-card);
   margin-bottom: 12px;
   border: 1px solid var(--el-border-color-lighter);
 
@@ -2503,7 +2505,7 @@ onUnmounted(() => {
 
     .version-target-name {
       font-weight: 500;
-      font-size: 15px;
+      font-size: 14px;
       color: var(--el-text-color-primary);
     }
 
@@ -2566,7 +2568,7 @@ onUnmounted(() => {
   
   .share-info-list {
     background: var(--el-fill-color-light);
-    border-radius: 12px;
+    border-radius: var(--mac-radius-card);
     padding: 16px;
     border: 1px solid var(--el-border-color-lighter);
     
@@ -2590,7 +2592,7 @@ onUnmounted(() => {
         font-family: monospace;
         background: var(--el-color-warning-light-9);
         padding: 2px 8px;
-        border-radius: 4px;
+        border-radius: var(--mac-radius-pill);
         color: var(--el-color-warning-dark-2);
       }
     }
@@ -2599,7 +2601,7 @@ onUnmounted(() => {
 
 .share-form {
   :deep(.el-form-item) {
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
   
   :deep(.el-radio-group) {

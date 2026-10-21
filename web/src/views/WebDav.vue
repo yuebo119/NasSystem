@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * WebDAV 挂载服务页（2026-10-19 从系统配置页拆出，仅管理员）。
+ * WebDAV 服务页（2026-10-19 从系统配置页拆出，仅管理员）。
  *
  * 拆页动机不只是"把两个开关搬出来"：原系统配置页只有挂载地址与开关，
  * 缺三块真实需要的内容——四端客户端挂载步骤、认证锁定阈值的可配置化
@@ -124,7 +124,7 @@ function itemOf(key: string): SystemConfigItem | undefined {
   <div class="webdav-page" v-loading="loading">
     <div class="page-header">
       <div class="header-left">
-        <h2>{{ $t('webdav.title') }}</h2>
+        <h1>{{ $t('webdav.title') }}</h1>
         <p>{{ $t('webdav.subtitle') }}</p>
       </div>
     </div>
@@ -288,39 +288,18 @@ function itemOf(key: string): SystemConfigItem | undefined {
   max-width: 860px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
-  gap: 12px;
-  flex-wrap: wrap;
 
-  .header-left {
-    h2 {
-      margin: 0 0 4px;
-      font-size: 20px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-    }
-    p {
-      margin: 0;
-      font-size: 13px;
-      color: var(--el-text-color-secondary);
-    }
-  }
-}
 
 .card {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 12px;
+  border-radius: var(--mac-radius-card);
   padding: 16px;
   margin-bottom: 16px;
   background: var(--el-bg-color);
 
   .card-title {
     margin: 0 0 12px;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
     color: var(--el-text-color-primary);
   }
@@ -337,7 +316,7 @@ function itemOf(key: string): SystemConfigItem | undefined {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 
   .card-name {
     font-weight: 600;
@@ -353,7 +332,7 @@ function itemOf(key: string): SystemConfigItem | undefined {
   gap: 8px;
   padding: 8px 10px;
   background: var(--el-fill-color-light);
-  border-radius: 8px;
+  border-radius: var(--mac-radius-control);
   margin-bottom: 8px;
 
   code {
@@ -407,7 +386,7 @@ function itemOf(key: string): SystemConfigItem | undefined {
 
 .guide-steps {
   margin: 0;
-  padding-left: 20px;
+  padding-left: 16px;
   font-size: 13px;
   color: var(--el-text-color-regular);
   line-height: 1.8;
@@ -461,9 +440,9 @@ function itemOf(key: string): SystemConfigItem | undefined {
 
   .smb-command {
     margin: 0;
-    padding: 10px 12px;
+    padding: 12px 16px;
     background: var(--el-fill-color-light);
-    border-radius: 8px;
+    border-radius: var(--mac-radius-control);
     font-size: 12px;
     overflow-x: auto;
     white-space: pre;
@@ -472,41 +451,11 @@ function itemOf(key: string): SystemConfigItem | undefined {
 
 .constraint-list {
   margin: 0;
-  padding-left: 20px;
+  padding-left: 16px;
   font-size: 13px;
   color: var(--el-text-color-regular);
   line-height: 1.8;
 }
 
-.save-bar {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  transition: border-color 0.2s;
 
-  &.dirty {
-    border-color: var(--el-color-primary);
-  }
-
-  .dirty-hint {
-    font-size: 13px;
-    color: var(--el-color-primary);
-  }
-
-  .saved-hint {
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-  }
-
-  .save-actions {
-    display: flex;
-    gap: 8px;
-  }
-}
 </style>

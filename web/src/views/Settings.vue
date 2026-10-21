@@ -146,7 +146,7 @@ const roleDisplay = computed(() => {
 
 <template>
   <div class="settings-page">
-    <div class="page-header">
+    <div class="page-header page-header--with-actions">
       <div class="header-left">
         <h1>{{ t('settings.title') }}</h1>
         <p>{{ t('settings.subtitle') }}</p>
@@ -276,20 +276,17 @@ const roleDisplay = computed(() => {
 <style lang="scss" scoped>
 .settings-page { padding: 0; }
 
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;
-  .header-left { h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; } p { margin: 0; color: var(--el-text-color-secondary); font-size: 14px; } }
-  .header-actions { display: flex; gap: 12px; }
-}
+
 
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .settings-column { display: flex; flex-direction: column; gap: 24px; }
 
-.settings-card { background: var(--el-bg-color); border-radius: 16px; border: 1px solid var(--el-border-color-lighter); overflow: hidden;
+.settings-card { background: var(--el-bg-color); border-radius: var(--mac-radius-container); border: 1px solid var(--el-border-color-lighter); overflow: hidden;
   .card-header { display: flex; align-items: center; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--el-border-color-lighter);
-    .card-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white;
-      &.profile { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
-      &.security { background: linear-gradient(135deg, #ef4444, #f87171); }
-      &.appearance { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
+    .card-icon { width: 44px; height: 44px; border-radius: var(--mac-radius-card); display: flex; align-items: center; justify-content: center; color: white;
+      &.profile { background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
+      &.security { background: linear-gradient(135deg, var(--el-color-danger), var(--el-color-danger-light-3)); }
+      &.appearance { background: linear-gradient(135deg, var(--el-color-success), var(--el-color-success-light-3)); }
     }
     .card-title { h3 { margin: 0; font-size: 16px; font-weight: 600; } p { margin: 4px 0 0; font-size: 13px; color: var(--el-text-color-secondary); } }
   }
@@ -303,9 +300,9 @@ const roleDisplay = computed(() => {
 }
 
 .about-card {
-  .about-content { display: flex; align-items: center; gap: 20px; padding: 24px;
-    .about-logo { width: 80px; height: 80px; border-radius: 20px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1)); display: flex; align-items: center; justify-content: center; }
-    .about-info { h3 { margin: 0 0 4px; font-size: 20px; font-weight: 600; } p { margin: 0 0 8px; color: var(--el-text-color-secondary); font-size: 14px; }
+  .about-content { display: flex; align-items: center; gap: 24px; padding: 24px;
+    .about-logo { width: 80px; height: 80px; border-radius: var(--mac-radius-container); background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1)); display: flex; align-items: center; justify-content: center; }
+    .about-info { h3 { margin: 0 0 4px; font-size: 16px; font-weight: 600; } p { margin: 0 0 8px; color: var(--el-text-color-secondary); font-size: 14px; }
       .about-meta { display: flex; gap: 8px; font-size: 12px; color: var(--el-text-color-secondary); }
     }
   }

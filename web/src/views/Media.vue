@@ -232,7 +232,7 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
 <template>
   <div class="media-page">
     <div class="media-header">
-      <h2 class="page-title">{{ $t('media.title') }}</h2>
+      <div class="page-header"><h1>{{ $t('media.title') }}</h1></div>
       <el-radio-group v-model="activeType" size="large">
         <el-radio-button v-for="tab in typeTabs" :key="tab.key" :value="tab.key">
           <el-icon style="vertical-align: -2px; margin-right: 4px"><component :is="tab.icon" /></el-icon>
@@ -342,19 +342,15 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
   padding: 16px;
 
   .media-header {
+    // 标题走全局 .page-header 契约（24px/700/h1），此处只负责与 tab 组的两端对齐；
+    // 契约类的 24px 底距由本容器接管，避免双重间距
+    .page-header { margin-bottom: 0; }
     display: flex;
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
     gap: 12px;
     margin-bottom: 16px;
-
-    .page-title {
-      font-size: 20px;
-      font-weight: 600;
-      margin: 0;
-      color: var(--el-text-color-primary);
-    }
   }
 
   .month-group {
@@ -381,15 +377,15 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
 
   .media-cell {
     cursor: pointer;
-    border-radius: 10px;
+    border-radius: var(--mac-radius-card);
     overflow: hidden;
-    border: 1px solid var(--el-border-color-lighter);
+    border: 1px solid var(--mac-hairline);
     background: var(--el-fill-color-blank);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    transition: transform var(--mac-duration-fast) ease, box-shadow var(--mac-duration-fast) ease;
 
     &:hover {
       transform: translateY(-2px);
-      box-shadow: var(--el-box-shadow-light);
+      box-shadow: var(--card-shadow-hover);
     }
 
     .cell-thumb {
@@ -415,8 +411,8 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
         right: 6px;
         bottom: 6px;
         padding: 1px 6px;
-        border-radius: 4px;
-        font-size: 11px;
+        border-radius: var(--mac-radius-pill);
+        font-size: 12px;
         color: #fff;
         background: rgba(0, 0, 0, 0.6);
       }

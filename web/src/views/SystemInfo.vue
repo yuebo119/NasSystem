@@ -96,9 +96,9 @@ onMounted(loadSystemInfo)
 
 <template>
   <div class="system-info-page" v-loading="loading">
-    <div class="page-header">
+    <div class="page-header page-header--with-actions">
       <div class="header-left">
-        <h2>{{ $t('systemInfo.title') }}</h2>
+        <h1>{{ $t('systemInfo.title') }}</h1>
         <p>{{ $t('systemInfo.subtitle') }}</p>
       </div>
       <div class="header-actions">
@@ -227,37 +227,11 @@ onMounted(loadSystemInfo)
   max-width: 860px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
-  gap: 12px;
-  flex-wrap: wrap;
 
-  .header-left {
-    h2 {
-      margin: 0 0 4px;
-      font-size: 20px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-    }
-    p {
-      margin: 0;
-      font-size: 13px;
-      color: var(--el-text-color-secondary);
-    }
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 8px;
-  }
-}
 
 .info-card {
   background: var(--el-bg-color);
-  border-radius: 16px;
+  border-radius: var(--mac-radius-container);
   border: 1px solid var(--el-border-color-lighter);
   overflow: hidden;
   margin-bottom: 16px;
@@ -272,14 +246,14 @@ onMounted(loadSystemInfo)
     .card-icon {
       width: 44px;
       height: 44px;
-      border-radius: 12px;
+      border-radius: var(--mac-radius-card);
       display: flex;
       align-items: center;
       justify-content: center;
       color: white;
       flex-shrink: 0;
 
-      &.system { background: linear-gradient(135deg, #10b981, #34d399); }
+      &.system { background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
     }
 
     .card-title {
@@ -299,13 +273,13 @@ onMounted(loadSystemInfo)
 
 .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .status-item { display: flex; align-items: center; gap: 12px;
-  .status-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
-    &.running { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-    &.time { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-    &.memory { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-    &.threads { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
+  .status-icon { width: 36px; height: 36px; border-radius: var(--mac-radius-control); display: flex; align-items: center; justify-content: center;
+    &.running { background: color-mix(in srgb, var(--el-color-success) 12%, transparent); color: var(--el-color-success); }
+    &.time { background: color-mix(in srgb, var(--el-color-primary) 12%, transparent); color: var(--el-color-primary); }
+    &.memory { background: color-mix(in srgb, var(--el-color-warning) 12%, transparent); color: var(--el-color-warning); }
+    &.threads { background: color-mix(in srgb, var(--el-color-primary) 12%, transparent); color: var(--el-color-primary); }
   }
-  .status-info { .status-label { display: block; font-size: 12px; color: var(--el-text-color-secondary); } .status-value { display: block; font-size: 14px; font-weight: 500; &.success { color: #10b981; } } }
+  .status-info { .status-label { display: block; font-size: 12px; color: var(--el-text-color-secondary); } .status-value { display: block; font-size: 14px; font-weight: 500; &.success { color: var(--el-color-success); } } }
 }
 
 .remote-form {
@@ -317,7 +291,7 @@ onMounted(loadSystemInfo)
 
 .remote-result {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  border-radius: var(--mac-radius-control);
   padding: 12px;
 }
 
@@ -338,7 +312,7 @@ onMounted(loadSystemInfo)
   margin: 0 0 12px;
   padding: 12px;
   background: var(--el-fill-color-light);
-  border-radius: 6px;
+  border-radius: var(--mac-radius-pill);
   font-size: 12px;
   line-height: 1.5;
   overflow-x: auto;
@@ -347,7 +321,7 @@ onMounted(loadSystemInfo)
 
 .remote-steps {
   margin: 0;
-  padding-left: 20px;
+  padding-left: 16px;
   font-size: 13px;
   color: var(--el-text-color-regular);
 

@@ -302,7 +302,10 @@ html.dark ::-webkit-scrollbar-thumb {
   }
 }
 
-// 页面标题通用样式
+// 页面标题通用样式。全站唯一页标题契约：h1 24px/700 + 副标题 14px + 底距 24px。
+// 2026-10-21 设计审计前有四套写法（本契约 + 三页 scoped 覆盖字重 600 + 三页
+// h2 20px/600 的 .page-title + Dashboard 自造 header 且底距 16），页间跳转时
+// 标题字号在 20 与 24 之间跳变。收敛后页面只允许引用本契约，不再各自覆盖
 .page-header {
   margin-bottom: 24px;
 
@@ -319,4 +322,201 @@ html.dark ::-webkit-scrollbar-thumb {
     color: var(--el-text-color-secondary);
     font-size: 14px;
   }
+
+  // 带操作区的变体：标题块与右侧按钮组两端对齐。页面在模板上加
+  // page-header--with-actions，不要再在 scoped 里重画布局
+  &--with-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  // 右侧操作区：全站一致的按钮组排布（原四页各自在 scoped 里写同一段）
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+}
+
+// =============================================================================
+// 设计契约补全（2026-10-21 全量设计审计）
+// 审计实测：圆角 14 种值（令牌只定义 2 档，"大容器 16px"注释写了变量从未建，
+// 六页各写各的字面量）；过渡时长四档并存；字号阶梯缺 12px 档而全站 20+ 处
+// 在用；统计卡两页两套长相；保存栏两页逐字重复。以下把"事实标准"扶正为令牌，
+// 页面只允许引用，不再各自硬编码
+// =============================================================================
+:root {
+  // 圆角第四档：大容器（设置卡/登录卡/分享主卡）。原注释声称存在但变量缺失，
+  // 导致 Settings/Storage/SystemInfo/Login/ShareAccess 五处各写 16px 字面量
+  --mac-radius-container: 16px;
+  // 第五档：胶囊（标签/计数徽章/进度条）。el-tag 一直在用 6px，提升为令牌。
+  // 进度条轨道与填充同走此档：macOS 进度条是胶囊形（全圆端头）
+  --mac-radius-pill: 6px;
+
+  // 动效两档：fast 给 hover/颜色反馈，base 给位移/阴影/抽屉。全站曾有四档
+  //（0.15/0.2/0.25/0.3），除主题切换的长过渡外一律收敛到这两档
+  --mac-duration-fast: 0.15s;
+  --mac-duration-base: 0.25s;
+}
+
+// 圆角契约（五档 + 两个登记例外）：
+//   control 8（按钮/输入/菜单项）· popover/card 12（浮层/卡片）·
+//   container 16（大容器）· pill 6（标签/徽章/进度条）· 50%（圆形头像）
+// 例外一：MainLayout 侧栏滚动条 thumb 2px——4px 宽的细滚动条上胶囊档会超出
+//   宽度被钳成圆点，2px 恰好是全圆，属发丝线元件专用值
+// 例外二：Media 视频角标的常暗遮罩 rgba(0,0,0,0.6)——媒体覆盖层标准做法
+//   （YouTube/macOS 照片同款），不随主题反转
+
+// 字号阶梯契约（供各页对照，值本身由使用处声明）：
+//   12px 元信息/路径/时间戳（紧凑辅助档，全站事实标准，登记入册）
+//   13px 卡片头/表格头/标签（辅助档）
+//   14px 正文（基础档）
+//   16px 小节标题/模态标题
+//   24px 页标题/统计卡数值（展示档）
+// 中间值（15/17/18/20/22px）不允许出现；响应式降档只能落到相邻档位
+
+// 间距栅格契约：
+//   4/8/12/16/24 布局档（区块/卡片/网格间距）
+//   20px 卡片内距档（el-card body 同值，设置类卡片头 20px 24px 亦属此档）
+//   10px 紧凑行档（目录项/菜单行等窄行的垂直内距）
+//   6px/2px 微间距档（图标与文字的对间距、徽章内边距）
+//   48/60px 空态档（空态图标的容器尺寸，全站空态结构一致）
+// 32/40px 等大档不存在，区块间距一律 24px 封顶
+
+// ─── 统计卡单一事实源 ───
+// 审计实测 Dashboard（el-card 外壳 + 22px 数值 + 响应式 20/18 两档）与
+// Users（div 外壳 + 24px 数值 + 固定四列）两套长相。统一为：
+// auto-fit 网格（卡数增减不破版）+ 24px/700 数值 + icon-badge--lg 图标 +
+// 单一响应式降档（20px）。外壳无论 el-card 还是 div 都解析到同一组令牌
+//（12px 圆角 + hairline + card-shadow），视觉结果一致
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  // 卡片 chrome：与 el-card 覆盖层同一组令牌。Dashboard 用 el-card 外壳、
+  // Users 用 div 外壳，两条路都解析到 12px 圆角 + 发丝线 + 分层阴影，
+  // 视觉结果一致（差异化只在各自 scoped 的图标语气渐变）
+  background: var(--el-bg-color);
+  border: 1px solid var(--mac-hairline);
+  border-radius: var(--mac-radius-card);
+  box-shadow: var(--card-shadow);
+  padding: 20px;
+  transition: box-shadow var(--mac-duration-fast) ease;
+
+  &:hover {
+    box-shadow: var(--card-shadow-hover);
+  }
+
+  .stat-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--el-text-color-primary);
+    letter-spacing: -0.3px;
+  }
+
+  .stat-label {
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    margin-top: 2px;
+  }
+
+  // 窄屏单一降档：不再有 22/20/18 三档中间值
+  @media (max-width: 768px) {
+    .stat-value {
+      font-size: 20px;
+    }
+  }
+}
+
+// ─── 保存栏单一事实源 ───
+// SystemConfig 与 WebDav 两页逐字重复（sticky + dirty 边框 + hint），
+// 抽到这里共用。mac 习惯：保存操作贴内容区底部，有未保存变更时才强调
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+  padding: 12px 16px;
+  background: var(--mac-vibrancy-bg);
+  backdrop-filter: var(--mac-vibrancy-blur);
+  -webkit-backdrop-filter: var(--mac-vibrancy-blur);
+  border: 1px solid var(--mac-hairline);
+  border-radius: var(--mac-radius-card);
+  transition: border-color var(--mac-duration-fast) ease;
+
+  // 有未保存变更：主色描边提示（不是整块换底，避免暗色下糊成一片）
+  &.dirty {
+    border-color: var(--el-color-primary);
+  }
+
+  // 三种提示态：未保存（主色）/ 已保存时间（次要）/ 通用提示
+  .dirty-hint,
+  .save-hint {
+    font-size: 13px;
+    color: var(--el-color-primary);
+  }
+
+  .saved-hint {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .save-actions {
+    display: flex;
+    gap: 8px;
+  }
+}
+
+// ─── Element Plus 组件圆角收口 ───
+// 审计实测 el-collapse/el-alert/el-pagination/el-dialog 未覆盖，局部页退回
+// EP 默认 4px，与 8/12 令牌档脱节
+.el-collapse,
+.el-collapse-item {
+  border-radius: var(--mac-radius-popover);
+}
+
+.el-collapse-item__content {
+  border-radius: 0 0 var(--mac-radius-popover) var(--mac-radius-popover);
+}
+
+.el-alert {
+  border-radius: var(--mac-radius-control);
+}
+
+.el-pagination {
+  --el-pagination-border-radius: var(--mac-radius-control);
+
+  button {
+    border-radius: var(--mac-radius-control);
+  }
+}
+
+.el-dialog {
+  border-radius: var(--mac-radius-popover);
+}
+
+.el-progress-bar__outer {
+  border-radius: var(--mac-radius-pill);
+}
+
+.el-progress-bar__inner {
+  border-radius: var(--mac-radius-pill);
 }

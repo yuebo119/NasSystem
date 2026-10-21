@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Plus, Refresh, Delete, Check, FolderOpened, Box, InfoFilled, Edit, Warning, Back, Folder } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storageApi, type StoragePool, type StorageOverview, type DirectoryItem } from '@/api/storage'
-import { formatSize, getPoolStatusInfo } from '@/utils/format'
+import { formatSize, getPoolStatusInfo, getUsageColor as getUsageColorFromFormat } from '@/utils/format'
 import { useDrawerSize } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
@@ -28,24 +28,20 @@ const parentPath = ref<string | null>(null)
 const directories = ref<DirectoryItem[]>([])
 const browsingLoading = ref(false)
 
-const getUsageColor = (percentage: number): string => {
-  if (percentage >= 90) return '#ef4444'
-  if (percentage >= 70) return '#f59e0b'
-  return '#10b981'
-}
+// 用量/健康语义色与渐变：2026-10-21 设计审计收敛到 format.ts 的
+// getUsageColor（原私有十六进制与 Dashboard/SystemInfo 两套漂移）。
+// 渐变用 light-3 派生保持"同色系双 stop"的既有观感，暗色自动跟随
+const getUsageColor = getUsageColorFromFormat
 
-const getUsageGradient = (percentage: number): string => {
-  if (percentage >= 90) return 'linear-gradient(90deg, #ef4444, #f87171)'
-  if (percentage >= 70) return 'linear-gradient(90deg, #f59e0b, #fbbf24)'
-  return 'linear-gradient(90deg, #10b981, #34d399)'
-}
+const getUsageGradient = (percentage: number): string =>
+  `linear-gradient(90deg, ${getUsageColorFromFormat(percentage)}, var(--el-color-${percentage >= 90 ? 'danger' : percentage >= 70 ? 'warning' : 'success'}-light-3))`
 
 const healthStatus = computed(() => {
-  if (!overview.value) return { text: t('dashboard.unknown'), color: '#6b7280' }
+  if (!overview.value) return { text: t('dashboard.unknown'), color: 'var(--el-text-color-placeholder)' }
   const status = overview.value.healthStatus
-  if (status === 'Healthy' || status === '正常') return { text: t('storage.healthy'), color: '#10b981' }
-  if (status === 'Warning') return { text: t('common.warning'), color: '#f59e0b' }
-  return { text: status || t('dashboard.unknown'), color: '#6b7280' }
+  if (status === 'Healthy' || status === '正常') return { text: t('storage.healthy'), color: 'var(--el-color-success)' }
+  if (status === 'Warning') return { text: t('common.warning'), color: 'var(--el-color-warning)' }
+  return { text: status || t('dashboard.unknown'), color: 'var(--el-text-color-placeholder)' }
 })
 
 const loadData = async () => {
@@ -180,7 +176,7 @@ onMounted(() => loadData())
 
 <template>
   <div class="storage-page">
-    <div class="page-header">
+    <div class="page-header page-header--with-actions">
       <div class="header-left">
         <h1>{{ t('storage.title') }}</h1>
         <p>{{ t('storage.subtitle') }}</p>
@@ -221,7 +217,7 @@ onMounted(() => loadData())
       </div>
 
       <div class="overview-card">
-        <div class="card-icon" :style="{ background: healthStatus.color + '20', color: healthStatus.color }">
+        <div class="card-icon" :style="{ background: `color-mix(in srgb, ${healthStatus.color} 12%, transparent)`, color: healthStatus.color }">
           <el-icon :size="24"><InfoFilled /></el-icon>
         </div>
         <div class="card-info"><div class="card-value" :style="{ color: healthStatus.color }">{{ healthStatus.text }}</div><div class="card-label">{{ t('storage.systemStatus') }}</div></div>
@@ -348,11 +344,11 @@ onMounted(() => loadData())
         </div>
         <div class="browser-content" v-loading="browsingLoading">
           <div v-if="directories.length === 0 && !browsingLoading" class="empty-dir">
-            <el-icon :size="48" color="#d1d5db"><Folder /></el-icon>
+            <el-icon :size="48" color="var(--el-text-color-placeholder)"><Folder /></el-icon>
             <p>{{ t('storage.emptyDir') }}</p>
           </div>
           <div v-for="dir in directories" :key="dir.path" class="dir-item" @dblclick="selectDirectory(dir)">
-            <el-icon :size="20" color="#f59e0b"><Folder /></el-icon>
+            <el-icon :size="20" color="var(--el-color-warning)"><Folder /></el-icon>
             <span class="dir-name">{{ dir.name }}</span>
             <el-button text size="small" @click.stop="selectDirectory(dir)">{{ t('storage.open') }}</el-button>
           </div>
@@ -376,48 +372,45 @@ onMounted(() => loadData())
 
 <style lang="scss" scoped>
 .storage-page { padding: 0; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;
-  .header-left { h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; } p { margin: 0; color: var(--el-text-color-secondary); font-size: 14px; } }
-  .header-actions { display: flex; gap: 12px; }
-}
+
 
 .overview-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; margin-bottom: 32px; }
-.overview-main { background: var(--el-bg-color); border-radius: 16px; padding: 24px; border: 1px solid var(--el-border-color-lighter);
+.overview-main { background: var(--el-bg-color); border-radius: var(--mac-radius-container); padding: 24px; border: 1px solid var(--el-border-color-lighter);
   .main-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px;
-    .main-icon { width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); display: flex; align-items: center; justify-content: center; color: white; }
-    .main-title { flex: 1; h3 { margin: 0; font-size: 18px; font-weight: 600; } p { margin: 4px 0 0; font-size: 13px; color: var(--el-text-color-secondary); } }
+    .main-icon { width: 56px; height: 56px; border-radius: var(--mac-radius-card); background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); display: flex; align-items: center; justify-content: center; color: white; }
+    .main-title { flex: 1; h3 { margin: 0; font-size: 16px; font-weight: 600; } p { margin: 4px 0 0; font-size: 13px; color: var(--el-text-color-secondary); } }
     .main-percentage { font-size: 32px; font-weight: 700; }
   }
   .main-bar { margin-bottom: 20px;
-    .bar-track { height: 12px; background: var(--el-fill-color); border-radius: 6px; overflow: hidden; border: 1px solid var(--el-border-color-lighter);
-      .bar-fill { height: 100%; border-radius: 5px; transition: width 0.3s; }
+    .bar-track { height: 12px; background: var(--el-fill-color); border-radius: var(--mac-radius-pill); overflow: hidden; border: 1px solid var(--el-border-color-lighter);
+      .bar-fill { height: 100%; border-radius: var(--mac-radius-pill); transition: width var(--mac-duration-base) ease; }
     }
   }
-  .main-stats { display: flex; gap: 32px;
+  .main-stats { display: flex; gap: 24px;
     .stat { .label { display: block; font-size: 13px; color: var(--el-text-color-secondary); margin-bottom: 4px; }
-      .value { font-size: 18px; font-weight: 600; &.success { color: #10b981; } }
+      .value { font-size: 16px; font-weight: 600; &.success { color: var(--el-color-success); } }
     }
   }
 }
-.overview-card { background: var(--el-bg-color); border-radius: 16px; padding: 24px; border: 1px solid var(--el-border-color-lighter); display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
-  .card-icon { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
-    &.pools { background: linear-gradient(135deg, #f59e0b, #fbbf24); color: white; }
+.overview-card { background: var(--el-bg-color); border-radius: var(--mac-radius-container); padding: 24px; border: 1px solid var(--el-border-color-lighter); display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
+  .card-icon { width: 56px; height: 56px; border-radius: var(--mac-radius-card); display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
+    &.pools { background: linear-gradient(135deg, var(--el-color-warning), var(--el-color-warning-light-3)); color: white; }
   }
   .card-info { .card-value { font-size: 28px; font-weight: 700; } .card-label { font-size: 14px; color: var(--el-text-color-secondary); margin-top: 4px; } }
 }
 
 .pools-section {
   .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
-    h2 { margin: 0; font-size: 18px; font-weight: 600; }
-    .count { font-size: 14px; color: var(--el-text-color-secondary); background: var(--el-fill-color); padding: 2px 10px; border-radius: 10px; }
+    h2 { margin: 0; font-size: 16px; font-weight: 600; }
+    .count { font-size: 14px; color: var(--el-text-color-secondary); background: var(--el-fill-color); padding: 2px 10px; border-radius: var(--mac-radius-control); }
   }
 }
 .pools-list { display: flex; flex-direction: column; gap: 12px; }
-.pool-item { background: var(--el-bg-color); border-radius: 12px; padding: 20px 24px; border: 1px solid var(--el-border-color-lighter); display: flex; align-items: center; gap: 24px; transition: all 0.2s;
-  &:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.pool-item { background: var(--el-bg-color); border-radius: var(--mac-radius-card); padding: 20px 24px; border: 1px solid var(--mac-hairline); box-shadow: var(--card-shadow); display: flex; align-items: center; gap: 24px; transition: box-shadow var(--mac-duration-fast) ease;
+  &:hover { box-shadow: var(--card-shadow-hover); }
   &.is-default { border-color: var(--el-color-primary-light-5); background: color-mix(in srgb, var(--el-color-primary) 3%, transparent); }
   .pool-left { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0;
-    .pool-icon { width: 52px; height: 52px; border-radius: 12px; background: linear-gradient(135deg, #fbbf24, #f59e0b); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
+    .pool-icon { width: 52px; height: 52px; border-radius: var(--mac-radius-card); background: linear-gradient(135deg, var(--el-color-warning), var(--el-color-warning-light-3)); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
     .pool-info { min-width: 0;
       .pool-name { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; flex-wrap: wrap; }
       .pool-path { font-size: 13px; color: var(--el-text-color-secondary); font-family: monospace; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -430,18 +423,18 @@ onMounted(() => loadData())
         .usage-text { font-size: 13px; color: var(--el-text-color-secondary); }
         .usage-percent { font-size: 14px; font-weight: 600; }
       }
-      .usage-bar { height: 8px; background: var(--el-fill-color); border-radius: 4px; overflow: hidden; border: 1px solid var(--el-border-color-lighter);
-        .bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+      .usage-bar { height: 8px; background: var(--el-fill-color); border-radius: var(--mac-radius-pill); overflow: hidden; border: 1px solid var(--el-border-color-lighter);
+        .bar-fill { height: 100%; border-radius: var(--mac-radius-pill); transition: width var(--mac-duration-base) ease; }
       }
-      .capacity-limit { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 11px; color: var(--el-color-warning); }
+      .capacity-limit { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12px; color: var(--el-color-warning); }
     }
   }
   .pool-actions { display: flex; gap: 4px; flex-shrink: 0; }
 }
 
-.empty-state { text-align: center; padding: 60px 20px; background: var(--el-bg-color); border-radius: 12px; border: 2px dashed var(--el-border-color);
-  .empty-icon { color: #d1d5db; margin-bottom: 8px; }
-  h3 { margin: 0 0 8px; font-size: 18px; } p { margin: 0 0 20px; color: var(--el-text-color-secondary); }
+.empty-state { text-align: center; padding: 60px 20px; background: var(--el-bg-color); border-radius: var(--mac-radius-card); border: 2px dashed var(--el-border-color);
+  .empty-icon { color: var(--el-text-color-placeholder); margin-bottom: 8px; }
+  h3 { margin: 0 0 8px; font-size: 16px; } p { margin: 0 0 20px; color: var(--el-text-color-secondary); }
 }
 
 .form-tip { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--el-text-color-secondary);
@@ -459,11 +452,11 @@ onMounted(() => loadData())
     }
   }
   // 抽屉是全高拉出的，目录列表跟着撑满剩余空间（原固定 320px 在抽屉里只剩一小条）
-  .browser-content { height: calc(100vh - 280px); min-height: 320px; overflow-y: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 8px;
+  .browser-content { height: calc(100vh - 280px); min-height: 320px; overflow-y: auto; border: 1px solid var(--el-border-color-lighter); border-radius: var(--mac-radius-control); padding: 8px;
     .empty-dir { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--el-text-color-secondary);
       p { margin: 12px 0 0; }
     }
-    .dir-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; transition: background 0.2s;
+    .dir-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--mac-radius-pill); cursor: pointer; transition: background var(--mac-duration-fast);
       &:hover { background: var(--el-fill-color-light); }
       .dir-name { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     }

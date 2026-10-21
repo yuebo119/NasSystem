@@ -111,9 +111,9 @@ onMounted(load)
 
 <template>
   <div class="recycle-page">
-    <div class="page-header">
+    <div class="page-header page-header--with-actions">
       <div class="header-left">
-        <h2>{{ $t('recycle.title') }}</h2>
+        <h1>{{ $t('recycle.title') }}</h1>
         <p>{{ $t('recycle.subtitle') }}</p>
       </div>
       <div class="header-actions">
@@ -126,7 +126,7 @@ onMounted(load)
 
     <el-alert type="info" :closable="false" show-icon :title="$t('recycle.hint')" class="recycle-alert" />
 
-    <el-table :data="items" v-loading="loading" border>
+    <el-table :data="items" v-loading="loading">
       <el-table-column :label="$t('recycle.colName')" min-width="220">
         <template #default="{ row }">
           <div class="file-name">
@@ -163,37 +163,9 @@ onMounted(load)
 </template>
 
 <style scoped>
-.recycle-page {
-  padding: 16px;
-}
+.recycle-page { }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
-  gap: 12px;
-  flex-wrap: wrap;
 
-  .header-left {
-    h2 {
-      margin: 0 0 4px;
-      font-size: 20px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-    }
-    p {
-      margin: 0;
-      font-size: 13px;
-      color: var(--el-text-color-secondary);
-    }
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 8px;
-  }
-}
 
 .recycle-alert {
   margin-bottom: 16px;

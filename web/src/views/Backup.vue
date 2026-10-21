@@ -197,7 +197,9 @@ async function startBackup() {
 
 <template>
   <div class="backup-page">
-    <h2 class="page-title">{{ $t('backup.title') }}</h2>
+    <div class="page-header">
+      <h1>{{ $t('backup.title') }}</h1>
+    </div>
 
     <!-- 设备注册 -->
     <el-card class="backup-card">
@@ -316,18 +318,12 @@ async function startBackup() {
 .backup-page {
   max-width: 720px;
   margin: 0 auto;
-  padding: 16px;
 
-  .page-title {
-    font-size: 20px;
-    font-weight: 600;
-    margin: 0 0 16px;
-    color: var(--el-text-color-primary);
-  }
+  
 
   .backup-card {
     margin-bottom: 16px;
-    border-radius: 12px;
+    border-radius: var(--mac-radius-card);
   }
 
   // 移动优先：主操作按钮全宽、最小高度 44px（手机点击目标）
@@ -341,7 +337,7 @@ async function startBackup() {
     width: 100%;
     padding: 12px;
     border: 1px dashed var(--el-border-color);
-    border-radius: 8px;
+    border-radius: var(--mac-radius-control);
     margin-bottom: 12px;
   }
 
@@ -354,7 +350,7 @@ async function startBackup() {
   .device-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
   }
 
   .device-item {
@@ -362,14 +358,18 @@ async function startBackup() {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 12px 14px;
-    border: 1px solid var(--el-border-color-lighter);
-    border-radius: 10px;
+    padding: 12px 16px;
+    border: 1px solid var(--mac-hairline);
+    border-radius: var(--mac-radius-card);
     cursor: pointer;
+    transition: border-color var(--mac-duration-fast) ease, background var(--mac-duration-fast) ease;
 
+    // 选中态用主色描边 + 低透明度主色底。不用 light-9：那是 mix(主色, 白, 90%)
+    // 的近白底，暗色模式下项内近白文字叠近白底实测对比度 1.05:1，选中反馈
+    // 反而让文字消失（2026-10-21 设计审计实测）
     &.active {
       border-color: var(--el-color-primary);
-      background: var(--el-color-primary-light-9);
+      background: color-mix(in srgb, var(--el-color-primary) 14%, transparent);
     }
 
     &.revoked {
@@ -385,7 +385,7 @@ async function startBackup() {
 
   .device-name {
     font-weight: 500;
-    font-size: 15px;
+    font-size: 14px;
     display: flex;
     align-items: center;
     gap: 6px;

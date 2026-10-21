@@ -8,7 +8,7 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fileShareApi, ShareAccessType, type FileShareDto, type UpdateFileShareRequest } from '@/api/fileShare'
-import { getFileIcon, formatDate } from '@/utils/format'
+import { getFileIcon, getFileIconColor, formatDate } from '@/utils/format'
 import { useDrawerSize } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
@@ -41,97 +41,27 @@ const getAccessTypeText = (type: ShareAccessType) => {
   return map[type] || t('dashboard.unknown')
 }
 
+// 访问方式徽章的三态色。2026-10-21 设计审计：原 pastel 亮色底（#ecfdf5 等）
+// 在亮色模式下文字对比度就只 2.07-2.41:1（AA 需 4.5:1），暗色模式下淡彩块
+// 贴在深灰卡上整块违和。改为语义色 + color-mix 透明度派生：亮暗各自可读，
+// 且与全站 danger/success/warning/primary 语义对齐
 const getAccessTypeInfo = (type: ShareAccessType) => {
   const map: Record<number, any> = {
-    0: { icon: Unlock, color: '#10b981', bg: '#ecfdf5' },
-    1: { icon: Lock, color: '#f59e0b', bg: '#fffbeb' },
-    2: { icon: Share, color: '#6366f1', bg: '#eef2ff' }
+    0: { icon: Unlock, color: 'var(--el-color-success)', bg: 'color-mix(in srgb, var(--el-color-success) 12%, transparent)' },
+    1: { icon: Lock, color: 'var(--el-color-warning)', bg: 'color-mix(in srgb, var(--el-color-warning) 12%, transparent)' },
+    2: { icon: Share, color: 'var(--el-color-primary)', bg: 'color-mix(in srgb, var(--el-color-primary) 12%, transparent)' }
   }
-  return map[type] || { icon: Share, color: '#6b7280', bg: '#f3f4f6' }
+  return map[type] || { icon: Share, color: 'var(--el-text-color-placeholder)', bg: 'var(--el-fill-color-light)' }
 }
 
-// 扩展名 → 徽章底色。原实现是 11 个分支的数组 includes 顺序判断，每渲染一行就要
-// 把整条链走一遍（平均 6 次数组查找）。改成查表后一次哈希命中。
-// 表在模块级构建一次，渲染期零分配。
-// mac 化（2026-10-17）：渐变改纯色——macOS 视觉是扁平色块加白色 glyph，
-// 与全站令牌体系统一；颜色分组本身是文件类型语义，保留不动
-const ICON_STYLE_FALLBACK = { bg: '#6b7280', color: '#fff' }
-
-const ICON_STYLES_BY_EXT: Record<string, { bg: string; color: string }> = {
-  '.pdf': { bg: '#ef4444', color: '#fff' },
-  '.doc': { bg: '#3b82f6', color: '#fff' },
-  '.docx': { bg: '#3b82f6', color: '#fff' },
-  '.xls': { bg: '#10b981', color: '#fff' },
-  '.xlsx': { bg: '#10b981', color: '#fff' },
-  '.csv': { bg: '#10b981', color: '#fff' },
-  '.ppt': { bg: '#f97316', color: '#fff' },
-  '.pptx': { bg: '#f97316', color: '#fff' },
-  '.txt': { bg: '#6b7280', color: '#fff' },
-  '.md': { bg: '#6b7280', color: '#fff' },
-  '.rtf': { bg: '#6b7280', color: '#fff' },
-  '.jpg': { bg: '#14b8a6', color: '#fff' },
-  '.jpeg': { bg: '#14b8a6', color: '#fff' },
-  '.png': { bg: '#14b8a6', color: '#fff' },
-  '.gif': { bg: '#14b8a6', color: '#fff' },
-  '.webp': { bg: '#14b8a6', color: '#fff' },
-  '.bmp': { bg: '#14b8a6', color: '#fff' },
-  '.svg': { bg: '#14b8a6', color: '#fff' },
-  '.ico': { bg: '#14b8a6', color: '#fff' },
-  '.mp4': { bg: '#8b5cf6', color: '#fff' },
-  '.avi': { bg: '#8b5cf6', color: '#fff' },
-  '.mkv': { bg: '#8b5cf6', color: '#fff' },
-  '.mov': { bg: '#8b5cf6', color: '#fff' },
-  '.wmv': { bg: '#8b5cf6', color: '#fff' },
-  '.flv': { bg: '#8b5cf6', color: '#fff' },
-  '.webm': { bg: '#8b5cf6', color: '#fff' },
-  '.m4v': { bg: '#8b5cf6', color: '#fff' },
-  '.mp3': { bg: '#ec4899', color: '#fff' },
-  '.wav': { bg: '#ec4899', color: '#fff' },
-  '.flac': { bg: '#ec4899', color: '#fff' },
-  '.aac': { bg: '#ec4899', color: '#fff' },
-  '.ogg': { bg: '#ec4899', color: '#fff' },
-  '.wma': { bg: '#ec4899', color: '#fff' },
-  '.m4a': { bg: '#ec4899', color: '#fff' },
-  '.zip': { bg: '#a16207', color: '#fff' },
-  '.rar': { bg: '#a16207', color: '#fff' },
-  '.7z': { bg: '#a16207', color: '#fff' },
-  '.tar': { bg: '#a16207', color: '#fff' },
-  '.gz': { bg: '#a16207', color: '#fff' },
-  '.bz2': { bg: '#a16207', color: '#fff' },
-  '.js': { bg: '#6366f1', color: '#fff' },
-  '.ts': { bg: '#6366f1', color: '#fff' },
-  '.jsx': { bg: '#6366f1', color: '#fff' },
-  '.tsx': { bg: '#6366f1', color: '#fff' },
-  '.vue': { bg: '#6366f1', color: '#fff' },
-  '.py': { bg: '#6366f1', color: '#fff' },
-  '.java': { bg: '#6366f1', color: '#fff' },
-  '.c': { bg: '#6366f1', color: '#fff' },
-  '.cpp': { bg: '#6366f1', color: '#fff' },
-  '.h': { bg: '#6366f1', color: '#fff' },
-  '.cs': { bg: '#6366f1', color: '#fff' },
-  '.go': { bg: '#6366f1', color: '#fff' },
-  '.rs': { bg: '#6366f1', color: '#fff' },
-  '.php': { bg: '#6366f1', color: '#fff' },
-  '.rb': { bg: '#6366f1', color: '#fff' },
-  '.swift': { bg: '#6366f1', color: '#fff' },
-  '.kt': { bg: '#6366f1', color: '#fff' },
-  '.json': { bg: '#475569', color: '#fff' },
-  '.xml': { bg: '#475569', color: '#fff' },
-  '.yaml': { bg: '#475569', color: '#fff' },
-  '.yml': { bg: '#475569', color: '#fff' },
-  '.ini': { bg: '#475569', color: '#fff' },
-  '.conf': { bg: '#475569', color: '#fff' },
-  '.env': { bg: '#475569', color: '#fff' }
-}
-
-const FOLDER_ICON_STYLE = { bg: '#f59e0b', color: '#fff' }
-
-// 文件图标样式（纯色徽章， Shares 页专有视觉，保留私有实现）
-const getFileIconStyle = (share: FileShareDto) => {
-  if (share.isFolder) return FOLDER_ICON_STYLE
-  const ext = share.fileName.substring(share.fileName.lastIndexOf('.')).toLowerCase()
-  return ICON_STYLES_BY_EXT[ext] ?? ICON_STYLE_FALLBACK
-}
+// 扩展名 → 徽章底色。2026-10-21 设计审计：删除本页 75 行私有扩展名表——
+// 其与 format.ts 的 getFileIconColor 同值但 folder/fallback 两处已漂移
+//（同一种文件夹在两页显示两种琥珀色），单一事实源收回 format.ts。
+// 白色 glyph 是全站图标徽章既定语言（MainLayout logo/Dashboard icon-badge 同款）
+const getFileIconStyle = (share: FileShareDto): { bg: string; color: string } => ({
+  bg: getFileIconColor(share),
+  color: '#fff'
+})
 
 // ─── 视图切换 / 搜索 / 排序（2026-10-17 重设计新增）───
 
@@ -322,7 +252,7 @@ onMounted(() => loadData())
 <template>
   <div class="shares-page">
     <!-- 页头 -->
-    <div class="page-header">
+    <div class="page-header page-header--with-actions">
       <div class="header-left">
         <h1>{{ t('shares.title') }}</h1>
         <p>{{ t('shares.subtitle') }}</p>
@@ -457,7 +387,7 @@ onMounted(() => loadData())
                   <el-dropdown-item @click="previewShare(asShare(row))"><el-icon><View /></el-icon>{{ t('shares.preview') }}</el-dropdown-item>
                   <el-dropdown-item @click="copyLink(asShare(row))"><el-icon><CopyDocument /></el-icon>{{ t('shares.copyLink') }}</el-dropdown-item>
                   <el-dropdown-item @click="openEditDialog(asShare(row))"><el-icon><Edit /></el-icon>{{ t('common.edit') }}</el-dropdown-item>
-                  <el-dropdown-item divided @click="handleDelete(asShare(row))"><el-icon color="#ef4444"><Delete /></el-icon><span style="color:#ef4444">{{ t('common.delete') }}</span></el-dropdown-item>
+                  <el-dropdown-item divided @click="handleDelete(asShare(row))"><el-icon color="var(--el-color-danger)"><Delete /></el-icon><span style="color: var(--el-color-danger)">{{ t('common.delete') }}</span></el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -487,7 +417,7 @@ onMounted(() => loadData())
                 <el-dropdown-item @click="previewShare(share)"><el-icon><View /></el-icon>{{ t('shares.preview') }}</el-dropdown-item>
                 <el-dropdown-item @click="copyLink(share)"><el-icon><CopyDocument /></el-icon>{{ t('shares.copyLink') }}</el-dropdown-item>
                 <el-dropdown-item @click="openEditDialog(share)"><el-icon><Edit /></el-icon>{{ t('common.edit') }}</el-dropdown-item>
-                <el-dropdown-item divided @click="handleDelete(share)"><el-icon color="#ef4444"><Delete /></el-icon><span style="color:#ef4444">{{ t('common.delete') }}</span></el-dropdown-item>
+                <el-dropdown-item divided @click="handleDelete(share)"><el-icon color="var(--el-color-danger)"><Delete /></el-icon><span style="color: var(--el-color-danger)">{{ t('common.delete') }}</span></el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -586,9 +516,7 @@ onMounted(() => loadData())
 
 <style lang="scss" scoped>
 .shares-page { padding: 0; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;
-  .header-left { h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; } p { margin: 0; color: var(--el-text-color-secondary); font-size: 14px; } }
-}
+
 
 // mac 卡片基类：白底 + 发丝线 + 分层柔和阴影（令牌见 main.scss）
 .mac-card {
@@ -602,14 +530,14 @@ onMounted(() => loadData())
 // 统计卡与 mac 卡片同基底：不共用 class 是因为 @extend 在 scoped 下会产出
 // 带 data-v 的组合选择器，行为不稳定；属性重复一遍更直白
 .stat-card { background: var(--el-bg-color); border: 1px solid var(--mac-hairline); border-radius: var(--mac-radius-card); box-shadow: var(--card-shadow); padding: 16px 20px; display: flex; align-items: center; gap: 14px;
-  .stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;
+  .stat-icon { width: 48px; height: 48px; border-radius: var(--mac-radius-card); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;
     // 总数卡跟随全站主色（原 indigo chrome 色），其余为语义色
     &.total { background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
-    &.active { background: linear-gradient(135deg, #10b981, #34d399); }
-    &.expired { background: linear-gradient(135deg, #ef4444, #f87171); }
-    &.downloads { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
+    &.active { background: linear-gradient(135deg, var(--el-color-success), var(--el-color-success-light-3)); }
+    &.expired { background: linear-gradient(135deg, var(--el-color-danger), var(--el-color-danger-light-3)); }
+    &.downloads { background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
   }
-  .stat-info { .stat-value { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; } .stat-label { font-size: 13px; color: var(--el-text-color-secondary); } }
+  .stat-info { .stat-value { font-weight: 700; letter-spacing: -0.3px; } .stat-label { font-size: 13px; color: var(--el-text-color-secondary); } }
 }
 
 // 工具栏：Finder 风格毛玻璃条，搜索居左、排序与视图切换居右
@@ -639,7 +567,7 @@ onMounted(() => loadData())
     padding: 2px;
     gap: 2px;
     background: var(--el-fill-color);
-    border-radius: 9px;
+    border-radius: var(--mac-radius-control);
 
     button {
       display: inline-flex;
@@ -648,7 +576,7 @@ onMounted(() => loadData())
       width: 32px;
       height: 28px;
       border: none;
-      border-radius: 7px;
+      border-radius: var(--mac-radius-control);
       background: transparent;
       color: var(--el-text-color-secondary);
       cursor: pointer;
@@ -658,7 +586,7 @@ onMounted(() => loadData())
       &.active {
         background: var(--el-bg-color);
         color: var(--el-color-primary);
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+        border-color: var(--mac-hairline);
       }
     }
   }
@@ -668,7 +596,7 @@ onMounted(() => loadData())
 .list-view { overflow: hidden; }
 
 .cell-file { display: flex; align-items: center; gap: 10px; min-width: 0;
-  .file-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .file-icon { width: 34px; height: 34px; border-radius: var(--mac-radius-control); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .file-info { min-width: 0;
     .file-name { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .file-path { font-size: 12px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -682,25 +610,25 @@ onMounted(() => loadData())
   align-items: center;
   gap: 4px;
   padding: 3px 9px;
-  border-radius: 6px;
+  border-radius: var(--mac-radius-pill);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
 
-  &.folder { background: rgba(217, 119, 6, 0.12); color: #d97706; }
-  &.expired { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
-  &.limit { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+  &.folder { background: color-mix(in srgb, var(--el-color-warning) 12%, transparent); color: var(--el-color-warning); }
+  &.expired { background: color-mix(in srgb, var(--el-color-danger) 12%, transparent); color: var(--el-color-danger); }
+  &.limit { background: color-mix(in srgb, var(--el-color-warning) 12%, transparent); color: var(--el-color-warning); }
   &.off { background: var(--el-fill-color); color: var(--el-text-color-secondary); }
 }
 
 // 方格视图
 .grid-view { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-.share-card { padding: 16px; display: flex; flex-direction: column; gap: 12px; transition: box-shadow 0.2s ease, transform 0.2s ease;
+.share-card { padding: 16px; display: flex; flex-direction: column; gap: 12px; transition: box-shadow var(--mac-duration-fast) ease, transform var(--mac-duration-fast) ease;
   &:hover { box-shadow: var(--card-shadow-hover); }
   &.disabled { opacity: 0.6; }
 
   .card-top { display: flex; align-items: center; gap: 12px; min-width: 0;
-    .file-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .file-icon { width: 42px; height: 42px; border-radius: var(--mac-radius-control); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .file-info { flex: 1; min-width: 0;
       .file-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .file-path { font-size: 12px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -721,7 +649,7 @@ onMounted(() => loadData())
 // 空态：与全站其他页一致，虚线/淡底容器（这里用淡底卡片）
 .empty-state { grid-column: 1 / -1; text-align: center; padding: 56px 20px;
   .empty-icon { color: var(--el-text-color-placeholder); margin-bottom: 4px; }
-  h3 { margin: 8px 0 6px; font-size: 17px; font-weight: 600; }
+  h3 { margin: 8px 0 6px; font-size: 16px; font-weight: 600; }
   p { margin: 0 0 16px; color: var(--el-text-color-secondary); font-size: 13px; }
 }
 

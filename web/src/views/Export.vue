@@ -50,7 +50,7 @@ async function submit() {
   <div class="export-page">
     <div class="page-header">
       <div class="header-left">
-        <h2>{{ $t('export.title') }}</h2>
+        <h1>{{ $t('export.title') }}</h1>
         <p>{{ $t('export.subtitle') }}</p>
       </div>
     </div>
@@ -90,32 +90,16 @@ async function submit() {
 
 <style scoped>
 .export-page {
-  padding: 16px;
   max-width: 720px;
+  margin: 0 auto;
 }
 
-.page-header {
-  margin-bottom: 16px;
 
-  .header-left {
-    h2 {
-      margin: 0 0 4px;
-      font-size: 20px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-    }
-    p {
-      margin: 0;
-      font-size: 13px;
-      color: var(--el-text-color-secondary);
-    }
-  }
-}
 
 .export-card {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: var(--mac-radius-card);
+  padding: 16px;
   margin-bottom: 16px;
   background: var(--el-bg-color);
 }
@@ -130,7 +114,7 @@ async function submit() {
 .principle-card {
   h3 {
     margin: 0 0 8px;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--el-text-color-primary);
   }
@@ -144,7 +128,7 @@ async function submit() {
 
   ul {
     margin: 0;
-    padding-left: 20px;
+    padding-left: 16px;
     font-size: 13px;
     color: var(--el-text-color-regular);
 

@@ -12,7 +12,7 @@ import {
   Picture, VideoPlay, Headset, Document, FolderOpened, Warning, InfoFilled, Pointer,
   Upload, FolderAdd, Delete, Search, Download, Camera
 } from '@element-plus/icons-vue'
-import { formatSize, getPoolStatusInfo, getFileIcon, getFileIconColor, formatDate } from '@/utils/format'
+import { formatSize, getPoolStatusInfo, getFileIcon, getFileIconColor, formatDate, getUsageColor, getFileCategoryColor } from '@/utils/format'
 import { useIsMobile } from '@/utils/useIsMobile'
 import { fileShareApi } from '@/api/fileShare'
 
@@ -191,12 +191,9 @@ const driveUsedPercent = (drive: any): number => {
   return Math.round(((drive.totalSize - drive.availableSpace) / drive.totalSize) * 1000) / 10
 }
 
-// 磁盘进度条配色：与存储池同一组阈值口径
-const driveBarColor = (percent: number): string => {
-  if (percent >= 90) return '#ef4444'
-  if (percent >= 70) return '#f59e0b'
-  return '#10b981'
-}
+// 磁盘进度条配色：与存储池同一组阈值口径。2026-10-21 设计审计收敛到
+// format.ts 的 getUsageColor（原私有十六进制与 Storage/SystemInfo 两套漂移）
+const driveBarColor = getUsageColor
 
 // 加载文件统计
 const loadFileStats = async () => {
@@ -420,7 +417,7 @@ onUnmounted(() => {
 <template>
   <div class="dashboard-page">
     <!-- 头部 -->
-    <div class="dashboard-header">
+    <div class="page-header page-header--with-actions dashboard-header">
       <div class="welcome-section">
         <h1>{{ t('dashboard.welcome') }}，{{ userStore.displayName || userStore.username }}</h1>
         <p>NAS System {{ t('dashboard.subtitle') }}</p>
@@ -522,9 +519,9 @@ onUnmounted(() => {
                 :width="160"
                 :stroke-width="12"
                 :color="[
-                  { color: '#10b981', percentage: 60 },
-                  { color: '#f59e0b', percentage: 80 },
-                  { color: '#ef4444', percentage: 100 }
+                  { color: 'var(--el-color-success)', percentage: 60 },
+                  { color: 'var(--el-color-warning)', percentage: 80 },
+                  { color: 'var(--el-color-danger)', percentage: 100 }
                 ]"
               >
                 <template #default="{ percentage }">
@@ -539,14 +536,14 @@ onUnmounted(() => {
             <div class="storage-details">
               <div class="detail-item">
                 <div class="detail-label">
-                  <span class="dot" style="background: #3b82f6"></span>
+                  <span class="dot" style="background: var(--el-color-primary)"></span>
                   {{ t('storage.poolCount') }}
                 </div>
                 <div class="detail-value">{{ storageOverview.poolCount }}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">
-                  <span class="dot" style="background: #f59e0b"></span>
+                  <span class="dot" style="background: var(--el-color-warning)"></span>
                   {{ t('dashboard.poolAllocated') }}
                 </div>
                 <div class="detail-value">
@@ -555,14 +552,14 @@ onUnmounted(() => {
               </div>
               <div class="detail-item">
                 <div class="detail-label">
-                  <span class="dot" style="background: #ef4444"></span>
+                  <span class="dot" style="background: var(--el-color-danger)"></span>
                   {{ t('storage.usedSpace') }}
                 </div>
                 <div class="detail-value">{{ formatSize(storageOverview.usedBytes) }}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-label">
-                  <span class="dot" style="background: #10b981"></span>
+                  <span class="dot" style="background: var(--el-color-success)"></span>
                   {{ t('dashboard.poolRemaining') }}
                 </div>
                 <div class="detail-value">
@@ -655,21 +652,21 @@ onUnmounted(() => {
           <div class="file-stats-main">
             <div class="file-stats-summary">
               <div class="summary-item">
-                <el-icon :size="24" color="#3b82f6"><FolderOpened /></el-icon>
+                <el-icon :size="24" :color="getFileIconColor({ isFolder: true })"><FolderOpened /></el-icon>
                 <div class="summary-info">
                   <span class="count">{{ fileStats.totalFolders }}</span>
                   <span class="label">{{ t('files.folder') }}</span>
                 </div>
               </div>
               <div class="summary-item">
-                <el-icon :size="24" color="#10b981"><Document /></el-icon>
+                <el-icon :size="24" :color="getFileCategoryColor('document')"><Document /></el-icon>
                 <div class="summary-info">
                   <span class="count">{{ fileStats.totalFiles }}</span>
                   <span class="label">{{ t('files.file') }}</span>
                 </div>
               </div>
               <div class="summary-item">
-                <el-icon :size="24" color="#f59e0b"><Timer /></el-icon>
+                <el-icon :size="24" color="var(--el-color-warning)"><Timer /></el-icon>
                 <div class="summary-info">
                   <span class="count">{{ fileStats.recentFilesCount }}</span>
                   <span class="label">{{ t('dashboard.recentAdded') }}</span>
@@ -681,7 +678,7 @@ onUnmounted(() => {
             
             <div class="file-type-stats">
               <div class="type-item">
-                <div class="type-icon" style="background: #10b981">
+                <div class="type-icon" style="background: var(--el-color-success)">
                   <el-icon><Picture /></el-icon>
                 </div>
                 <div class="type-info">
@@ -690,7 +687,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="type-item">
-                <div class="type-icon" style="background: #3b82f6">
+                <div class="type-icon" :style="{ background: getFileCategoryColor('video') }">
                   <el-icon><VideoPlay /></el-icon>
                 </div>
                 <div class="type-info">
@@ -699,7 +696,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="type-item">
-                <div class="type-icon" style="background: #f59e0b">
+                <div class="type-icon" style="background: var(--el-color-warning)">
                   <el-icon><Headset /></el-icon>
                 </div>
                 <div class="type-info">
@@ -708,7 +705,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="type-item">
-                <div class="type-icon" style="background: #64748b">
+                <div class="type-icon" :style="{ background: getFileCategoryColor('document') }">
                   <el-icon><Document /></el-icon>
                 </div>
                 <div class="type-info">
@@ -717,7 +714,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="type-item">
-                <div class="type-icon" style="background: #C0C4CC">
+                <div class="type-icon" :style="{ background: getFileCategoryColor('other') }">
                   <el-icon><Files /></el-icon>
                 </div>
                 <div class="type-info">
@@ -753,7 +750,7 @@ onUnmounted(() => {
             </div>
             <div class="big-stat">
               <div class="big-value">
-                <el-icon :size="22" color="#3b82f6"><Download /></el-icon>
+                <el-icon :size="22" color="var(--el-color-primary)"><Download /></el-icon>
                 {{ shareStats.downloads }}
               </div>
               <div class="big-label">{{ t('dashboard.totalDownloads') }}</div>
@@ -805,7 +802,7 @@ onUnmounted(() => {
               </div>
             </div>
             <div v-if="recentFiles.length === 0 && !loading" class="recent-empty">
-              <el-icon :size="40" color="#d1d5db"><Document /></el-icon>
+              <el-icon :size="40" color="var(--el-text-color-placeholder)"><Document /></el-icon>
               <p>{{ t('dashboard.recentEmpty') }}</p>
             </div>
           </div>
@@ -875,14 +872,14 @@ onUnmounted(() => {
                 :percentage="row.usagePercentage"
                 :stroke-width="6"
                 :show-text="false"
-                :color="row.usagePercentage > 90 ? '#ef4444' : row.usagePercentage > 70 ? '#f59e0b' : '#10b981'"
+                :color="getUsageColor(row.usagePercentage)"
               />
             </div>
           </template>
         </el-table-column>
         <el-table-column prop="usagePercentage" :label="t('storage.usagePercent')" :width="isMobile ? 70 : 100">
           <template #default="{ row }">
-            <span v-if="row.maxCapacityBytes" :style="{ color: row.usagePercentage > 90 ? '#ef4444' : row.usagePercentage > 70 ? '#f59e0b' : '#10b981' }">
+            <span v-if="row.maxCapacityBytes" :style="{ color: getUsageColor(row.usagePercentage) }">
               {{ row.usagePercentage.toFixed(1) }}%
             </span>
             <span v-else>-</span>
@@ -1072,29 +1069,16 @@ onUnmounted(() => {
 }
 
 .dashboard-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  // 与卡片间距统一为 16px：此前这里是 20px，页面出现"头部-卡片"与
-  // "卡片-卡片"两套间距
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-  gap: 16px;
-  
+  // 标题规格与两端对齐走全局 .page-header 契约（模板类名已换）；
+  // 此处只保留页面特有的 welcome-section 与 last-update 布局。
+  // 注意契约的 margin-bottom 是 24px，与本站"头部-卡片 16px"的既定节奏
+  // 不同——Dashboard 是欢迎语+刷新操作的头版式，用 24px 拉呼吸感
   .welcome-section {
     h1 {
-      font-size: 24px;
-      margin: 0 0 4px 0;
-      color: var(--el-text-color-primary);
-    }
-    
-    p {
-      margin: 0;
-      color: var(--el-text-color-secondary);
-      font-size: 14px;
+      letter-spacing: -0.3px;
     }
   }
-  
+
   .header-actions {
     display: flex;
     align-items: center;
@@ -1114,14 +1098,14 @@ onUnmounted(() => {
 // 故该区间改两列（sm/md=12），由卡片内响应式补偿图标与字号
 .stat-card {
   margin-bottom: 16px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all var(--mac-duration-base) cubic-bezier(0.4, 0, 0.2, 1);
   
   &:hover {
     transform: translateY(-2px);
   }
   
   :deep(.el-card__body) {
-    padding: 20px;
+    padding: 16px;
   }
   
   .stat-content {
@@ -1134,10 +1118,10 @@ onUnmounted(() => {
   // 这里只定语义色。纯色替代原渐变 + 旧 Element Plus 色板
   //（#67C23A/#3b82f6/#E6A23C/#64748b），与快捷操作等处的现代色系统一
   .stat-icon {
-    &.tone-status { background: linear-gradient(135deg, #10b981, #34d399); }
-    &.tone-uptime { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
-    &.tone-memory { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
-    &.tone-threads { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+    &.tone-status { background: linear-gradient(135deg, var(--el-color-success), var(--el-color-success-light-3)); }
+    &.tone-uptime { background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
+    &.tone-memory { background: linear-gradient(135deg, var(--el-color-warning), var(--el-color-warning-light-3)); }
+    &.tone-threads { background: linear-gradient(135deg, var(--el-color-danger), var(--el-color-danger-light-3)); }
   }
   
   .stat-info {
@@ -1145,8 +1129,7 @@ onUnmounted(() => {
     min-width: 0;
     
     .stat-value {
-      font-size: 22px;
-      font-weight: 700;
+      // 字号/字重走全局 .stat-card .stat-value 契约（24px/700，窄屏落 20px）
       color: var(--el-text-color-primary);
       white-space: nowrap;
       overflow: hidden;
@@ -1161,12 +1144,10 @@ onUnmounted(() => {
     }
   }
 
-  // 768~1199px：两列布局，间距与字号收一档，保证运行时间这类长值不截断。
-  // 图标尺寸不动——徽章阶梯（48px）在这个宽度下放得下
+  // 768~1199px：两列布局，间距收一档。数值字号走全局契约（24px 基、
+  // ≤768 落 20px），此处不再自造 20/18 中间档
   @media (max-width: 1199px) {
     .stat-content { gap: 12px; }
-
-    .stat-info .stat-value { font-size: 20px; }
   }
 
   // <768px：改上下布局（图标在上、文字在下通栏），窄卡也能容纳
@@ -1177,10 +1158,8 @@ onUnmounted(() => {
     .stat-content {
       flex-direction: column;
       align-items: flex-start;
-      gap: 10px;
+      gap: 12px;
     }
-
-    .stat-info .stat-value { font-size: 18px; }
   }
 }
 
@@ -1226,7 +1205,7 @@ onUnmounted(() => {
   .storage-main {
     display: flex;
     align-items: center;
-    gap: 40px;
+    gap: 24px;
     flex-wrap: wrap;
     
     .storage-chart {
@@ -1330,7 +1309,7 @@ onUnmounted(() => {
       gap: 12px;
       padding: 16px;
       border: 1px solid var(--el-border-color-lighter);
-      border-radius: 12px;
+      border-radius: var(--mac-radius-card);
 
       .disk-head {
         display: flex;
@@ -1340,11 +1319,11 @@ onUnmounted(() => {
 
         // 尺寸与圆角走全局 .icon-badge--md 阶梯；纯色替代原灰渐变
         .disk-icon {
-          background: linear-gradient(135deg, #64748b, #94a3b8);
+          background: linear-gradient(135deg, var(--el-text-color-regular), var(--el-text-color-secondary));
         }
 
         .disk-letter {
-          font-size: 15px;
+          font-size: 14px;
           font-weight: 600;
         }
       }
@@ -1358,13 +1337,13 @@ onUnmounted(() => {
           flex: 1;
           height: 8px;
           background: var(--el-fill-color);
-          border-radius: 4px;
+          border-radius: var(--mac-radius-pill);
           overflow: hidden;
 
           .bar-fill {
             height: 100%;
-            border-radius: 3px;
-            transition: width 0.3s;
+            border-radius: var(--mac-radius-pill);
+            transition: width var(--mac-duration-base) ease;
           }
         }
 
@@ -1397,7 +1376,7 @@ onUnmounted(() => {
             font-weight: 600;
 
             &.success {
-              color: #10b981;
+              color: var(--el-color-success);
             }
           }
         }
@@ -1448,13 +1427,13 @@ onUnmounted(() => {
         gap: 8px;
         padding: 8px 12px;
         background: var(--el-fill-color-light);
-        border-radius: 8px;
+        border-radius: var(--mac-radius-control);
         min-width: 80px;
         
         .type-icon {
           width: 28px;
           height: 28px;
-          border-radius: 6px;
+          border-radius: var(--mac-radius-pill);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1511,17 +1490,17 @@ onUnmounted(() => {
       gap: 8px;
       
       &.healthy {
-        color: #10b981;
+        color: var(--el-color-success);
       }
-      
+
       &.warning {
-        color: #f59e0b;
+        color: var(--el-color-warning);
       }
       
       &.critical {
-        color: #ef4444;
+        color: var(--el-color-danger);
       }
-      
+
       .health-info {
         text-align: center;
         
@@ -1591,12 +1570,12 @@ onUnmounted(() => {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 14px 16px;
+      padding: 16px;
       border-radius: var(--mac-radius-control);
       background: var(--el-fill-color-light);
       text-decoration: none;
       color: var(--el-text-color-primary);
-      transition: all 0.2s ease;
+      transition: all var(--mac-duration-fast) ease;
       border: 1px solid transparent;
       cursor: pointer;
 
@@ -1608,15 +1587,15 @@ onUnmounted(() => {
 
       // 尺寸与圆角走全局 .icon-badge--md 阶梯，这里只定语义色
       .action-icon {
-        &.files { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
-        &.upload { background: linear-gradient(135deg, #10b981, #34d399); }
-        &.folder { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
-        &.share { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
-        &.storage { background: linear-gradient(135deg, #64748b, #94a3b8); }
-        &.users { background: linear-gradient(135deg, #ef4444, #f87171); }
-        &.refresh { background: linear-gradient(135deg, #0ea5e9, #38bdf8); }
-        &.scan { background: linear-gradient(135deg, #14b8a6, #2dd4bf); }
-        &.recycle { background: linear-gradient(135deg, #94a3b8, #cbd5e1); }
+        &.files { background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
+        &.upload { background: linear-gradient(135deg, var(--el-color-success), var(--el-color-success-light-3)); }
+        &.folder { background: linear-gradient(135deg, var(--el-color-warning), var(--el-color-warning-light-3)); }
+        &.share { background: linear-gradient(135deg, var(--el-color-danger), var(--el-color-danger-light-3)); }
+        &.storage { background: linear-gradient(135deg, var(--el-text-color-regular), var(--el-text-color-secondary)); }
+        &.users { background: linear-gradient(135deg, var(--el-color-danger), var(--el-color-danger-light-3)); }
+        &.refresh { background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
+        &.scan { background: linear-gradient(135deg, var(--el-color-success), var(--el-color-success-light-3)); }
+        &.recycle { background: linear-gradient(135deg, var(--el-text-color-regular), var(--el-text-color-secondary)); }
 
         .spinning {
           animation: spin 1s linear infinite;
@@ -1762,7 +1741,7 @@ onUnmounted(() => {
         font-weight: 600;
 
         &.warning {
-          color: #ef4444;
+          color: var(--el-color-danger);
         }
       }
     }
@@ -1789,7 +1768,7 @@ onUnmounted(() => {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 10px 8px;
+      padding: 8px;
       border-radius: var(--mac-radius-control);
       cursor: pointer;
       transition: background 0.15s ease;
