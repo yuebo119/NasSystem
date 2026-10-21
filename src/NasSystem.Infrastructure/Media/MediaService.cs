@@ -17,12 +17,15 @@ using NasSystem.Shared;
 public sealed class MediaService(
     IFileItemRepository fileItemRepository) : IMediaService
 {
-    /// <summary>类型 → 扩展名集合。与前端筛选标签同源，改这里要同步 i18n 与路由</summary>
+    /// <summary>类型 → 扩展名集合。与前端筛选标签同源，改这里要同步 i18n 与路由。
+    /// 2026-10-21 扩充：原 audio 只有 .mp3、video 缺 .avi/.flv/.wmv，与缩略图服务
+    /// 的 SupportedVideoExtensions 也不一致——媒体库列不出的文件，预览/抽帧/
+    /// 转码能力做得再全也用不上。音频取浏览器原生可播集合（预览走 blob 播放）</summary>
     private static readonly Dictionary<string, string[]> TypeExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["image"] = [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"],
-        ["video"] = [".mp4", ".mov", ".m4v", ".mkv", ".webm"],
-        ["audio"] = [".mp3"]
+        ["image"] = [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".svg"],
+        ["video"] = [".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".flv", ".wmv"],
+        ["audio"] = [".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".opus"],
     };
 
     public async Task<Result<PagedResult<MediaItemDto>>> GetMediaAsync(

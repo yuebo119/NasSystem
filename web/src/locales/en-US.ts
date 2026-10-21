@@ -259,6 +259,9 @@ export default {
         semanticHits: '{n} hits (sorted by relevance)',
         semanticNoHits: 'No related images found',
         semanticModelNotReady: 'The semantic model is not ready. Download it first on the system config page',
+    openInFiles: 'Open in Files',
+    previewFailed: 'Failed to load preview',
+    downloadFailed: 'Download failed',
     loadFailed: 'Failed to load'
   },
 

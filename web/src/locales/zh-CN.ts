@@ -257,6 +257,10 @@ export default {
         semanticHits: '命中 {n} 张（按相关度排序）',
         semanticNoHits: '没有命中相关图片',
         semanticModelNotReady: '语义模型未就位，请先到系统配置页下载模型',
+    // 媒体库预览（2026-10-21：图片大图预览 + OCR 快速识别、音频播放）
+    openInFiles: '在文件页打开',
+    previewFailed: '预览加载失败',
+    downloadFailed: '下载失败',
     loadFailed: '加载失败'
   },
 

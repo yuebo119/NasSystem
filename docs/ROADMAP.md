@@ -251,7 +251,7 @@ OCR 用 PaddleOCR 的 ONNX 导出模型（中文场景识别率高于 Tesseract�
 
 外网访问：设置页按 Cloudflare Tunnel / frp / Tailscale 生成配置与操作步骤（不自建中继云），未知方案回 400。
 
-OCR 与媒体库：SimdPaddleOCR PP-OCRv6（纯 C# 推理，无 ONNX Runtime/OpenCV 原生依赖，AOT 友好），SkiaSharp 解码 + 引擎单例懒加载 + 并发闸；识别文本落稀疏表，搜索改「文件名 OR 图内文字」双通道（OCR 文本侧已升级 FTS5 trigram，中文子串检索；短查询回退 LIKE）。媒体库按类型聚合 + 时间线，元数据托管解析（图片尺寸 SkiaSharp、MP4/MKV 盒与 EBML、MP3 帧头/Xing），列表与元数据分离避免滚动触发解码。
+OCR 与媒体库：SimdPaddleOCR PP-OCRv6（纯 C# 推理，无 ONNX Runtime/OpenCV 原生依赖，AOT 友好），SkiaSharp 解码 + 引擎单例懒加载 + 并发闸；识别文本落稀疏表，搜索改「文件名 OR 图内文字」双通道（OCR 文本侧已升级 FTS5 trigram，中文子串检索；短查询回退 LIKE）。媒体库按类型聚合 + 时间线，元数据托管解析（图片尺寸 SkiaSharp、MP4/MKV 盒与 EBML、MP3 帧头/Xing），列表与元数据分离避免滚动触发解码。2026-10-21 媒体库补预览与 OCR 快速识别：图片格点击开预览抽屉（原图 + 一键识别，识别结果落库可被全站搜索命中，不用为认一段字跑去 OCR 页），音频格点击开库内播放器（blob 对象 URL，token 走 fetch 头），视频格保持 HLS 播放对话框；媒体类型扩展名表同步扩充（音频原只有 .mp3，补齐 wav/ogg/flac/m4a/aac/opus 浏览器原生可播集，视频补 avi/flv/wmv）。
 
 清单快照与只读保护（Phase 2）：快照记库内目录树形态（路径/大小/hash/时间）不做物理扫描，diff 四态在 SQL 层按 FULL OUTER JOIN 判定；原生 BackgroundService + 自研最小 cron 驱动定时快照，保留策略超限淘汰；只读保护在 FileService 三条写路径拦截（上传覆盖/Move 整批预检/Delete per-item），WebDAV 与网页端共用 FileService 一处接线全覆盖；3-2-1 导出流式 ZIP 可选 AES-256-CBC 加密（openssl enc 兼容格式）。
 

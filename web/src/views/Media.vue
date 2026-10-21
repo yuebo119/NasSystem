@@ -12,17 +12,19 @@ import Hls from 'hls.js'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Picture, VideoCamera, Headset } from '@element-plus/icons-vue'
+import { Picture, VideoCamera, Headset, Loading, Download } from '@element-plus/icons-vue'
 import { mediaApi, type MediaType } from '@/api/media'
 import { semanticApi, type SemanticHit } from '@/api/semantic'
+import { ocrApi } from '@/api/ocr'
 import AuthImage from '@/components/AuthImage.vue'
-import type { MediaItem, MediaMetadata } from '@/types'
+import type { MediaItem, MediaMetadata, OcrText } from '@/types'
 import { formatSize } from '@/utils/format'
-import { useIsMobile } from '@/utils/useIsMobile'
+import { useIsMobile, useDrawerSize } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
 const router = useRouter()
 const isMobile = useIsMobile()
+const drawerSize = useDrawerSize()
 
 const activeType = ref<MediaType>('image')
 const items = ref<MediaItem[]>([])
@@ -222,6 +224,151 @@ function openInFiles(item: MediaItem) {
   void router.push(`/files${dir}`)
 }
 
+// ─── 媒体预览（2026-10-21：图片/音频从"跳文件页"升级为库内预览）───
+// 图片走大图预览 + OCR 快速识别（与文件页预览抽屉同款能力，媒体库内
+// 直接完成"看图→识字→复制"闭环）；音频走 blob 对象 URL 播放；
+// 视频保持既有 HLS 播放对话框
+const previewVisible = ref(false)
+const previewItem = ref<MediaItem | null>(null)
+const previewUrl = ref('')
+const audioUrl = ref('')
+
+function openPreview(item: MediaItem) {
+  if (item.mediaType === 'video') {
+    playVideo(item)
+    return
+  }
+  previewItem.value = item
+  previewVisible.value = true
+  if (item.mediaType === 'image') {
+    void ensureImageUrl(item)
+    // 打开即取已有识别结果：识别过就直接展示，不用重复点识别
+    ocrText.value = null
+    void loadExistingOcrText(item)
+  } else {
+    void ensureAudioUrl(item)
+  }
+}
+
+// 图片预览：token 走 Authorization 头（裸 <img> 带不上，整站 401），
+// 取 blob 转对象 URL。与 AuthImage 同款，但这里要原图而非缩略图
+async function ensureImageUrl(item: MediaItem) {
+  revokePreviewUrl()
+  try {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`/api/v1/files/download/${item.path.replace(/^\//, '')}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!response.ok) throw new Error(String(response.status))
+    const blob = await response.blob()
+    previewUrl.value = URL.createObjectURL(blob)
+  } catch {
+    ElMessage.error(t('media.previewFailed'))
+  }
+}
+
+// 音频预览：同款 blob 对象 URL（<audio> 无法带 Authorization 头）。
+// 音频文件通常 MB 级，整文件进内存可接受；真有大文件需求再改 Range 流式
+async function ensureAudioUrl(item: MediaItem) {
+  revokeAudioUrl()
+  try {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`/api/v1/files/download/${item.path.replace(/^\//, '')}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!response.ok) throw new Error(String(response.status))
+    const blob = await response.blob()
+    audioUrl.value = URL.createObjectURL(blob)
+  } catch {
+    ElMessage.error(t('media.previewFailed'))
+  }
+}
+
+function revokePreviewUrl() {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = ''
+  }
+}
+
+function revokeAudioUrl() {
+  if (audioUrl.value) {
+    URL.revokeObjectURL(audioUrl.value)
+    audioUrl.value = ''
+  }
+}
+
+function closePreview() {
+  revokePreviewUrl()
+  revokeAudioUrl()
+  previewItem.value = null
+  previewVisible.value = false
+}
+
+// 下载当前预览的媒体（图片/音频通用）：fetch 落 blob 再转对象 URL 点击，
+// 与文件页下载同型（token 禁拼 URL）
+async function downloadPreview(item: MediaItem) {
+  try {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`/api/v1/files/download/${item.path.replace(/^\//, '')}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!response.ok) throw new Error(String(response.status))
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = item.name
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error(t('media.downloadFailed'))
+  }
+}
+
+// ─── 图片 OCR 快速识别（ROADMAP Phase 2 能力接入媒体库）───
+// 与文件页预览抽屉同源同实现：识别结果落库后可被全站搜索命中，
+// 这里只做"快速识别"入口——不用为了认一段字专门跑去 OCR 页
+const ocrText = ref<OcrText | null>(null)
+const ocrLoading = ref(false)
+
+// 打开预览时取已有识别结果（失败静默：没识别过就是没有，不是错误）
+async function loadExistingOcrText(item: MediaItem) {
+  try {
+    const result = await ocrApi.getText(item.path)
+    if (result.success) {
+      ocrText.value = result.data ?? null
+    }
+  } catch {
+    // 查询失败不影响预览主流程
+  }
+}
+
+// 执行识别。首次含模型加载（秒级），loading 态必须显式，
+// 否则用户以为按钮没响应会重复点
+async function runOcr(item: MediaItem) {
+  ocrLoading.value = true
+  try {
+    const result = await ocrApi.recognize(item.path)
+    if (result.success && result.data) {
+      ocrText.value = result.data
+      if (result.data.charCount === 0) {
+        ElMessage.info(t('filesView.ocrNoText'))
+      } else {
+        ElMessage.success(t('filesView.ocrDone', { count: result.data.charCount }))
+      }
+    } else {
+      ElMessage.error(result.error?.message || t('filesView.ocrFailed'))
+    }
+  } catch {
+    ElMessage.error(t('filesView.ocrFailed'))
+  } finally {
+    ocrLoading.value = false
+  }
+}
+
 const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
   { key: 'image', labelKey: 'media.tabImage', icon: Picture },
   { key: 'video', labelKey: 'media.tabVideo', icon: VideoCamera },
@@ -275,7 +422,7 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
             v-for="item in semanticItems"
             :key="item.id"
             class="media-cell"
-            @click="openInFiles(item)"
+            @click="openPreview(item)"
           >
             <div class="cell-thumb">
               <AuthImage :path="item.path" :size="300" />
@@ -293,7 +440,7 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
               v-for="item in group.items"
               :key="item.id"
               class="media-cell"
-              @click="item.mediaType === 'video' ? playVideo(item) : openInFiles(item)"
+              @click="openPreview(item)"
             >
               <div class="cell-thumb">
                 <AuthImage
@@ -334,6 +481,68 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
         style="width: 100%; max-height: 60vh; background: #000"
       />
     </el-dialog>
+
+    <!-- 媒体预览抽屉：图片（大图 + OCR 快速识别）与音频（播放器）。
+         视频不走这里（HLS 对话框）。与全站模态统一右侧抽屉 -->
+    <el-drawer
+      v-model="previewVisible"
+      :title="previewItem?.name ?? ''"
+      :size="drawerSize('560px', '60vw', '760px')"
+      :mask-closable="false"
+      @closed="closePreview"
+    >
+      <div v-if="previewItem" class="media-preview">
+        <!-- 图片：原图预览 -->
+        <div v-if="previewItem.mediaType === 'image'" class="preview-image-wrap">
+          <img v-if="previewUrl" :src="previewUrl" :alt="previewItem.name" class="preview-image" />
+          <el-icon v-else class="preview-placeholder" :size="48"><Picture /></el-icon>
+          <div class="preview-meta">
+            {{ formatSize(previewItem.sizeBytes) }}
+            <span v-if="metaOf(previewItem)?.width"> · {{ metaOf(previewItem)!.width }}×{{ metaOf(previewItem)!.height }}</span>
+          </div>
+        </div>
+
+        <!-- 音频：播放器（blob 对象 URL，token 已由 fetch 带上） -->
+        <div v-else-if="previewItem.mediaType === 'audio'" class="preview-audio-wrap">
+          <div class="audio-icon"><el-icon :size="64"><Headset /></el-icon></div>
+          <div class="audio-name">{{ previewItem.name }}</div>
+          <audio v-if="audioUrl" :src="audioUrl" controls class="audio-player" />
+          <div class="preview-meta">
+            {{ formatSize(previewItem.sizeBytes) }}
+            <span v-if="badgeOf(previewItem)"> · {{ badgeOf(previewItem) }}</span>
+          </div>
+        </div>
+
+        <!-- 图片 OCR 快速识别：识别结果落库，可被全站搜索命中 -->
+        <div v-if="previewItem.mediaType === 'image'" class="ocr-section">
+          <div class="ocr-header">
+            <span class="ocr-title">{{ $t('filesView.ocrTitle') }}</span>
+            <el-button size="small" :loading="ocrLoading" @click="runOcr(previewItem!)">
+              {{ ocrText ? $t('filesView.ocrReRecognize') : $t('filesView.ocrRecognize') }}
+            </el-button>
+          </div>
+          <div v-if="ocrLoading" class="ocr-loading">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            {{ $t('filesView.ocrRunning') }}
+          </div>
+          <div v-else-if="ocrText && ocrText.charCount > 0" class="ocr-text">
+            <pre>{{ ocrText.text }}</pre>
+            <div class="ocr-meta">
+              {{ $t('filesView.ocrMeta', { count: ocrText.charCount, ms: ocrText.elapsedMs }) }}
+            </div>
+          </div>
+          <div v-else-if="ocrText" class="ocr-empty">{{ $t('filesView.ocrNoText') }}</div>
+          <div v-else class="ocr-empty">{{ $t('filesView.ocrHint') }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="closePreview">{{ $t('filesView.close') }}</el-button>
+        <el-button @click="openInFiles(previewItem!)">{{ $t('media.openInFiles') }}</el-button>
+        <el-button type="primary" :icon="Download" @click="downloadPreview(previewItem!)">
+          {{ $t('filesView.downloadFileText') }}
+        </el-button>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -439,4 +648,127 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
     margin: 20px 0;
   }
 }
+
+  // ─── 预览抽屉（2026-10-21 媒体库预览 + OCR 快速识别）───
+  .media-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .preview-image-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+
+    .preview-image {
+      max-width: 100%;
+      max-height: 55vh;
+      border-radius: var(--mac-radius-card);
+      border: 1px solid var(--mac-hairline);
+      box-shadow: var(--card-shadow);
+    }
+
+    .preview-placeholder {
+      color: var(--el-text-color-placeholder);
+      padding: 48px;
+    }
+
+    .preview-meta {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .preview-audio-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 32px 0;
+
+    .audio-icon {
+      width: 120px;
+      height: 120px;
+      border-radius: var(--mac-radius-container);
+      background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3));
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .audio-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+      word-break: break-all;
+      text-align: center;
+    }
+
+    .audio-player {
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .preview-meta {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  // OCR 区与文件页预览抽屉同款结构（同一功能同一视觉）
+  .ocr-section {
+    border-top: 1px solid var(--mac-hairline);
+    padding-top: 16px;
+
+    .ocr-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+
+      .ocr-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--el-text-color-primary);
+      }
+    }
+
+    .ocr-loading {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--el-text-color-secondary);
+    }
+
+    .ocr-text {
+      pre {
+        margin: 0;
+        padding: 16px;
+        background: var(--el-fill-color-light);
+        border-radius: var(--mac-radius-control);
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--el-text-color-primary);
+        white-space: pre-wrap;
+        word-break: break-all;
+        max-height: 240px;
+        overflow: auto;
+      }
+
+      .ocr-meta {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+      }
+    }
+
+    .ocr-empty {
+      font-size: 13px;
+      color: var(--el-text-color-placeholder);
+    }
+  }
 </style>
