@@ -375,6 +375,9 @@ const startAutoRefresh = () => {
     loadRecentFiles()
     loadRecycleBin()
     loadSystemStatus()
+    // 系统信息里的 CPU 占用、句柄数、GC 计数是秒级会变的量，
+    // 不放进 tick 的话它们永远是首屏那份旧值（uptime/内存却在动）
+    loadSystemInfo()
     lastUpdateTime.value = new Date()
   }
   // 不在这里立即 tick：onMounted 的 loadAllData 刚取过同一批数据，

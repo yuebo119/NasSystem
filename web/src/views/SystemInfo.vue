@@ -22,6 +22,8 @@ const systemStatus = ref<any>(null)
 // 外网访问配置（ROADMAP Phase 3）
 const remoteProvider = ref('cloudflare')
 const remoteHostname = ref('')
+// 本地端口：留空用后端默认 6050（与服务端同口径），可改
+const remoteLocalPort = ref<number | undefined>(undefined)
 const remoteConfig = ref<{ provider: string; fileName: string; config: string; steps: string[] } | null>(null)
 const remoteLoading = ref(false)
 
@@ -50,6 +52,7 @@ const generateRemoteConfig = async () => {
       params: {
         provider: remoteProvider.value,
         hostname: remoteHostname.value || undefined,
+        localPort: remoteLocalPort.value || undefined,
         // 配置注释与步骤按界面语言出（后端生成器双语；插值在后端算，
         // 前端拿不到生效域名的回退值，所以文本不能放前端 i18n）
         lang: getLocale() === 'zh-CN' ? 'zh' : 'en'
@@ -175,6 +178,13 @@ onMounted(loadSystemInfo)
               <span class="status-value">{{ systemStatus.threadCount }}</span>
             </div>
           </div>
+          <div class="status-item">
+            <div class="status-icon cpu"><el-icon><InfoFilled /></el-icon></div>
+            <div class="status-info">
+              <span class="status-label">{{ $t('systemInfo.cpuUsage') }}</span>
+              <span class="status-value">{{ systemInfo?.cpu?.processCpuPercent?.toFixed(1) ?? '-' }}%</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -198,6 +208,14 @@ onMounted(loadSystemInfo)
             v-model="remoteHostname"
             :placeholder="$t('remoteAccess.hostnamePlaceholder')"
             style="flex: 1; min-width: 200px"
+          />
+          <el-input-number
+            v-model="remoteLocalPort"
+            :min="1"
+            :max="65535"
+            :controls="false"
+            :placeholder="$t('remoteAccess.localPortPlaceholder')"
+            style="width: 120px"
           />
           <el-button type="primary" :loading="remoteLoading" @click="generateRemoteConfig">
             {{ $t('remoteAccess.generate') }}
@@ -278,6 +296,7 @@ onMounted(loadSystemInfo)
     &.time { background: color-mix(in srgb, var(--el-color-primary) 12%, transparent); color: var(--el-color-primary); }
     &.memory { background: color-mix(in srgb, var(--el-color-warning) 12%, transparent); color: var(--el-color-warning); }
     &.threads { background: color-mix(in srgb, var(--el-color-primary) 12%, transparent); color: var(--el-color-primary); }
+    &.cpu { background: color-mix(in srgb, var(--el-color-danger) 12%, transparent); color: var(--el-color-danger); }
   }
   .status-info { .status-label { display: block; font-size: 12px; color: var(--el-text-color-secondary); } .status-value { display: block; font-size: 14px; font-weight: 500; &.success { color: var(--el-color-success); } } }
 }

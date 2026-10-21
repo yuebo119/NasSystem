@@ -10,10 +10,11 @@
 import { ref, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Picture, Search, InfoFilled } from '@element-plus/icons-vue'
+import { Picture, Search, InfoFilled, FolderOpened } from '@element-plus/icons-vue'
 import { ocrApi } from '@/api/ocr'
 import { systemConfigApi } from '@/api/systemConfig'
 import { useUserStore } from '@/stores/user'
+import DirectoryBrowserDialog from '@/components/DirectoryBrowserDialog.vue'
 
 const { t } = useI18n()
 const userStore = useUserStore()
@@ -22,6 +23,8 @@ const userStore = useUserStore()
 const batchForm = reactive({ path: '/', force: false })
 const batching = ref(false)
 const batchResult = ref<{ total: number; recognized: number; skipped: number; failed: number } | null>(null)
+// 目录浏览器：路径不再纯手打，点选库内目录（与文件页同一棵树）
+const browseVisible = ref(false)
 
 async function runBatch() {
   const path = batchForm.path.trim()
@@ -110,6 +113,9 @@ loadSwitch()
       <div class="batch-form">
         <el-input v-model="batchForm.path" placeholder="/" class="path-input">
           <template #prepend>{{ $t('ocr.pathLabel') }}</template>
+          <template #append>
+            <el-button :icon="FolderOpened" @click="browseVisible = true">{{ $t('ocr.browseDir') }}</el-button>
+          </template>
         </el-input>
         <el-checkbox v-model="batchForm.force">{{ $t('ocr.force') }}</el-checkbox>
         <el-button type="primary" :loading="batching" @click="runBatch">
@@ -153,6 +159,9 @@ loadSwitch()
         <li>{{ $t('ocr.howSingle') }}</li>
       </ul>
     </div>
+
+    <!-- 目录浏览器：点选库内目录，选中后回填批量路径 -->
+    <DirectoryBrowserDialog v-model="browseVisible" @select="path => batchForm.path = path" />
   </div>
 </template>
 

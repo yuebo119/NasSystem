@@ -6,13 +6,14 @@
  * 3-2-1 导出提升为独立菜单页 /export。本页只负责快照的
  * 创建/列表/详情/对比/删除。
  */
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Right } from '@element-plus/icons-vue'
+import { Right, FolderOpened, Search } from '@element-plus/icons-vue'
 import { snapshotApi } from '@/api/snapshot'
 import { formatSize, formatDate } from '@/utils/format'
 import { useDrawerSize } from '@/utils/useIsMobile'
+import DirectoryBrowserDialog from '@/components/DirectoryBrowserDialog.vue'
 import type { Snapshot, SnapshotEntry, SnapshotDiff, SnapshotDiffItem } from '@/types'
 
 const { t } = useI18n()
@@ -45,6 +46,8 @@ async function loadSnapshots() {
 const createDialogVisible = ref(false)
 const createForm = reactive({ rootPath: '/', name: '' })
 const creating = ref(false)
+// 目录浏览器：点选库内目录（与文件页同一棵树），不再纯手打
+const browseVisible = ref(false)
 
 async function submitCreate() {
   if (!createForm.rootPath.trim()) {
@@ -103,6 +106,15 @@ async function loadEntries() {
     detailLoading.value = false
   }
 }
+
+// 条目搜索：按相对路径过滤当前页（后端 entries 无搜索参数，
+// 客户端过滤对单页 100 条量级足够，与 Shares 页同款思路）
+const entrySearch = ref('')
+const filteredDetailEntries = computed(() => {
+  const q = entrySearch.value.trim().toLowerCase()
+  if (!q) return detailEntries.value
+  return detailEntries.value.filter(e => e.relativePath.toLowerCase().includes(q))
+})
 
 // ---- 对比对话框 ----
 const diffDialogVisible = ref(false)
@@ -280,7 +292,11 @@ onMounted(loadSnapshots)
     <el-drawer v-model="createDialogVisible" :title="$t('snapshot.create')" :size="drawerSize('420px', '38vw', '560px')" :mask-closable="false">
       <el-form label-position="top">
         <el-form-item :label="$t('snapshot.rootPath')" required>
-          <el-input v-model="createForm.rootPath" placeholder="/" />
+          <el-input v-model="createForm.rootPath" placeholder="/">
+            <template #append>
+              <el-button :icon="FolderOpened" @click="browseVisible = true">{{ $t('ocr.browseDir') }}</el-button>
+            </template>
+          </el-input>
           <div class="form-hint">{{ $t('snapshot.rootPathHint') }}</div>
         </el-form-item>
         <el-form-item :label="$t('snapshot.name')">
@@ -295,12 +311,21 @@ onMounted(loadSnapshots)
       </template>
     </el-drawer>
 
-    <!-- 快照详情抽屉（条目分页） -->
+    <!-- 快照详情抽屉（条目分页 + 当前页路径搜索） -->
     <el-drawer v-model="detailVisible" :title="$t('snapshot.detail')" size="520px">
       <template #header>
         <span>{{ detailSnapshot ? snapshotLabel(detailSnapshot) : '' }}</span>
       </template>
-      <el-table :data="detailEntries" v-loading="detailLoading" size="small">
+      <el-input
+        v-model="entrySearch"
+        :placeholder="$t('snapshot.searchEntries')"
+        clearable
+        size="small"
+        style="margin-bottom: 12px"
+      >
+        <template #prefix><el-icon><Search /></el-icon></template>
+      </el-input>
+      <el-table :data="filteredDetailEntries" v-loading="detailLoading" size="small">
         <el-table-column prop="relativePath" :label="$t('snapshot.path')" min-width="220" />
         <el-table-column :label="$t('snapshot.type')" width="70">
           <template #default="{ row }">
@@ -312,6 +337,9 @@ onMounted(loadSnapshots)
             {{ asEntry(row).isFolder ? $t('common.none') : formatSize(asEntry(row).sizeBytes) }}
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty :description="entrySearch ? $t('shares.noSearchResults') : $t('snapshot.noEntries')" :image-size="60" />
+        </template>
       </el-table>
       <el-pagination
         v-model:current-page="detailPage"
@@ -388,6 +416,9 @@ onMounted(loadSnapshots)
         </el-table>
       </template>
     </el-drawer>
+
+    <!-- 目录浏览器：选中后回填创建快照的路径 -->
+    <DirectoryBrowserDialog v-model="browseVisible" @select="path => createForm.rootPath = path" />
   </div>
 </template>
 

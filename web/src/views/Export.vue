@@ -9,14 +9,17 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Download } from '@element-plus/icons-vue'
+import { Download, FolderOpened } from '@element-plus/icons-vue'
 import { exportApi } from '@/api/snapshot'
+import DirectoryBrowserDialog from '@/components/DirectoryBrowserDialog.vue'
 
 const { t } = useI18n()
 
 const rootPath = ref('/')
 const password = ref('')
 const exporting = ref(false)
+// 目录浏览器：点选库内目录（与文件页同一棵树），不再纯手打
+const browseVisible = ref(false)
 
 async function submit() {
   const path = rootPath.value.trim()
@@ -58,7 +61,11 @@ async function submit() {
     <div class="export-card">
       <el-form label-position="top">
         <el-form-item :label="$t('export.rootPath')" required>
-          <el-input v-model="rootPath" placeholder="/" />
+          <el-input v-model="rootPath" placeholder="/">
+            <template #append>
+              <el-button :icon="FolderOpened" @click="browseVisible = true">{{ $t('ocr.browseDir') }}</el-button>
+            </template>
+          </el-input>
           <div class="form-hint">{{ $t('export.rootPathHint') }}</div>
         </el-form-item>
         <el-form-item :label="$t('export.password')">
@@ -85,6 +92,9 @@ async function submit() {
         <li>{{ $t('export.principleItem3') }}</li>
       </ul>
     </div>
+
+    <!-- 目录浏览器：选中后回填导出路径 -->
+    <DirectoryBrowserDialog v-model="browseVisible" @select="path => rootPath = path" />
   </div>
 </template>
 

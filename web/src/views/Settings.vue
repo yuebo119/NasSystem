@@ -8,12 +8,13 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { User, Lock, Monitor, Setting } from '@element-plus/icons-vue'
+import { User, Lock, Monitor, Setting, PieChart } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
 import { getCurrentTheme, type ThemeType, setTheme } from '@/utils/theme'
 import { setLocale, getLocale, localeOptions, type LocaleType } from '@/locales'
+import { formatSize } from '@/utils/format'
 
 const { t } = useI18n()
 const userStore = useUserStore()
@@ -142,6 +143,21 @@ const roleDisplay = computed(() => {
     default: return role || '-'
   }
 })
+
+// 个人存储配额（数据来自 users/me：quotaBytes/usedBytes/usagePercentage）。
+// 无配额（quotaBytes 为空或 0）时只展示已用空间，不出进度条
+const quotaUsed = computed(() => userStore.user?.usedBytes ?? 0)
+const quotaLimit = computed(() => {
+  const q = userStore.user?.quotaBytes
+  return q && q > 0 ? q : null
+})
+const quotaPercentage = computed(() => userStore.user?.usagePercentage ?? 0)
+// 进度条语义色：≥90% 红、≥70% 橙、其余绿（与全站 danger/warning/success 对齐）
+const quotaProgressColor = computed(() => {
+  if (quotaPercentage.value >= 90) return 'var(--el-color-danger)'
+  if (quotaPercentage.value >= 70) return 'var(--el-color-warning)'
+  return 'var(--el-color-success)'
+})
 </script>
 
 <template>
@@ -187,6 +203,37 @@ const roleDisplay = computed(() => {
                 <el-button type="primary" @click="saveProfile" :loading="saving">{{ t('settings.saveProfile') }}</el-button>
               </el-form-item>
             </el-form>
+          </div>
+        </div>
+
+        <!-- 存储配额卡片（2026-10-21 补齐：用户看不到自己的配额用量） -->
+        <div class="settings-card">
+          <div class="card-header">
+            <div class="card-icon quota"><el-icon :size="20"><PieChart /></el-icon></div>
+            <div class="card-title">
+              <h3>{{ t('settings.quotaTitle') }}</h3>
+              <p>{{ t('settings.quotaDesc') }}</p>
+            </div>
+          </div>
+          <div class="card-content">
+            <div class="quota-summary">
+              <span class="quota-item">
+                {{ t('settings.quotaUsed') }}
+                <strong>{{ formatSize(quotaUsed) }}</strong>
+              </span>
+              <span class="quota-item" v-if="quotaLimit">
+                {{ t('settings.quotaLimit') }}
+                <strong>{{ formatSize(quotaLimit) }}</strong>
+              </span>
+              <el-tag v-else type="info" size="small">{{ t('settings.quotaUnlimited') }}</el-tag>
+            </div>
+            <el-progress
+              v-if="quotaLimit"
+              :percentage="Math.min(100, quotaPercentage)"
+              :color="quotaProgressColor"
+              :stroke-width="10"
+            />
+            <div v-else class="quota-hint">{{ t('settings.quotaUnlimitedHint') }}</div>
           </div>
         </div>
 
@@ -287,10 +334,19 @@ const roleDisplay = computed(() => {
       &.profile { background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3)); }
       &.security { background: linear-gradient(135deg, var(--el-color-danger), var(--el-color-danger-light-3)); }
       &.appearance { background: linear-gradient(135deg, var(--el-color-success), var(--el-color-success-light-3)); }
+      &.quota { background: linear-gradient(135deg, var(--el-color-warning), var(--el-color-warning-light-3)); }
     }
     .card-title { h3 { margin: 0; font-size: 16px; font-weight: 600; } p { margin: 4px 0 0; font-size: 13px; color: var(--el-text-color-secondary); } }
   }
   .card-content { padding: 24px; }
+
+  .quota-summary { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+    .quota-item { font-size: 13px; color: var(--el-text-color-secondary);
+      strong { display: block; font-size: 18px; color: var(--el-text-color-primary); margin-top: 2px; }
+    }
+  }
+
+  .quota-hint { font-size: 12px; color: var(--el-text-color-secondary); }
 }
 
 .setting-item { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--el-border-color-lighter);
