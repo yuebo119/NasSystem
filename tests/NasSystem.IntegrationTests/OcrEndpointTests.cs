@@ -10,6 +10,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Domain.Entities;
 using SkiaSharp;
 using Xunit;
@@ -89,6 +90,95 @@ public class OcrEndpointTests : ApiTestBase, IDisposable
         search.StatusCode.Should().Be(HttpStatusCode.OK);
         var searchBody = await search.Content.ReadAsStringAsync();
         searchBody.Should().Contain(fileName, "搜图内文字必须能找到该图片（文件名并无此词）");
+    }
+
+    [Fact]
+    public async Task Recognize_ReturnsNormalizedRegions_MatchingDrawnPosition()
+    {
+        // 2026-10-21 OCR 叠加定位：识别响应必须带行区域（归一化四角），
+        // 且坐标与画图时的已知位置吻合——CreateTextImage 把 40px 文字画在
+        // (30,110)、画布 600×200，归一化后 min-x≈0.05、min-y≈0.35。
+        // 锁坐标而不只锁"有区域"：位置错了前端叠加层会错位，肉眼才看得出来
+        var (username, token) = await SeedOcrUserAsync();
+        await EnsureClassPoolAsync();
+
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var fileName = $"{suffix}-regions.png";
+        CreateTextImage(Path.Combine(ClassStorageRoot, fileName), "库存盘点单 2026");
+        await UploadAsync(token, fileName);
+
+        var recognize = await Client.SendAsync(CreateBearerRequest(
+            HttpMethod.Post, $"/api/v1/files/ocr/{fileName}", token));
+        recognize.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await recognize.Content.ReadAsStringAsync());
+        var regions = doc.RootElement.GetProperty("data").GetProperty("regions");
+        regions.ValueKind.Should().Be(JsonValueKind.Array, "识别响应必须带 regions 数组");
+        regions.GetArrayLength().Should().BeGreaterThan(0, "带文字的图至少有一个行区域");
+
+        var first = regions[0];
+        var points = first.GetProperty("points");
+        points.GetArrayLength().Should().Be(8, "四角坐标 8 值");
+        var xs = new List<float>();
+        var ys = new List<float>();
+        for (var i = 0; i < 8; i++)
+        {
+            var v = points[i].GetSingle();
+            v.Should().BeInRange(0f, 1f, "归一化坐标必须在 0..1");
+            (i % 2 == 0 ? xs : ys).Add(v);
+        }
+        // 与画图位置对账（容差 0.1：PP-OCR 检测框与字体度量框有出入）
+        xs.Min().Should().BeInRange(0f, 0.15f, $"文字画在 x=30/600=0.05，实际 min-x={xs.Min()}");
+        ys.Min().Should().BeInRange(0.25f, 0.45f, $"文字画在 y=70~110/200=0.35~0.55，实际 min-y={ys.Min()}");
+        first.GetProperty("text").GetString().Should().Contain("库存");
+    }
+
+    [Fact]
+    public async Task GetText_LegacyRowWithoutRegions_DegradesToEmptyArray()
+    {
+        // 存量行（识别于叠加特性之前）Regions 为 NULL：GET 必须降级为空数组
+        // 而不是 null/500——位置信息是增强，缺了不能影响文本主流程
+        var (username, token) = await SeedOcrUserAsync();
+        await EnsureClassPoolAsync();
+
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var fileName = $"{suffix}-legacy.png";
+        CreateTextImage(Path.Combine(ClassStorageRoot, fileName), "旧数据");
+        await UploadAsync(token, fileName);
+
+        // 绕过实体直插一行 Regions=NULL 的存量形态（新代码路径 Regions 存 null 即空列表）
+        var fileItemId = await GetFileItemIdAsync(token, fileName);
+        var (scope, _, _, _, _, unitOfWork) = CreateDataScope();
+        using (scope)
+        {
+            var sessions = scope.ServiceProvider
+                .GetRequiredService<NasSystem.Infrastructure.Persistence.PalormSessionHolder>();
+            var db = await sessions.GetAsync();
+            await db.ExecuteAsync(
+                System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                    """
+                    INSERT INTO FileOcrTexts (Id, FileItemId, Text, CharCount, Model, ElapsedMs, CreatedAt)
+                    VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})
+                    """,
+                    Guid.NewGuid(), fileItemId, "旧数据", 3, "legacy-model", 1, DateTime.UtcNow));
+        }
+
+        var getText = await Client.SendAsync(CreateBearerRequest(
+            HttpMethod.Get, $"/api/v1/files/ocr/{fileName}", token));
+        getText.StatusCode.Should().Be(HttpStatusCode.OK, "存量行不能把 GET 打挂");
+        using var doc = JsonDocument.Parse(await getText.Content.ReadAsStringAsync());
+        var regions = doc.RootElement.GetProperty("data").GetProperty("regions");
+        regions.ValueKind.Should().Be(JsonValueKind.Array);
+        regions.GetArrayLength().Should().Be(0, "无位置信息的存量行降级为空数组");
+        doc.RootElement.GetProperty("data").GetProperty("text").GetString().Should().Be("旧数据");
+    }
+
+    private async Task<Guid> GetFileItemIdAsync(string token, string fileName)
+    {
+        var info = await Client.SendAsync(CreateBearerRequest(
+            HttpMethod.Get, $"/api/v1/files/info/{fileName}", token));
+        using var doc = JsonDocument.Parse(await info.Content.ReadAsStringAsync());
+        return Guid.Parse(doc.RootElement.GetProperty("data").GetProperty("id").GetString()!);
     }
 
     [Fact]

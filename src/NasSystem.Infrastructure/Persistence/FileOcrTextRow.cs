@@ -27,6 +27,14 @@ public partial class FileOcrTextRow
     [Column("Text")]
     public string Text { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 行区域坐标 JSON（2026-10-21 OCR 叠加定位）。null = 无位置信息：
+    /// 存量行（列迁移前识别的）与未产生区域的新行同形，读取侧统一降级
+    /// 为纯文本展示。列由 InitializeDatabaseAsync 的幂等加列迁移补齐
+    /// </summary>
+    [Column("Regions")]
+    public string? Regions { get; set; }
+
     [Column("CharCount")]
     public int CharCount { get; set; }
 

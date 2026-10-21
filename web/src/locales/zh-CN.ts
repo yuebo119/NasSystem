@@ -892,6 +892,11 @@ export default {
     ocrReRecognize: '重新识别',
     ocrRunning: '识别中，首次需加载模型约需数秒…',
     ocrHint: '尚未识别。识别后图内文字可被全站搜索命中（扫扫描件、截图场景）',
+    // OCR 叠加查看（2026-10-21）：文字按坐标叠回图片原位后的清单与复制
+    ocrTextList: '图中文字（与位置对应）',
+    ocrCopyAll: '复制全部',
+    ocrCopied: '已复制识别文字',
+    ocrCopyFailed: '复制失败',
     ocrNoText: '未识别到文字',
     ocrDone: '已识别 {count} 个字符',
     ocrFailed: '识别失败',

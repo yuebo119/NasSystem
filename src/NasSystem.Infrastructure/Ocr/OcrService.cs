@@ -143,8 +143,7 @@ public sealed class OcrService(
             return Result<OcrTextDto?>.Success(null);
         }
 
-        return Result<OcrTextDto?>.Success(new OcrTextDto(
-            item.Id, item.Path, ocrText.Text, ocrText.CharCount,
+        return Result<OcrTextDto?>.Success(ToDto(item, ocrText.Text, ocrText.Regions,
             ocrText.Model, ocrText.ElapsedMs, ocrText.CreatedAt));
     }
 
@@ -163,6 +162,7 @@ public sealed class OcrService(
             var started = System.Diagnostics.Stopwatch.StartNew();
 
             string text;
+            List<NasSystem.Domain.Entities.OcrTextRegion> regions = [];
             using (var bitmap = SKBitmap.Decode(item.PhysicalPath))
             {
                 if (bitmap is null)
@@ -196,6 +196,9 @@ public sealed class OcrService(
                         pixels, bgra.Width, bgra.Height, bgra.RowBytes,
                         Sdcb.SimdPaddleOCR.ImagePixelFormat.Bgra32);
                     text = ocrResult.Text;
+                    // 行区域（2026-10-21 OCR 叠加定位）：引擎每行带四角像素坐标，
+                    // 归一化到 0..1 后随文本落库——前端按显示尺寸比例换算叠回原位
+                    regions = BuildRegions(ocrResult.Lines, bgra.Width, bgra.Height);
                 }
                 finally
                 {
@@ -209,22 +212,21 @@ public sealed class OcrService(
             if (existing is null)
             {
                 var created = NasSystem.Domain.Entities.FileOcrText.Create(
-                    item.Id, text, PaddleOcrEngineHolder.ModelName, (int)started.ElapsedMilliseconds);
+                    item.Id, text, PaddleOcrEngineHolder.ModelName, (int)started.ElapsedMilliseconds, regions);
                 await ocrTextRepository.AddAsync(created, cancellationToken);
             }
             else
             {
-                existing.UpdateText(text, PaddleOcrEngineHolder.ModelName, (int)started.ElapsedMilliseconds);
+                existing.UpdateText(text, PaddleOcrEngineHolder.ModelName, (int)started.ElapsedMilliseconds, regions);
                 ocrTextRepository.Update(existing);
             }
             await unitOfWork.SaveChangesAsync(cancellationToken);
 
             logger.LogInformation(
-                "OCR 完成: FileItemId={FileItemId}, 字符数={Chars}, 耗时={Ms}ms",
-                item.Id, text.Length, started.ElapsedMilliseconds);
+                "OCR 完成: FileItemId={FileItemId}, 字符数={Chars}, 行区域={Regions}, 耗时={Ms}ms",
+                item.Id, text.Length, regions.Count, started.ElapsedMilliseconds);
 
-            return Result<OcrTextDto>.Success(new OcrTextDto(
-                item.Id, item.Path, text, text.Length,
+            return Result<OcrTextDto>.Success(ToDto(item, text, regions,
                 PaddleOcrEngineHolder.ModelName, (int)started.ElapsedMilliseconds, DateTime.UtcNow));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -233,6 +235,46 @@ public sealed class OcrService(
             return Result<OcrTextDto>.Failure(new Error("Ocr.Failed", $"识别失败: {ex.Message}"));
         }
     }
+
+    /// <summary>
+    /// 引擎行结果 → 归一化区域。坐标除以图片宽高转 0..1：显示尺寸随布局变化，
+    /// 前端按比例换算即用，与图片存储分辨率解耦。越界坐标钳到 0..1
+    ///（引擎偶发给出贴边外扩值，不钳会让前端文字层画出容器）
+    /// </summary>
+    private static List<NasSystem.Domain.Entities.OcrTextRegion> BuildRegions(
+        Sdcb.SimdPaddleOCR.PaddleOcrLine[] lines, int width, int height)
+    {
+        if (lines is null || width <= 0 || height <= 0)
+            return [];
+
+        var regions = new List<NasSystem.Domain.Entities.OcrTextRegion>(lines.Length);
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrEmpty(line.Text))
+                continue;
+            var box = line.Box;
+            var points = new float[8];
+            var xs = new[] { box.X1, box.X2, box.X3, box.X4 };
+            var ys = new[] { box.Y1, box.Y2, box.Y3, box.Y4 };
+            for (var i = 0; i < 4; i++)
+            {
+                points[i * 2] = Math.Clamp(xs[i] / width, 0f, 1f);
+                points[i * 2 + 1] = Math.Clamp(ys[i] / height, 0f, 1f);
+            }
+            regions.Add(new NasSystem.Domain.Entities.OcrTextRegion(line.Text, points));
+        }
+        return regions;
+    }
+
+    private static OcrTextDto ToDto(
+        NasSystem.Domain.Entities.FileItem item,
+        string text,
+        IReadOnlyList<NasSystem.Domain.Entities.OcrTextRegion> regions,
+        string model,
+        int elapsedMs,
+        DateTime createdAt) =>
+        new(item.Id, item.Path, text, text.Length, model, elapsedMs, createdAt,
+            regions.Select(r => new OcrTextRegionDto(r.Text, r.Points)).ToList());
 
     private static string NormalizePath(string path) =>
         NasSystem.Domain.ValueObjects.FilePath.Normalize(path);

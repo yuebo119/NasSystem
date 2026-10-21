@@ -210,6 +210,13 @@ public static class DependencyInjection
         // 建表（幂等）。ITM-N7 的 SQLite 并发三件套由 provider 在连接级自动设置
         await db.MigrateAsync();
 
+        // FileOcrTexts.Regions 加列迁移（2026-10-21 OCR 叠加定位）：行模型新增
+        // 可空列，MigrateAsync 对存量库不 ALTER（只建缺失的表）。检测列不存在
+        // 才补：SQLite ADD COLUMN 只增不删，重复执行报错，故先查 pragma。
+        // 存量行的 Regions 为 NULL，读取侧（FileOcrText.Restore → ParseMany）
+        // 统一降级为空列表——识别于本特性之前的图片无位置信息，前端纯文本展示
+        await MigrateOcrRegionsColumnAsync(db, logger);
+
         // 带 WHERE 过滤条件的部分索引，生成器不产出，手工补。
         // 普通索引已随行模型的 [Index] 声明交给 MigrateAsync，不在这里重复。
         // 三条分别是：Path 唯一部分索引（TOCTOU 兜底，软删记录不占路径）、
@@ -315,6 +322,29 @@ public static class DependencyInjection
         /// NasSystem__AdminPassword，与 Jwt__SecretKey 同款双下划线约定）
         await SeedDataAsync(
             db, storagePath, environmentName, configuration["NasSystem:AdminPassword"], logger);
+    }
+
+    /// <summary>
+    /// FileOcrTexts.Regions 可空列补建（2026-10-21 OCR 叠加定位）。
+    /// 幂等：pragma table_info 查到列已存在直接返回，新库建表时列已在
+    /// （行模型声明），存量库执行一次 ALTER。ALTER 本身不可逆但只增可空列，
+    /// 无数据损失路径
+    /// </summary>
+    public static async Task MigrateOcrRegionsColumnAsync(
+        DataSession<SqliteProvider> db,
+        Microsoft.Extensions.Logging.ILogger logger)
+    {
+        var columnCount = await db.ScalarAsync<long>(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                """SELECT COUNT(*) FROM pragma_table_info('FileOcrTexts') WHERE name = 'Regions'"""),
+            false);
+        if (columnCount > 0)
+            return;
+
+        await db.ExecuteAsync(
+            System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                """ALTER TABLE "FileOcrTexts" ADD COLUMN "Regions" TEXT NULL"""));
+        logger.LogInformation("已迁移 FileOcrTexts：新增 Regions 列（OCR 行区域坐标，存量识别结果无位置信息按纯文本降级）");
     }
 
     /// <summary>

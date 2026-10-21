@@ -126,6 +126,16 @@ export interface OcrText {
   model: string
   elapsedMs: number
   createdAt: string
+  // 按行的位置区域（2026-10-21 OCR 叠加定位）。与 text 的行同序，
+  // 坐标为归一化四角（8 个 0..1 float：x1,y1,x2,y2,x3,y3,x4,y4）。
+  // 存量识别结果（叠加特性之前）为空数组，前端降级纯文本展示
+  regions: OcrTextRegion[]
+}
+
+// OCR 行区域：一行文字 + 归一化四角坐标（原点左上，相对图片宽高）
+export interface OcrTextRegion {
+  text: string
+  points: number[]
 }
 
 // 目录批量 OCR 结果

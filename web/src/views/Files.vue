@@ -22,6 +22,7 @@ import {
 import type { FileItem, FileVersion, OcrText, VersionComparison } from '@/types'
 import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
 import { createPreviewUrlManager } from '@/utils/previewUrl'
+import OcrImageViewer from '@/components/OcrImageViewer.vue'
 import { useDrawerSize, useIsMobile } from '@/utils/useIsMobile'
 
 // ITM-M3 收尾：Files 页 i18n 全量接入
@@ -1807,6 +1808,19 @@ onUnmounted(() => {
             <el-icon class="is-loading"><Loading /></el-icon>
             {{ $t('filesView.ocrRunning') }}
           </div>
+          <!-- 有位置区域：叠加查看（文字按坐标叠回图片原位，可选中复制）。
+               预览大图在抽屉上方（getPreviewUrl），组件出清单与复制入口 -->
+          <div v-else-if="ocrText && ocrText.regions.length > 0" class="ocr-text">
+            <OcrImageViewer
+              :image-url="getPreviewUrl(previewItem!) ?? ''"
+              :regions="ocrText.regions"
+              :alt="previewItem!.name"
+            />
+            <div class="ocr-meta">
+              {{ $t('filesView.ocrMeta', { count: ocrText.charCount, ms: ocrText.elapsedMs }) }}
+            </div>
+          </div>
+          <!-- 存量识别结果（无位置区域）：纯文本降级展示 -->
           <div v-else-if="ocrText && ocrText.charCount > 0" class="ocr-text">
             <pre>{{ ocrText.text }}</pre>
             <div class="ocr-meta">

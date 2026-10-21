@@ -40,7 +40,8 @@ public interface IOcrService
 // DTO
 // -------------------------------------------------------------------------
 
-/// <summary>OCR 文本 DTO</summary>
+/// <summary>OCR 文本 DTO。Regions 为按行的位置区域（归一化四角），
+/// 与 Text 的行同序；存量识别结果为空列表，前端降级纯文本展示</summary>
 public sealed record OcrTextDto(
     Guid FileItemId,
     string Path,
@@ -48,7 +49,11 @@ public sealed record OcrTextDto(
     int CharCount,
     string Model,
     int ElapsedMs,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    IReadOnlyList<OcrTextRegionDto> Regions);
+
+/// <summary>OCR 行区域 DTO：一行文字 + 归一化四角坐标（8 个 float，0..1）</summary>
+public sealed record OcrTextRegionDto(string Text, float[] Points);
 
 /// <summary>批量识别结果</summary>
 public sealed record OcrBatchResultDto(

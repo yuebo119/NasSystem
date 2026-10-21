@@ -169,7 +169,7 @@ public static class RowMapper
     public static FileOcrText ToDomain(this FileOcrTextRow row) =>
         FileOcrText.Restore(
             row.Id, row.FileItemId, row.Text, row.CharCount,
-            row.Model, row.ElapsedMs, row.CreatedAt);
+            row.Model, row.ElapsedMs, row.CreatedAt, row.Regions);
 
     public static FileOcrTextRow ToRow(this FileOcrText entity) =>
         new()
@@ -177,6 +177,11 @@ public static class RowMapper
             Id = entity.Id,
             FileItemId = entity.FileItemId,
             Text = entity.Text,
+            // 区域坐标存 JSON 文本列（2026-10-21 OCR 叠加定位）。空列表存 null
+            // 而非 "[]"：null 与存量行同形，读取侧一律按"无位置信息"降级
+            Regions = entity.Regions.Count > 0
+                ? System.Text.Json.JsonSerializer.Serialize(entity.Regions)
+                : null,
             CharCount = entity.CharCount,
             Model = entity.Model,
             ElapsedMs = entity.ElapsedMs,

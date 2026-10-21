@@ -17,6 +17,7 @@ import { mediaApi, type MediaType } from '@/api/media'
 import { semanticApi, type SemanticHit } from '@/api/semantic'
 import { ocrApi } from '@/api/ocr'
 import AuthImage from '@/components/AuthImage.vue'
+import OcrImageViewer from '@/components/OcrImageViewer.vue'
 import type { MediaItem, MediaMetadata, OcrText } from '@/types'
 import { formatSize } from '@/utils/format'
 import { useIsMobile, useDrawerSize } from '@/utils/useIsMobile'
@@ -525,6 +526,15 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
             <el-icon class="is-loading"><Loading /></el-icon>
             {{ $t('filesView.ocrRunning') }}
           </div>
+          <!-- 有位置区域：叠加查看（文字按坐标叠回图片原位，可选中复制、
+               清单与叠加层双向高亮）。图片即上方预览大图，组件只出清单与复制入口 -->
+          <div v-else-if="ocrText && ocrText.regions.length > 0" class="ocr-text">
+            <OcrImageViewer :image-url="previewUrl" :regions="ocrText.regions" :alt="previewItem!.name" />
+            <div class="ocr-meta">
+              {{ $t('filesView.ocrMeta', { count: ocrText.charCount, ms: ocrText.elapsedMs }) }}
+            </div>
+          </div>
+          <!-- 存量识别结果（无位置区域）：纯文本降级展示 -->
           <div v-else-if="ocrText && ocrText.charCount > 0" class="ocr-text">
             <pre>{{ ocrText.text }}</pre>
             <div class="ocr-meta">
