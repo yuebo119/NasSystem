@@ -100,11 +100,19 @@ public class SchemaAndEnumTests : IDisposable
             [
                 "IX_FileItems_Hash", "IX_FileItems_IsDeleted", "IX_FileItems_OwnerId",
                 "IX_FileItems_ParentId", "IX_FileItems_ParentId_Name",
+                // IX_FileItems_Path 是全量 BINARY 索引（OR 形态的等值支）、
+                // IX_FileItems_Path_Nocase 是全量 NOCASE 索引（LIKE 支）。
+                // case_sensitive_like 默认 OFF，BINARY 索引吃不到 LIKE 优化，
+                // 两种排序规则各司其职（2026-10-20 探针实测）
+                "IX_FileItems_Path",
+                "IX_FileItems_Path_Nocase",
+                "IX_FileItems_Path_Prefix",
                 // UX_FileItems_Path_Active 是 2026-10-19 改名的 Path 唯一
                 // 部分索引：旧名 IX_FileItems_Path 与 EF 遗产索引同名，
-                // IF NOT EXISTS 在存量库直接跳过，唯一兜底从未真正建起来
+                // IF NOT EXISTS 在存量库直接跳过，唯一兜底从未真正建起来。
+                // 改名后 IX_FileItems_Path 这个名字被全量索引重新启用，
+                // 含义与 EF 遗产相同（不带删除态条件的普通索引）
                 "UX_FileItems_Path_Active",
-                "IX_FileItems_Path_Prefix",
                 // 首页"最近文件"的复合部分索引（2026-10-20 审计补）
                 "IX_FileItems_OwnerId_CreatedAt",
                 "IX_FileItems_StoragePoolId",
@@ -150,8 +158,10 @@ public class SchemaAndEnumTests : IDisposable
     [Fact]
     public void Indexes_ActuallyServeTheHotQueries()
     {
-        // 索引存在不等于用得上。对四条热路径跑 EXPLAIN QUERY PLAN，
-        // 确认是全表 SCAN 还是走索引。上一轮迁移后这四条全是 SCAN。
+        // 索引存在不等于用得上。对热路径跑 EXPLAIN QUERY PLAN，
+        // 确认是全表 SCAN 还是走索引。上一轮迁移后前四条全是 SCAN，
+        // 2026-10-20 又补了子树三条。收集完一次性断言：FluentAssertions
+        // 撞停只会报第一条，一次看全失败清单才知道是全局性退化还是个别查询
         using var connection = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly");
         connection.Open();
 
@@ -166,18 +176,41 @@ public class SchemaAndEnumTests : IDisposable
             // 首页"最近文件"：过滤 + 排序都应被 (OwnerId, CreatedAt DESC)
             // 复合部分索引吃掉。2026-10-20 审计前这条是全表 SCAN + TEMP B-TREE
             ("最近文件", "SELECT * FROM FileItems WHERE IsDeleted = 0 AND OwnerId = 'x' ORDER BY CreatedAt DESC LIMIT 6"),
+            // 快照采集与子树操作（含软删语义，不能用 IsDeleted=0 部分索引），
+            // 2026-10-20 审计实测三条全是覆盖索引全扫。根因是 case_sensitive_like
+            // 默认 OFF，LIKE 优化要求 NOCASE 索引，当时只有 BINARY 索引
+            ("子树采集(快照)", "SELECT Path FROM FileItems WHERE Path = '/x' OR Path LIKE '/x/%' ESCAPE '#'"),
+            ("后代遍历(永久删)", "SELECT Path FROM FileItems WHERE Path LIKE '/x/%' ESCAPE '#'"),
+            // 子树软删是真实 UPDATE：带 IsDeleted=0，两个部分索引就能服务，
+            // 不需要全量索引兜底（探针实测 MULTI-INDEX OR）
+            ("子树软删(写路径)", "UPDATE FileItems SET IsDeleted = 1 WHERE (Path = '/x' OR Path LIKE '/x/%' ESCAPE '#') AND IsDeleted = 0"),
         };
 
+        var failures = new List<string>();
         foreach (var (label, sql) in plans)
         {
             using var command = connection.CreateCommand();
             command.CommandText = "EXPLAIN QUERY PLAN " + sql;
-            using var reader = command.ExecuteReader();
-            reader.Read().Should().BeTrue($"{label} 应有查询计划");
-            var plan = reader.GetString(reader.FieldCount - 1);
-            plan.Should().NotContain("SCAN", $"{label} 不应全表扫描");
-            plan.Should().NotContain("TEMP B-TREE", $"{label} 不应再付排序代价");
+            var lines = new List<string>();
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                    lines.Add(reader.GetString(reader.FieldCount - 1));
+            }
+            if (lines.Count == 0)
+            {
+                failures.Add($"{label} 没有查询计划");
+                continue;
+            }
+            // 全行合起来判断：OR 形态会被拆成 MULTI-INDEX OR 多行计划，
+            // 只读第一行会漏掉分支里的 SCAN
+            var plan = string.Join(" | ", lines);
+            if (plan.Contains("SCAN", StringComparison.Ordinal))
+                failures.Add($"{label} 全表扫描，实际计划：{plan}");
+            if (plan.Contains("TEMP B-TREE", StringComparison.Ordinal))
+                failures.Add($"{label} 付了排序代价，实际计划：{plan}");
         }
+        failures.Should().BeEmpty("所有热查询都应走索引且不付排序代价");
     }
 
     [Fact]

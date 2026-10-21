@@ -213,12 +213,24 @@ public static class DependencyInjection
         // 带 WHERE 过滤条件的部分索引，生成器不产出，手工补。
         // 普通索引已随行模型的 [Index] 声明交给 MigrateAsync，不在这里重复。
         // 三条分别是：Path 唯一部分索引（TOCTOU 兜底，软删记录不占路径）、
-        // Path 前缀 NOCASE 部分索引（服务后代遍历的 LIKE 'prefix%'）、
+        // Path 前缀 NOCASE 部分索引（服务 IsDeleted=0 过滤下的后代 LIKE）、
         // Email 唯一部分索引（NULL 邮箱不参与唯一性，否则第二个空邮箱用户插不进去）。
         // IF NOT EXISTS 保证幂等，存量库重复执行无副作用。
+        // IX_FileItems_Path 是全量（非部分）索引：快照采集/子树软删/后代遍历
+        // 这些"不论删除态"的查询用不上 IsDeleted=0 的部分索引，2026-10-20
+        // 审计实测三条全是 SCAN FileItems。存量库上这个索引是 EF 遗产本已存在，
+        // 新库（MigrateAsync 不产出）补建后才与存量 schema 对齐
+        // IX_FileItems_Path_Nocase 是全量 NOCASE 索引：SQLite 的 LIKE 优化
+        // 要求索引排序规则与 LIKE 的大小写敏感性一致——case_sensitive_like
+        // 默认 OFF（LIKE 大小写不敏感），BINARY 索引因此被优化直接放弃，
+        // 实测 LIKE 只能退化成覆盖索引全扫。NOCASE 全量索引补上后，
+        // 快照采集/子树软删/恢复/路径重写这些不论删除态的 LIKE 全部变
+        // MULTI-INDEX OR 的两支 SEARCH（2026-10-20 探针实测）
         await db.ExecuteAsync(
             System.Runtime.CompilerServices.FormattableStringFactory.Create(
             """
+            CREATE INDEX IF NOT EXISTS IX_FileItems_Path ON FileItems(Path);
+            CREATE INDEX IF NOT EXISTS IX_FileItems_Path_Nocase ON FileItems(Path COLLATE NOCASE);
             CREATE INDEX IF NOT EXISTS IX_FileItems_Path_Prefix ON FileItems(Path COLLATE NOCASE) WHERE "IsDeleted" = 0;
             CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Email ON Users(Email) WHERE [Email] IS NOT NULL;
             -- 首页"最近文件"（GetRecentAsync：IsDeleted=0 AND OwnerId=? ORDER BY
