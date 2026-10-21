@@ -54,6 +54,11 @@ const recentFiles = ref<any[]>([])
 let unsubscribeGlobal: (() => void) | null = null
 let stopRealtimeStateWatch: (() => void) | null = null
 let realtimeDebounceTimer: number | null = null
+// 订阅 promise 可能在组件卸载后才 resolve（SignalR 连接尚未就绪时
+// ensureHubStarted 要先等待）：那时把 cleanup 存进随组件消亡的变量、
+// 把 realtimeConnected 置 true 都已无意义，且 cleanup 会被丢弃，
+// 服务端订阅只增不减。卸载时置位，.then 里见位即退订
+let disposed = false
 // 实时通道连接状态（断连时在页头明示，与文件页同款语义）
 const realtimeConnected = ref(false)
 
@@ -427,6 +432,9 @@ const startAutoRefresh = () => {
 }
 // 标签页可见性变化时恢复自动刷新（具名函数，与 onUnmounted 的 removeEventListener 必须是同一引用，否则每次进入页面叠加一个匿名监听器）
 const handleVisibilityChange = () => {
+  // 自动刷新关闭时不应被可见性事件唤醒：startAutoRefresh 的 refreshTimer
+  // 闸只防重复启动，拦不住"关掉后又回前台被重新拉起"
+  if (!autoRefresh.value) return
   if (document.visibilityState === 'visible') startAutoRefresh()
 }
 document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -446,6 +454,7 @@ const formattedLastUpdate = computed(() => {
 })
 
 onMounted(() => {
+  disposed = false
   loadAllData()
   if (autoRefresh.value) {
     startAutoRefresh()
@@ -465,6 +474,11 @@ onMounted(() => {
       lastUpdateTime.value = new Date()
     }, 1000)
   }).then((cleanup) => {
+    // 卸载后才 resolve：立刻退订，不把 cleanup 留给已无人调用的变量
+    if (disposed) {
+      void cleanup()
+      return
+    }
     unsubscribeGlobal = cleanup
     realtimeConnected.value = true
   }).catch(() => {
@@ -476,6 +490,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  disposed = true
   stopAutoRefresh()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer)

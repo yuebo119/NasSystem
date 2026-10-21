@@ -16,6 +16,20 @@ import type {
 const dirEtags = new Map<string, string>()
 const dirContents = new Map<string, DirectoryContent>()
 
+// 缓存上限：深度浏览会不断产生新 cacheKey，无上限时两个 Map 只增不减
+// （ETag 短，但 DirectoryContent 装着整个目录的 FileItem 列表，累积下来
+// 是可观的内存）。Map 保序，超限从最旧的键开始淘汰——与"最近看过的
+// 最可能再看"一致
+const DIR_CACHE_MAX = 100
+
+function trimDirCache<V>(map: Map<string, V>) {
+  while (map.size > DIR_CACHE_MAX) {
+    const oldest = map.keys().next().value
+    if (oldest === undefined) break
+    map.delete(oldest)
+  }
+}
+
 /** getDirectory 的返回：304 时 data 为缓存内容、notModified 为 true */
 export type DirectoryResult = ApiResponse<DirectoryContent> & { notModified?: boolean }
 
@@ -47,9 +61,13 @@ export const fileApi = {
     }
     if (response.data) {
       dirContents.set(cacheKey, response.data)
+      trimDirCache(dirContents)
       // 响应头由拦截器以不可枚举 __headers 挂载（见 api/http.ts）
       const newEtag = (response as unknown as { __headers?: Record<string, string> }).__headers?.etag
-      if (newEtag) dirEtags.set(cacheKey, newEtag)
+      if (newEtag) {
+        dirEtags.set(cacheKey, newEtag)
+        trimDirCache(dirEtags)
+      }
     }
     return response
   },

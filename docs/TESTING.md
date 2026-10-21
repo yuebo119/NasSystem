@@ -16,23 +16,80 @@ NAS System 采用多层次测试策略：
 
 ```
 tests/
-├── NasSystem.UnitTests/           # 单元测试
-│   ├── Domain/                    # 领域层测试
+├── NasSystem.UnitTests/           # 单元测试（13 个文件）
+│   ├── Domain/                    # 领域层测试（5）
 │   │   ├── FileItemTests.cs
+│   │   ├── FilePathNormalizeTests.cs
 │   │   ├── StoragePoolTests.cs
 │   │   ├── UserTests.cs
 │   │   └── ValueObjectTests.cs
-│   └── Services/                  # 服务层测试
-│       ├── FileServiceTests.cs
-│       ├── StorageServiceTests.cs
-│       └── UserServiceTests.cs
+│   ├── Services/                  # 服务层测试（6）
+│   │   ├── FileServiceTests.cs
+│   │   ├── ProtectedDirectoryEnforcementTests.cs
+│   │   ├── SemanticIndexCoordinatorTests.cs
+│   │   ├── StorageServiceTests.cs
+│   │   ├── TranscodeLadderTests.cs
+│   │   └── UserServiceTests.cs
+│   ├── SystemInfo/                # 系统信息测试（1）
+│   │   └── RemoteAccessConfigGeneratorTests.cs
+│   └── SampleTest.cs              # 示例测试（1）
 │
-└── NasSystem.IntegrationTests/    # 集成测试
+└── NasSystem.IntegrationTests/    # 集成测试（51 个文件）
+    ├── Media/                     # 媒体元数据（1）
+    │   └── MediaMetadataExtractorTests.cs
     ├── ApiTestBase.cs             # 测试基类
+    ├── WebApplicationFactoryExtensions.cs  # 测试工厂扩展
     ├── BasicIntegrationTests.cs   # 基础集成测试
-    ├── FileEndpointsIntegrationTests.cs
-    └── UserEndpointsIntegrationTests.cs
+    ├── SampleIntegrationTest.cs   # 示例集成测试
+    ├── AdminSeedTests.cs          # 管理员种子
+    ├── UserEndpointsIntegrationTests.cs    # 用户端点
+    ├── CrossUserIsolationTests.cs          # 跨用户隔离
+    ├── FileEndpointsIntegrationTests.cs   # 文件端点
+    ├── UploadEndpointTests.cs              # 上传端点
+    ├── ScanSyncTests.cs                    # 扫描同步
+    ├── SoftDeleteScanInteractionTests.cs  # 软删除与扫描交互
+    ├── SubtreeOperationTests.cs            # 子树操作
+    ├── BrowseProjectionShapeTests.cs       # 浏览投影形状
+    ├── RecycleBinPermanentDeleteTests.cs   # 回收站永久删除
+    ├── FileVersionAutoTests.cs             # 版本自动创建
+    ├── FileVersionFkMigrationTests.cs      # 版本外键迁移
+    ├── DirectoryVersionETagTests.cs        # 目录版本 ETag
+    ├── FileShareCodeRaceTests.cs           # 分享码竞态
+    ├── ShareSubPathOwnershipTests.cs       # 分享子路径所有权
+    ├── WebDavEndpointTests.cs              # WebDAV 端点
+    ├── ThumbnailEndpointTests.cs           # 缩略图端点
+    ├── ThumbnailCacheKeyTests.cs           # 缩略图缓存键
+    ├── TranscodeEndpointTests.cs           # 转码端点
+    ├── FfmpegTranscodeTests.cs             # ffmpeg 转码
+    ├── HlsUrlRewriterTests.cs              # HLS URL 重写
+    ├── MediaEndpointTests.cs               # 媒体端点
+    ├── OcrEndpointTests.cs                 # OCR 端点
+    ├── OcrFullTextSearchTests.cs           # OCR 全文搜索
+    ├── SemanticSearchTests.cs              # 语义搜索
+    ├── SemanticIndexTriggerTests.cs        # 语义索引触发
+    ├── SemanticEndpointShapeTests.cs       # 语义端点形状
+    ├── SnapshotServiceTests.cs             # 快照服务
+    ├── SnapshotRepositoryTests.cs          # 快照仓储
+    ├── ExportEndpointTests.cs              # 导出端点
+    ├── BackupEndpointTests.cs              # 备份端点
+    ├── SystemConfigEndpointTests.cs        # 系统配置端点
+    ├── SystemControlEndpointTests.cs       # 系统控制端点
+    ├── SystemSettingsEndpointTests.cs      # 系统设置端点
+    ├── SystemInfoServiceTests.cs           # 系统信息服务
+    ├── RemoteAccessEndpointTests.cs        # 外网访问端点
+    ├── StorageOverviewTests.cs             # 存储概览
+    ├── SchemaAndEnumTests.cs               # 模式与枚举
+    ├── SqlShapeTests.cs                    # SQL 形状
+    ├── SqliteExtensionCapabilityTests.cs   # SQLite 扩展能力
+    ├── PalormSemanticsTests.cs             # PalORM 语义
+    ├── JsonSerializationShapeTests.cs      # JSON 序列化形状
+    ├── ErrorStatusContractTests.cs         # 错误状态契约
+    ├── DeploymentConfigGuardTests.cs       # 部署配置守卫
+    ├── CronScheduleTests.cs                # cron 调度
+    └── SpaFallbackIntegrationTests.cs      # SPA 回退
 ```
+
+以 tests/ 实际目录为准（本树 2026-10-22 对账）。
 
 ---
 

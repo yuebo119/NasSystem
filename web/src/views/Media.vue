@@ -177,6 +177,10 @@ function closePlayer() {
 onUnmounted(() => {
   destroyPlayer()
   clearManifestRetry()
+  // blob 对象 URL 不随组件卸载自动释放：离页时若预览还开着，几十 MB 的
+  // 图片/音频 blob 会一直钉在内存里直到进程结束
+  revokePreviewUrl()
+  revokeAudioUrl()
 })
 
 async function runSemanticSearch() {
@@ -257,9 +261,20 @@ watch([activeType, activeMonth], () => {
   void loadMore(true)
 }, { immediate: true })
 
+// 快切类型/月份 tab 时，旧分页请求的后回包会把新 tab 已清空的首屏
+// 覆盖成旧数据。序号闸：只有最后一次 loadMore 的结果允许写
+// items/total/page，loadMetadata 同受一闸
+let loadSeq = 0
+
 async function loadMore(reset = false) {
-  if (loading.value) return
+  // reset（切 tab）不屈服于 loading 闸：旧请求在途时也要立刻发新车，
+  // 旧回包由序号闸丢弃。若被闸挡下，新 tab 的首页请求根本不会发出，
+  // 而哨兵挂在 groups.length > 0 分支里——空列表下哨兵卸载、观察器
+  // 不再触发，列表会一直空到用户下次手动切换
+  if (!reset && loading.value) return
   if (!reset && !hasMore.value) return
+  // 序号在确定发车时取：被 loading 闸挡回的滚动加载不应作废在途请求
+  const seq = ++loadSeq
   loading.value = true
   try {
     const result = await mediaApi.getList(activeType.value, {
@@ -267,6 +282,7 @@ async function loadMore(reset = false) {
       pageSize,
       month: activeMonth.value || undefined
     })
+    if (seq !== loadSeq) return
     if (result.success && result.data) {
       items.value = reset ? result.data.items : [...items.value, ...result.data.items]
       total.value = result.data.totalCount

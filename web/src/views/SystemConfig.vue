@@ -68,6 +68,9 @@ async function loadSemanticStatus() {
 function startDownloadPolling() {
   stopDownloadPolling()
   semanticDownloadTimer = window.setInterval(async () => {
+    // §7.5 例外：长任务进度观察，前台 2s/3s 粒度 + 后台暂停——
+    // 模型下载是分钟级慢动作，后台标签页的轮询只是白烧请求
+    if (document.visibilityState === 'hidden') return
     try {
       const resp = await semanticApi.getStatus()
       if (resp.success && resp.data) semanticStatus.value = resp.data
@@ -108,6 +111,9 @@ async function downloadSemanticModel() {
 function startIndexPolling() {
   stopIndexPolling()
   semanticIndexTimer = window.setInterval(async () => {
+    // §7.5 例外：长任务进度观察，前台 2s/3s 粒度 + 后台暂停——
+    // 建索引同理是长任务，后台标签页的轮询只是白烧请求
+    if (document.visibilityState === 'hidden') return
     try {
       const resp = await semanticApi.getStatus()
       if (!resp.success || !resp.data) return

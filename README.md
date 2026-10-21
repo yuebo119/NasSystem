@@ -187,19 +187,19 @@ dotnet test --project tests/NasSystem.IntegrationTests
 
 主要配置项 (`appsettings.json`):
 
+> StoragePath 经环境变量 NasSystem__StoragePath 注入，appsettings 不设该段。
+
 ```json
 {
   "ConnectionStrings": {
     "DefaultConnection": "Data Source=data/nas.db"
   },
-  "NasSystem": {
-    "StoragePath": "/app/storage"
-  },
   "Jwt": {
-    "Secret": "your-secret-key-at-least-32-characters",
+    "SecretKey": "<SET-VIA-ENV>",
     "Issuer": "NasSystem",
     "Audience": "NasSystemUsers",
-    "ExpirationMinutes": 60
+    "AccessTokenExpirationMinutes": 60,
+    "RefreshTokenExpirationDays": 7
   }
 }
 ```

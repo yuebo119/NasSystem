@@ -1124,26 +1124,126 @@
 
 ## 错误码参考
 
+本表由 `ResultExtensions.ClientErrorStatuses` 机械生成口径维护（src/NasSystem.Api/Extensions/ResultExtensions.cs）；未列出的码（服务端故障类）落 500。另有两类不走显式表的约定：`Error.*` 家族（Shared 工厂产出）与码表并列判定，见下表前五行；任何以 `NotFound` 结尾的码（模块.实体NotFound 命名约定）兜底 404。
+
 | 错误码 | HTTP 状态码 | 说明 |
 |--------|-------------|------|
-| Auth.InvalidCredentials | 401 | 用户名或密码错误 |
-| Auth.TokenExpired | 401 | Token 已过期 |
-| Auth.Unauthorized | 401 | 未授权访问 |
-| User.NotFound | 404 | 用户不存在 |
-| User.AlreadyExists | 409 | 用户名已存在 |
-| User.CannotDeleteSuperAdmin | 403 | 不能删除超级管理员 |
+| Error.NotFound | 404 | 引用的对象不存在（Shared 工厂家族） |
+| Error.Validation | 400 | 校验失败（Shared 工厂家族） |
+| Error.Conflict | 409 | 与现有状态冲突（Shared 工厂家族） |
+| Error.Unauthorized | 401 | 未认证（Shared 工厂家族） |
+| Error.Forbidden | 403 | 已认证但无权限（Shared 工厂家族） |
 | File.NotFound | 404 | 文件不存在 |
+| FileShare.NotFound | 404 | 分享不存在 |
+| FileShare.FileNotFound | 404 | 分享内文件不存在 |
+| FileShare.FolderNotFound | 404 | 分享内文件夹不存在 |
+| FileShare.PhysicalFileNotFound | 404 | 分享对应的物理文件不存在 |
+| FileVersion.NotFound | 404 | 文件版本不存在 |
+| FileVersion.StorageNotFound | 404 | 版本对应的存储文件不存在 |
+| Backup.DeviceNotFound | 404 | 备份设备不存在 |
+| Semantic.ModelNotReady | 404 | 语义模型未下载（四件套未就位） |
 | File.AlreadyExists | 409 | 文件已存在 |
-| File.AccessDenied | 403 | 文件访问被拒绝 |
-| Share.NotFound | 404 | 分享不存在 |
-| Share.Expired | 410 | 分享已过期 |
-| Share.DownloadLimitReached | 410 | 下载次数已达上限 |
-| Share.InvalidPassword | 401 | 分享密码错误 |
-| Storage.NotFound | 404 | 存储池不存在 |
-| Storage.InsufficientSpace | 507 | 存储空间不足 |
+| FileVersion.CurrentVersionConflict | 409 | 与当前版本冲突 |
+| StoragePool.NameExists | 409 | 存储池名已存在 |
+| StoragePool.MountPathExists | 409 | 挂载路径已被占用 |
+| Storage.InsufficientSpace | 507 | 存储空间不足（RFC 4918 语义） |
+| User.QuotaExceeded | 507 | 用户配额超限（RFC 4918 语义） |
+| Config.ValidationFailed | 400 | 配置校验失败 |
 | Semantic.Disabled | 400 | 语义搜图未启用 |
-| Semantic.ModelNotReady | 404 | 语义模型未下载 |
-| Validation.InvalidInput | 400 | 输入验证失败 |
+| File.InvalidName | 400 | 文件名不合法 |
+| File.NotFile | 400 | 目标不是文件 |
+| File.NotFolder | 400 | 目标不是文件夹 |
+| Backup.InvalidName | 400 | 备份设备名不合法 |
+| FileShare.CannotDownloadFolder | 400 | 不能下载文件夹 |
+| FileShare.InvalidAccessType | 400 | 分享访问类型不合法 |
+| FileShare.NotAFolder | 400 | 分享目标不是文件夹 |
+| FileShare.NotAccessible | 400 | 分享当前不可访问 |
+| FileShare.PasswordNotRequired | 400 | 该分享无需密码 |
+| FileShare.PasswordRequired | 400 | 该分享需要密码 |
+| FileShare.InvalidPassword | 400 | 分享密码错误 |
+| FileShare.InvalidToken | 400 | 分享令牌无效 |
+| FileShare.LoginRequired | 400 | 需登录后访问该分享 |
+| User.PasswordMismatch | 400 | 原密码不匹配 |
+| User.CannotDeleteSuperAdmin | 400 | 不能删除超级管理员 |
+| StoragePool.CannotDeleteDefault | 400 | 不能删除默认存储池 |
+| Thumbnail.NotSupported | 400 | 缩略图格式不支持 |
+| File.ProtectedForbidden | 403 | 目录受只读保护，禁止该操作 |
+| User.Disabled | 403 | 账户已禁用 |
+| User.InvalidCredentials | 401 | 用户名或密码错误 |
+
+## 附录：未入正文的端点清单（2026-10-22 对账补登）
+
+以下 35 个端点从 `src/NasSystem.Api/Endpoints/*.cs` 路由声明机械提取，正文未立章节，先在此登记。说明文字抄自各端点的 `WithSummary`，无 summary 的照实标注。
+
+### /api/v1/backup（5）
+
+- POST /api/v1/backup/devices — 注册备份设备
+- GET /api/v1/backup/devices — 获取我的备份设备
+- DELETE /api/v1/backup/devices/{id} — 吊销备份设备
+- POST /api/v1/backup/devices/{id}/plan — 计算备份同步计划
+- POST /api/v1/backup/devices/{id}/sync-complete — 登记同步完成
+
+### /api/v1/exports（1）
+
+- POST /api/v1/exports — 导出目录（可选加密）
+
+### /api/v1/protected-directories（3）
+
+- POST /api/v1/protected-directories — 标记目录为只读保护
+- GET /api/v1/protected-directories — 受保护目录列表
+- DELETE /api/v1/protected-directories/{fileItemId} — 取消只读保护
+
+### /api/v1/snapshots（6）
+
+- POST /api/v1/snapshots — 创建目录快照
+- GET /api/v1/snapshots — 快照列表
+- GET /api/v1/snapshots/{id} — 快照详情
+- GET /api/v1/snapshots/{id}/entries — 快照条目
+- GET /api/v1/snapshots/diff — 对比两个快照
+- DELETE /api/v1/snapshots/{id} — 删除快照
+
+### /api/v1/media（2）
+
+- GET /api/v1/media — 获取媒体列表
+- POST /api/v1/media/metadata — 批量获取媒体元数据
+
+### /api/v1/media/stream（3）
+
+- GET /api/v1/media/stream/{*path} — 获取视频 HLS master 播放列表、子列表或分片
+- GET /api/v1/media/stream/status — 转码能力状态
+- DELETE /api/v1/media/stream/cache — 清空转码缓存
+
+### /api/v1/system（6）
+
+- GET /api/v1/system/settings — 获取系统设置
+- PUT /api/v1/system/settings — 更新系统设置
+- GET /api/v1/system/logs — 获取系统日志
+- POST /api/v1/system/restart — 重启 NAS 服务
+- POST /api/v1/system/shutdown — 关闭 NAS 服务
+- GET /api/v1/system/remote-access/config — 生成外网访问配置
+
+### /api/v1/system/config（2）
+
+- GET /api/v1/system/config — 获取系统配置
+- PUT /api/v1/system/config — 更新系统配置
+
+### /api/v1/users/stats（1）
+
+- GET /api/v1/users/stats — 获取用户全站统计
+
+### /api/v1/files（4）
+
+- GET /api/v1/files/recent — 获取最近文件
+- POST /api/v1/files/ocr/{*path} — 识别图片文字
+- GET /api/v1/files/ocr/{*path} — 查询图片识别文字
+- POST /api/v1/files/ocr-batch — 批量识别目录图片
+
+### /dav（2）
+
+- OPTIONS/PROPFIND/GET/HEAD/PUT/MKCOL/DELETE/MOVE/COPY/PROPPATCH/LOCK/UNLOCK /dav — 无 summary（OS WebDAV 客户端协议面，认证在 handler 内）
+- OPTIONS/PROPFIND/GET/HEAD/PUT/MKCOL/DELETE/MOVE/COPY/PROPPATCH/LOCK/UNLOCK /dav/{**path} — 无 summary（OS WebDAV 客户端协议面，认证在 handler 内）
+
+注：GET /api/v1/system/logs 与 PUT /api/v1/system/settings 为诚实 501 响应（未实现，不做假 UI），详见 ROADMAP 收口记录。
 
 ---
 

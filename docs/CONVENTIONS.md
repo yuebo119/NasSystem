@@ -156,6 +156,6 @@ curl -sD- -o /dev/null -H 'Accept-Encoding: br' https://<host>/api/v1/system/hea
 | 数字 | 真源 |
 |------|------|
 | NAS-G 编号 | `.ai/scripts/gate-check.sh`（现行 G1..G22） |
-| 基线数字（UtcNow 35 / 裸 IO 30 / 测试命名 6） | 本文件 §5.1 / §1.5 / §6.2，改动须同步脚本基线常量 |
+| 基线数字（UtcNow 35 / 裸 IO 21 / 测试命名 6） | 本文件 §5.1 / §1.5 / §6.2，改动须同步脚本基线常量 |
 | 缺陷登记 ITM-N 编号 | `.ai/lessons.md` 第二章 |
 | 误判模式 NPD-N 编号 | `.ai/review/known-false-positives.md` |

@@ -135,6 +135,16 @@ const router = createRouter({
   routes
 })
 
+// 懒加载 chunk 拉取失败（发版后旧 chunk 被清、网络中断、或浏览器缓存了
+// 旧的 index.html）：此时路由组件是一个 reject 的 import promise，页面
+// 白屏且后续导航全挂。onError 是 vue-router 对组件懒加载 reject 的唯一
+// 出口，刷新即可拿到新的 index.html 与 chunk 映射
+router.onError((error) => {
+  if (/Loading chunk|Failed to fetch dynamically imported module|Importing a module script failed/i.test(error.message)) {
+    window.location.reload()
+  }
+})
+
 // 路由守卫
 router.beforeEach(async (to, _from, next) => {
   NProgress.start()

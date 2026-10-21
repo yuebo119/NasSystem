@@ -88,7 +88,7 @@
 | 技术 | 版本 | 用途 |
 |------|------|------|
 | Vue | 3.5 | 前端框架 |
-| TypeScript | 5.x | 类型安全 |
+| TypeScript | 6.x | 类型安全 |
 | Vite | 8.x | 构建工具 |
 | Element Plus | 2.14 | UI 组件库 |
 | Pinia | 4.x | 状态管理 |

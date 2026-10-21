@@ -1590,17 +1590,33 @@ function openContextMenu(_event: MouseEvent, item: FileItem) {
 // ═══ 实时刷新（SignalR 目录订阅，多标签页/多用户变更自动同步）═══
 let unsubscribe: (() => void) | null = null
 let stopRealtimeWatch: (() => void) | null = null
+// 快切目录时多个 resubscribe 会交叉进行（退订与订阅都是 async）：
+// 旧调用后完成就会用旧订阅覆盖新订阅、并用旧 stopRealtimeWatch 拆掉
+// 新调用的连接状态监听。序号闸保证只有最后一次调用允许落地
+let resubscribeSeq = 0
 
 async function resubscribe(path: string) {
+  const seq = ++resubscribeSeq
   try {
     await unsubscribe?.()
-    unsubscribe = await subscribeDirectory(path, (changedPath) => {
+    // 退订等待期间又来了更新的调用：旧订阅已退，新的那次会自己订，
+    // 这里直接让位。unsubscribe 变量不碰——它可能已指向新订阅
+    if (seq !== resubscribeSeq) return
+    const cleanup = await subscribeDirectory(path, (changedPath) => {
       // 仅当变更位于当前目录的直接层级时静默刷新（子目录深处的批量变更不打断浏览）
       const parent = changedPath.slice(0, changedPath.lastIndexOf('/')) || '/'
       if (parent === fileStore.currentPath && !fileStore.isLoading) {
         void fileStore.loadDirectory(fileStore.currentPath)
       }
     })
+    // 订阅等待期间被更新的调用取代：立刻退掉刚拿到的这个订阅。
+    // 不能留给 onUnmounted——那时 unsubscribe 指向的已是新订阅，
+    // 这个旧订阅会无声泄漏（服务端订阅列表只增不减）
+    if (seq !== resubscribeSeq) {
+      void cleanup()
+      return
+    }
+    unsubscribe = cleanup
     realtimeConnected.value = true
     // 跟随底层连接状态：自动重连失败/掉线时把状态栏的"实时"打成断开，
     // 而不是让用户误以为外部变更还会自动出现
@@ -1621,6 +1637,12 @@ onUnmounted(() => {
   stopRealtimeWatch?.()
   // 离开页面前释放预览用的 objectURL，否则指向的 blob 会一直钉在内存里
   revokePreviewUrl()
+  // 防抖定时器不属于组件生命周期：卸载后 300ms 到点仍会打 handleSearch，
+  // 往已离页的 store 里写搜索结果、白跑一次搜索请求
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = null
+  }
 })
 </script>
 

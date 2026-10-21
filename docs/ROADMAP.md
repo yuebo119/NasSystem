@@ -259,7 +259,7 @@ OCR 与媒体库：SimdPaddleOCR PP-OCRv6（纯 C# 推理，无 ONNX Runtime/Ope
 
 视频转码（Phase 3）：FFmpeg 子进程 HLS 按需转码（libx264/CRF 23/veryfast，1080p 子流，6 秒分片，vod 播放列表），进程内并发闸 + 幂等缓存（物理路径 SHA256 为键）；视频缩略图从 1x1 占位升级为 ffmpeg 抽真实帧（不可用回落占位）；Dockerfile runtime 装 ffmpeg（约 100MB 级，ROADMAP 预告的重估项已兑现）；前端媒体库视频格点击经 hls.js 播放（token 经 xhrSetup 注入）。
 
-验证基线：集成 223 + 单元 178 + 前端 136 全绿（MTP 宿主坏，直跑 exe）；oxlint 0 警告，vue-tsc 与生产构建通过。真实客户端挂载（Windows/macOS Finder/iOS 文件 App）、手机端到端备份、外网连通、中文扫描件识别率、CLIP 检索质量与 ffmpeg 转码画质需在部署环境人工验收。
+验证基线（2026-10-22 实测）：集成 273 + 单元 199 + 前端 183/26 全绿（MTP 宿主坏，直跑 exe）；oxlint 0 警告，vue-tsc 与生产构建通过；门禁 3 项 FAIL（NAS-G7 两处误报待校准、NAS-G15/G16 基线超标）待清，见 docs/audit-2026-10-22-exhaustive.md。真实客户端挂载（Windows/macOS Finder/iOS 文件 App）、手机端到端备份、外网连通、中文扫描件识别率、CLIP 检索质量与 ffmpeg 转码画质需在部署环境人工验收。
 
 ## 9. 功能 UI 覆盖审计与配置收口（2026-10-18 补记）
 
@@ -283,9 +283,9 @@ OCR 与媒体库：SimdPaddleOCR PP-OCRv6（纯 C# 推理，无 ONNX Runtime/Ope
 
 Phase 2/3-a 收口（2026-10-19）：快照与只读保护独立页（/snapshots，两 tab：快照管理 + 保护目录）；3-2-1 导出在快照页工具栏；语义搜图模型卡在系统配置页（状态/下载/进度），搜索入口在媒体库图片 tab；视频转码播放入口在媒体库视频格点击，缓存清理端点 DELETE /media/stream/cache（admin）。本轮新增端点的调用方全部经前端接线，无 API-only 遗留。
 
-第三轮收口（2026-10-18 深夜）：机械审计（从 Endpoints 源码提取全部路由逐个核对前端调用方）发现 DELETE /thumbnails/cache 全局清理缺入口，已补配置页维护区。其余无调用方端点判定 API-only 保留：thumbnails/supported（前端直连 img，预检反增请求）、file-shares/{id}、files/info、storage/pools/{id}（列表数据已全量）；/system/logs 与 PUT /system/settings 为诚实 501 不做假 UI。
+第三轮收口（2026-10-18 深夜）：机械审计（从 Endpoints 源码提取全部路由逐个核对前端调用方）发现 DELETE /thumbnails/cache 全局清理缺入口，已补配置页维护区。其余无调用方端点判定 API-only 保留：file-shares/{id}、files/info、storage/pools/{id}（列表数据已全量）；/system/logs 与 PUT /system/settings 为诚实 501 不做假 UI。（2026-10-22 复核：thumbnails/supported 已有前端调用方 AuthImage.vue:67 失败路径探测，不再是孤儿，移出本清单。）
 
-动态配置架构：`ConfigDescriptors` 注册表是前后端单一事实源（键/类型/范围/默认值/i18n 键），配置页按 descriptor 渲染表单；值存 `SystemSettings` 键值表，改完即生效不重启。appsettings 保留给启动期定死项（连接串/JWT/CORS/上传上限/缩略图），配置页明示为只读，不留"声明了但不生效"的死键。
+动态配置架构：`ConfigDescriptors` 注册表是前后端单一事实源（键/类型/范围/默认值/i18n 键），配置页按 descriptor 渲染表单；值存 `SystemSettings` 键值表，改完即生效不重启。appsettings 保留给启动期定死项（连接串/JWT/缩略图）；CORS 白名单仅经环境变量 Cors__AllowedOrigins（未设即全禁），上传上限为代码常量 UploadLimit.MaxRequestBodySize=500MB。配置页明示为只读，不留"声明了但不生效"的死键。
 
 第二轮收口（2026-10-18 晚）：五个"有后端无前端"的缺口（批量 OCR、缩略图清理、版本对比、分享码重生成、重启/关机）全部补齐；其中重启/关机原为假动作端点（只返回计划消息），已用 IHostApplicationLifetime 真实化，测试工厂注册 no-op 替身防止测试停宿主。全量审计的剩余端点（/system/logs 与 PUT /system/settings 为诚实 501）保持未实现状态，不做假 UI。
 
@@ -300,7 +300,7 @@ Phase 2/3-a 收口（2026-10-19）：快照与只读保护独立页（/snapshots
 
 菜单重排（10 项扁平 → 5 分组）：文件与媒体（仪表盘/文件/媒体库/回收站）、数据保护（快照/只读保护/导出，admin）、共享与备份（移动备份/分享管理）、系统管理（用户/存储/系统配置/系统信息，admin）、个人（个人设置）。非管理员侧栏剩 7 项 3 组。高亮匹配改为精确 + 最长前缀（/files/子路径 不再不高亮）。
 
-API-only 判定不变：/system/health（Docker healthcheck 消费）、thumbnails/supported、GET /users/{id} 与 GET /storage/pools/{id}（列表数据已全量，编辑用列表快照）、/system/logs 与 PUT /system/settings（诚实 501）。
+API-only 判定不变：/health（Docker healthcheck 实际消费，Dockerfile/compose 探针）；/system/health 改判真孤儿待删（Benchmark warmup 是唯一消费方）、GET /users/{id} 与 GET /storage/pools/{id}（列表数据已全量，编辑用列表快照）、/system/logs 与 PUT /system/settings（诚实 501）、GET /file-versions/{fileItemId}/{versionNumber}（列表数据已全量，同 users/{id} 型）、GET /file-shares/{id}（列表快照编辑，第三轮已判）、GET /snapshots/{id}（详情用 entries 拼装）、GET /api/version（无消费者，硬编码版本号，待删）、/dav 与 /dav/{**path}（OS WebDAV 客户端协议面，认证在 handler 内）。
 
 验证：前端 159 例/21 spec 全绿（基线 136/16），oxlint 0 警告，vue-tsc 与生产构建通过；浏览器端到端验收过分组菜单（管理员 5 组/普通用户 3 组）、四个新页面、Settings 拆分效果、Internal 分享已登录访问与认证下载（200 实测），测试分享已清理。
 
@@ -318,7 +318,7 @@ API-only 判定不变：/system/health（Docker healthcheck 消费）、thumbnai
 
 审计发现并修复的契约缺陷（均有锁定测试）：
 - 必填参数缺失曾落 500：minimal API 绑定层抛 BadHttpRequestException 落全局异常处理器默认分支，调用方把"少传参数"当"服务端故障"重试；改为按 StatusCode 原样透传 400。注意 TestServer 对该异常有自己的转换（先于应用异常处理器），测试宿主只断言状态码，带消息的 JSON 错误体已对真实实例实测。
-- 错误码到状态码的映射从子串启发式改为显式码表（ResultExtensions.ClientErrorStatuses）：原子串漏掉 14 个客户端错误码（FileShare.PasswordRequired、File.InvalidName、StoragePool.CannotDeleteDefault 等），用户看到"服务器错误"而非真实原因；显式表覆盖全部 44 个手捏码，ITM-N21"未知码落 500"的意图保留（Scan.Failed、Ocr.Failed、Transcode.Failed 等服务端故障仍在 500），新增 EndsWith("NotFound") 家族约定兜底未来的模块.实体NotFound。
+- 错误码到状态码的映射从子串启发式改为显式码表（ResultExtensions.ClientErrorStatuses）：原子串漏掉 14 个客户端错误码（FileShare.PasswordRequired、File.InvalidName、StoragePool.CannotDeleteDefault 等），用户看到"服务器错误"而非真实原因；显式表 37 条客户端错误码（src 共 55 个手捏码，其余 18 个服务端/状态码按设计落 500/409 等既有分支），ITM-N21"未知码落 500"的意图保留（Scan.Failed、Ocr.Failed、Transcode.Failed 等服务端故障仍在 500），新增 EndsWith("NotFound") 家族约定兜底未来的模块.实体NotFound。
 - 容量/配额类（Storage.InsufficientSpace、User.QuotaExceeded）映射 507，与 WebDAV 层既有特判口径一致。
 
 踩坑记录：Git Bash 的 MSYS 路径转换把 curl 的 -F "path=/" 表单值改写成 Windows 路径，上传全部落到 C:\Program Files\Git 下报 401，一度被误判为应用 bug；审计脚本需 export MSYS_NO_PATHCONV=1 且本地文件参数走 cygpath -w/-m。另：本机 ffmpeg 缺失，视频转码链路在此环境为诚实 501，画质需在部署环境验收。
