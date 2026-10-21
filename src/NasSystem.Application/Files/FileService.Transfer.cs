@@ -194,12 +194,20 @@ public sealed partial class FileService
         {
             // 覆盖上传：旧内容先进版本库再替换（ROADMAP Phase 1 自动版本）。
             // 时机必须在 File.Move 之前——替换后旧 inode 只被版本硬链接持有，
-            // 内容还在但已无法从当前路径读取。快照失败不阻断上传（服务内兜底）
+            // 内容还在但已无法从当前路径读取。快照失败不阻断上传（服务内兜底）。
+            // 挂载点取文件所属池而非默认池：跨卷时 CreateHardLink 失败降级为
+            // 复制（零 IO 优化失效、双倍占容），默认池迁移即丢这批版本
+            // （与 PermanentDeleteAsync 路径同口径）
             if (existingItem is not null && metadata.Overwrite
                 && existingItem.ItemType == FileItemType.File)
             {
-                await _fileVersionService.CreateAutoVersionAsync(
-                    existingItem, defaultPool.Value.MountPath, userId, cancellationToken);
+                var itemPool = await _storagePoolRepository.GetByIdAsync(
+                    existingItem.StoragePoolId, cancellationToken);
+                if (itemPool is not null)
+                {
+                    await _fileVersionService.CreateAutoVersionAsync(
+                        existingItem, itemPool.MountPath, userId, cancellationToken);
+                }
             }
 
             File.Move(tempPath, physicalPath, overwrite: true);

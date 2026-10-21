@@ -275,8 +275,11 @@ public sealed partial class FileService
 
             // S5：上传半成品临时文件（<目标名>.uploading-<guid>）不入库。
             // 上传中断（客户端断开/进程退出）会留下它，库里没有对应记录，
-            // 不跳过的话下次扫描会把半成品当用户文件导入
-            if (fileName.Contains(".uploading-", StringComparison.Ordinal))
+            // 不跳过的话下次扫描会把半成品当用户文件导入。
+            // 版本恢复的 .restore.tmp 同理（恢复中途进程退出会残留），
+            // 后缀常量与 FileVersionStore 同源
+            if (fileName.Contains(".uploading-", StringComparison.Ordinal)
+                || fileName.EndsWith(FileVersionStore.RestoreTempSuffix, StringComparison.Ordinal))
                 continue;
 
             var fileVirtualPath = CombinePath(virtualPath, fileName);

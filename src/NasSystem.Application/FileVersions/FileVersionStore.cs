@@ -21,6 +21,12 @@ public static class FileVersionStore
     /// <summary>版本库目录名。扫描同步的排除清单与此常量同源</summary>
     public const string DirectoryName = ".versions";
 
+    /// <summary>
+    /// 版本恢复的临时文件名后缀。恢复中途进程退出会残留在用户目录里，
+    /// 扫描同步必须把它挡在库外（否则半成品被当用户文件导入）
+    /// </summary>
+    public const string RestoreTempSuffix = ".restore.tmp";
+
     /// <summary>版本库根目录（池挂载点下）</summary>
     public static string GetVersionRoot(string poolMountPath) =>
         Path.Combine(poolMountPath, DirectoryName);
@@ -72,20 +78,21 @@ public static class FileVersionStore
     }
 
     /// <summary>
-    /// 清理版本文件本身（尽力而为：文件丢失或占用都不阻断记录删除，
-    /// 残留文件由扫描同步的 .versions 排除挡在库外）
+    /// 清理版本文件本身。返回是否删除成功（文件本就不存在也算成功）：
+    /// 调用方据此决定是否删库记录——物理删失败时保留记录并报错，
+    /// 避免"记录没了文件还在"的反向孤儿（.versions 被扫描排除，扫不回来）
     /// </summary>
-    public static void TryDeleteSnapshot(string versionPath)
+    public static bool TryDeleteSnapshot(string versionPath)
     {
         try
         {
             if (File.Exists(versionPath))
                 File.Delete(versionPath);
+            return true;
         }
         catch
         {
-            // 删除失败留文件不删记录会导致恢复时找不到内容，由 DeleteVersionAsync
-            // 的调用方决定是否仍删记录；这里只负责不抛异常
+            return false;
         }
     }
 

@@ -73,37 +73,35 @@ public class FileVersionService : IFileVersionService
             FileVersionStore.CreateSnapshot(item.PhysicalPath, versionPath);
             orphanSnapshot = versionPath;
 
-            // 版本号取现有最大值 + 1（版本记录可能被手动删除过，不能依赖条数）
-            var existing = await _versionRepository.GetByFileItemIdAsync(item.Id, cancellationToken);
-            var nextNumber = existing.Count > 0 ? existing.Max(v => v.VersionNumber) + 1 : 1;
-
-            // IsCurrent 语义：自动版本记录的是"被覆盖/被删除前的内容"，
-            // 覆盖完成后活动内容是新写入的文件，与任何版本快照都不相同，
-            // 因此自动版本一律 IsCurrent=false，同时解除上一版本的 current 标记
-            // （上一版本若恰是此前恢复出来的，覆盖后也不再与活动内容一致）
-            foreach (var old in existing.Where(v => v.IsCurrent))
+            // 版本号先读后写，并发覆盖同一文件时两个请求都读到同一个 max：
+            // 唯一索引兜底的后果是整件事被外层 catch 吞掉（只留一行日志），
+            // 这一次的旧内容没有版本可回。重试一次：重新读 max + 换快照名，
+            // 仍败才降级
+            const int MaxAttempts = 2;
+            for (var attempt = 1; ; attempt++)
             {
-                old.MarkAsOld();
-                _versionRepository.Update(old);
+                try
+                {
+                    await InsertVersionRecordAsync(item, versionPath, userId, cancellationToken);
+                    break;
+                }
+                catch (UniqueConstraintException) when (attempt < MaxAttempts)
+                {
+                    _logger.LogWarning(
+                        "自动版本号冲突（并发覆盖？），重试: FileItemId={FileItemId}, Attempt={Attempt}",
+                        item.Id, attempt);
+                    // 换一个新快照名：旧路径已被上一次尝试占用（硬链接/复制皆唯一）
+                    versionPath = FileVersionStore.GetVersionPath(poolMountPath, item.Id, item.Name);
+                    FileVersionStore.CreateSnapshot(item.PhysicalPath, versionPath);
+                    orphanSnapshot = versionPath;
+                }
             }
 
-            var version = FileVersion.Create(
-                fileItemId: item.Id,
-                versionNumber: nextNumber,
-                storagePath: versionPath,
-                fileSize: item.SizeBytes,
-                fileHash: item.Hash ?? string.Empty,
-                createdByUserId: userId,
-                comment: null);
-            version.MarkAsOld();
-
-            await _versionRepository.AddAsync(version, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
             orphanSnapshot = null; // 已落库，快照有记录引用，不再是孤儿
 
             _logger.LogInformation(
-                "自动版本已创建: FileItemId={FileItemId}, Version={Version}, Snapshot={Path}",
-                item.Id, nextNumber, versionPath);
+                "自动版本已创建: FileItemId={FileItemId}, Snapshot={Path}",
+                item.Id, versionPath);
 
             await ApplyRetentionAsync(item.Id, cancellationToken);
         }
@@ -128,6 +126,43 @@ public class FileVersionService : IFileVersionService
             // 为版本失败回滚主操作会把"保险"凌驾于主路径之上
             _logger.LogWarning(ex, "自动版本创建失败（主操作继续）: FileItemId={FileItemId}", item.Id);
         }
+    }
+
+    /// <summary>
+    /// 读当前 max 版本号 + 插一条 IsCurrent=false 的版本记录。
+    /// 版本号竞态的唯一点：调用方（CreateAutoVersionAsync）负责重试
+    /// </summary>
+    private async Task InsertVersionRecordAsync(
+        FileItem item,
+        string versionPath,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _versionRepository.GetByFileItemIdAsync(item.Id, cancellationToken);
+        var nextNumber = existing.Count > 0 ? existing.Max(v => v.VersionNumber) + 1 : 1;
+
+        // IsCurrent 语义：自动版本记录的是"被覆盖/被删除前的内容"，
+        // 覆盖完成后活动内容是新写入的文件，与任何版本快照都不相同，
+        // 因此自动版本一律 IsCurrent=false，同时解除上一版本的 current 标记
+        // （上一版本若恰是此前恢复出来的，覆盖后也不再与活动内容一致）
+        foreach (var old in existing.Where(v => v.IsCurrent))
+        {
+            old.MarkAsOld();
+            _versionRepository.Update(old);
+        }
+
+        var version = FileVersion.Create(
+            fileItemId: item.Id,
+            versionNumber: nextNumber,
+            storagePath: versionPath,
+            fileSize: item.SizeBytes,
+            fileHash: item.Hash ?? string.Empty,
+            createdByUserId: userId,
+            comment: null);
+        version.MarkAsOld();
+
+        await _versionRepository.AddAsync(version, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>
@@ -167,18 +202,30 @@ public class FileVersionService : IFileVersionService
                 .Take(overflow));
         }
 
+        // 保留策略：逐条"先删物理、成功才删记录"。物理删失败（文件占用）的
+        // 条目保留记录跳过——留一个可见的旧版本远好过一个永久孤儿文件
+        var removed = 0;
         foreach (var victim in expired)
         {
-            FileVersionStore.TryDeleteSnapshot(victim.StoragePath);
+            if (!FileVersionStore.TryDeleteSnapshot(victim.StoragePath))
+            {
+                _logger.LogWarning(
+                    "保留策略跳过：版本文件删除失败，保留记录: FileItemId={FileItemId}, Path={Path}",
+                    fileItemId, victim.StoragePath);
+                continue;
+            }
+
             _versionRepository.Delete(victim);
+            removed++;
         }
 
-        if (expired.Count > 0)
+        if (removed > 0)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             _logger.LogInformation(
                 "版本保留策略清理: FileItemId={FileItemId}, 删除 {Count} 个版本",
-                fileItemId, expired.Count);
+                fileItemId, removed);
         }
     }
 
@@ -257,28 +304,54 @@ public class FileVersionService : IFileVersionService
         version.MarkAsCurrent();
         _versionRepository.Update(version);
 
-        // 恢复文件内容
+        // 恢复文件内容。前置校验：FileItem 已消失（回收站清空/永久删除）时
+        // 无处可恢复，必须失败而不是把版本标成 IsCurrent 后返回成功——
+        // 假成功比报错更危险（ITM-N9 家族），用户以为恢复完成实际内容没落地
         var fileItem = await _fileItemRepository.GetByIdAsync(fileItemId, cancellationToken);
-        if (fileItem is not null)
+        if (fileItem is null)
         {
-            // ITM-N18：目标是物理路径而非虚拟路径（旧代码把 /xxx 当磁盘路径写到盘根）；
-            // 先拷贝到临时文件再替换，Copy 失败时原文件不受影响，消除"先删后拷"数据丢失窗口
+            return Result<FileVersionDto>.Failure(
+                new Error("FileVersion.FileItemNotFound", "文件记录已不存在，无法恢复"));
+        }
+
+        if (fileItem.IsDeleted)
+        {
+            return Result<FileVersionDto>.Failure(
+                new Error("FileVersion.FileItemDeleted", "文件在回收站中，请先恢复文件再恢复版本"));
+        }
+
+        {
+            // ITM-N18：目标是物理路径而非虚拟路径（旧代码把 /xxx 当磁盘路径写到盘根）。
+            // 先拷贝到临时文件再原子替换：Copy 失败时原文件不受影响；Delete+Move
+            // 之间仍有崩溃窗口（删了旧的、新的没移入，两边皆丢），File.Replace
+            // 是 NTFS 上的原子替换原语，一个调用闭合该窗口
             var targetPath = fileItem.PhysicalPath;
             var tempPath = targetPath + ".restore.tmp";
-            File.Copy(version.StoragePath, tempPath, overwrite: true);
-
-            if (File.Exists(targetPath))
+            try
             {
-                File.Delete(targetPath);
+                File.Copy(version.StoragePath, tempPath, overwrite: true);
+
+                if (File.Exists(targetPath))
+                    File.Replace(tempPath, targetPath, null);
+                else
+                    File.Move(tempPath, targetPath);
             }
-            File.Move(tempPath, targetPath);
+            finally
+            {
+                // 替换失败的残留临时文件必须清掉：它不在扫描排除清单上，
+                // 下次扫描会被当用户文件入库（审计 F-017）
+                if (File.Exists(tempPath))
+                {
+                    try { File.Delete(tempPath); } catch { /* 尽力而为 */ }
+                }
+            }
 
             // 内容换了，库里的体积与哈希必须同步：不同步的话浏览列表显示恢复前的
             // 旧大小，版本比较的 SizeDifference 也整体偏移（快照记录的是各版本
-            // 创建时的值，当前值只能从 fileItem 取）
+            // 创建时的值，当前值只能从 fileItem 取）。Hash 无条件同步：
+            // 版本记录本身没有哈希时清空，留着旧值等于库盘错位
             fileItem.UpdateSize(version.FileSize);
-            if (!string.IsNullOrEmpty(version.FileHash))
-                fileItem.UpdateHash(version.FileHash);
+            fileItem.UpdateHash(version.FileHash);
             _fileItemRepository.UpdateAsync(fileItem, cancellationToken);
         }
 
@@ -287,7 +360,6 @@ public class FileVersionService : IFileVersionService
         // ROADMAP Phase 1 验收"版本操作纳入 SignalR 推送"：恢复换了文件内容，
         // 订阅了所在目录的客户端要实时看到新大小/新内容。ETag 失效由 UoW 的
         // 目录版本号递增自动覆盖（FileItem 被写），这里是实时推送那一半
-        if (fileItem is not null)
         {
             var parentPath = DirectoryVersion.GetParentDirectory(fileItem.Path);
             if (parentPath is not null)
@@ -361,17 +433,19 @@ public class FileVersionService : IFileVersionService
                 new Error("FileVersion.CurrentVersionConflict", "无法删除当前版本"));
         }
 
-        // 删除版本文件
-        if (File.Exists(version.StoragePath))
+        // 先删物理、成功才删记录。原顺序（先删文件后删库，或先删库后补删文件）
+        // 各有坏结局：前者在库提交失败时留僵尸记录（UI 列得出、恢复报文件丢失），
+        // 后者在物理删除失败时留反向孤儿（记录没了文件还在，.versions 被扫描
+        // 排除，永远扫不回来）。先删物理则文件占用时记录保留 + 明确报错，
+        // 用户知道"文件被占用"而不是看到一个坏掉的版本条目
+        var physicalDeleted = FileVersionStore.TryDeleteSnapshot(version.StoragePath);
+        if (!physicalDeleted)
         {
-            try
-            {
-                File.Delete(version.StoragePath);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "删除版本文件失败: {Path}", version.StoragePath);
-            }
+            _logger.LogWarning(
+                "版本文件删除失败（保留记录）: FileItemId={FileItemId}, Version={Version}, Path={Path}",
+                fileItemId, versionNumber, version.StoragePath);
+            return Result.Failure(
+                new Error("FileVersion.StorageDeleteFailed", "版本文件删除失败（可能被占用），记录已保留"));
         }
 
         _versionRepository.Delete(version);
