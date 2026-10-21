@@ -4,11 +4,13 @@ import { useI18n } from 'vue-i18n'
 import {
   Refresh, Delete, Link, CopyDocument, Edit, View,
   Share, Clock, Download, Lock, Unlock, MoreFilled,
-  Search, List as ListIcon, Grid as GridIcon, Sort, SortUp, SortDown
+  Search, List as ListIcon, Grid as GridIcon, Sort, SortUp, SortDown, Plus, Folder, Document, ArrowLeft
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { fileShareApi, ShareAccessType, type FileShareDto, type UpdateFileShareRequest } from '@/api/fileShare'
-import { getFileIcon, getFileIconColor, formatDate } from '@/utils/format'
+import { fileShareApi, ShareAccessType, PermissionLevel, type FileShareDto, type UpdateFileShareRequest, type CreateFileShareRequest } from '@/api/fileShare'
+import { fileApi } from '@/api/file'
+import { getFileIcon, getFileIconColor, formatDate, formatSize } from '@/utils/format'
+import type { FileItem } from '@/types'
 import { useDrawerSize } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
@@ -22,6 +24,127 @@ const editExpiresOption = ref('keep')
 const drawerSize = useDrawerSize()
 const editMaxDownloadsOption = ref('keep')
 const editPassword = ref('')
+// 编辑过期时间：'custom' 时用自定义日期选择器（与新建侧同款）
+const editCustomExpiresAt = ref<string | null>(null)
+
+// ─── 新建分享（2026-10-21 补齐：管理页可直接建，不必绕文件页）───
+const createDialogVisible = ref(false)
+const creating = ref(false)
+const createResult = ref<FileShareDto | null>(null)
+const selectedFile = ref<FileItem | null>(null)
+const createForm = ref({
+  accessType: ShareAccessType.Public as ShareAccessType,
+  password: '',
+  permission: PermissionLevel.Read as PermissionLevel,
+  expiresOption: 'never',
+  customExpiresAt: null as string | null,
+  maxDownloadsOption: 'unlimited',
+  customMaxDownloads: null as number | null
+})
+
+// 文件选择器：浏览库内目录（与文件页同款 browse 接口），
+// 双击进文件夹、单击行选中。路径 '/' 为根
+const filePickerVisible = ref(false)
+const pickerPath = ref('/')
+const pickerItems = ref<FileItem[]>([])
+const pickerLoading = ref(false)
+
+const loadPickerDirectory = async (path: string) => {
+  pickerLoading.value = true
+  try {
+    const result = await fileApi.getDirectory(path)
+    if (result.data) {
+      pickerPath.value = result.data.path
+      pickerItems.value = result.data.items
+    }
+  } catch {
+    ElMessage.error(t('common.failed'))
+  } finally {
+    pickerLoading.value = false
+  }
+}
+
+const openFilePicker = () => {
+  filePickerVisible.value = true
+  void loadPickerDirectory('/')
+}
+
+// 面包屑：'/a/b/c' → ['/', '/a', '/a/b', '/a/b/c']
+const pickerBreadcrumbs = computed(() => {
+  const segments = pickerPath.value.split('/').filter(Boolean)
+  const crumbs: { path: string; label: string }[] = [{ path: '/', label: t('filesView.rootDir') }]
+  let acc = ''
+  for (const seg of segments) {
+    acc += '/' + seg
+    crumbs.push({ path: acc, label: seg })
+  }
+  return crumbs
+})
+
+const openCreateDialog = () => {
+  createDialogVisible.value = true
+  createResult.value = null
+  selectedFile.value = null
+  createForm.value = {
+    accessType: ShareAccessType.Public,
+    password: '',
+    permission: PermissionLevel.Read,
+    expiresOption: 'never',
+    customExpiresAt: null,
+    maxDownloadsOption: 'unlimited',
+    customMaxDownloads: null
+  }
+}
+
+const handleCreateShare = async () => {
+  if (!selectedFile.value) {
+    ElMessage.warning(t('shares.noFileSelected'))
+    return
+  }
+  creating.value = true
+  try {
+    const request: CreateFileShareRequest = {
+      fileItemId: selectedFile.value.id,
+      accessType: createForm.value.accessType,
+      permission: createForm.value.permission
+    }
+    if (createForm.value.accessType === ShareAccessType.Password && createForm.value.password) {
+      request.password = createForm.value.password
+    }
+    if (createForm.value.expiresOption === 'custom') {
+      if (createForm.value.customExpiresAt) request.expiresAt = createForm.value.customExpiresAt
+    } else if (createForm.value.expiresOption !== 'never') {
+      const d = new Date()
+      d.setDate(d.getDate() + parseInt(createForm.value.expiresOption))
+      request.expiresAt = d.toISOString()
+    }
+    if (createForm.value.maxDownloadsOption === 'custom') {
+      if (createForm.value.customMaxDownloads) request.maxDownloads = createForm.value.customMaxDownloads
+    } else if (createForm.value.maxDownloadsOption !== 'unlimited') {
+      request.maxDownloads = parseInt(createForm.value.maxDownloadsOption)
+    }
+    const result = await fileShareApi.create(request)
+    if (result.data) {
+      createResult.value = result.data
+      ElMessage.success(t('shares.createSuccess'))
+      await loadData()
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || t('common.failed'))
+  } finally {
+    creating.value = false
+  }
+}
+
+const copyCreateResultLink = async () => {
+  if (!createResult.value) return
+  try {
+    await navigator.clipboard.writeText(createResult.value.shareUrl)
+    ElMessage.success(t('shares.linkCopied'))
+  } catch {
+    ElMessage.error(t('common.failed'))
+  }
+}
 
 const loadData = async () => {
   loading.value = true
@@ -146,6 +269,7 @@ const openEditDialog = (share: FileShareDto) => {
   editTarget.value = share
   editForm.value = { accessType: share.accessType, permission: share.permission, isEnabled: share.isEnabled }
   editExpiresOption.value = 'keep'
+  editCustomExpiresAt.value = null
   editMaxDownloadsOption.value = 'keep'
   editPassword.value = ''
   editDialogVisible.value = true
@@ -199,7 +323,9 @@ const handleSaveEdit = async () => {
       request.clearPassword = true
     }
     if (editExpiresOption.value === 'clear') request.clearExpiresAt = true
-    else if (editExpiresOption.value !== 'keep') {
+    else if (editExpiresOption.value === 'custom') {
+      if (editCustomExpiresAt.value) request.expiresAt = editCustomExpiresAt.value
+    } else if (editExpiresOption.value !== 'keep') {
       const d = new Date()
       d.setDate(d.getDate() + parseInt(editExpiresOption.value.replace('d', '')))
       request.expiresAt = d.toISOString()
@@ -257,7 +383,10 @@ onMounted(() => loadData())
         <h1>{{ t('shares.title') }}</h1>
         <p>{{ t('shares.subtitle') }}</p>
       </div>
-      <el-button :icon="Refresh" @click="loadData" :loading="loading">{{ t('common.refresh') }}</el-button>
+      <div class="header-actions">
+        <el-button type="primary" :icon="Plus" @click="openCreateDialog">{{ t('shares.createShare') }}</el-button>
+        <el-button :icon="Refresh" @click="loadData" :loading="loading">{{ t('common.refresh') }}</el-button>
+      </div>
     </div>
 
     <!-- 统计卡：白底发丝线 + 柔和阴影；语义色（有效绿/过期红/下载蓝）保留，
@@ -477,13 +606,28 @@ onMounted(() => loadData())
         <el-form-item :label="t('shares.newPassword')" v-if="editForm.accessType === 1">
           <el-input v-model="editPassword" :placeholder="t('shares.keepPassword')" show-password />
         </el-form-item>
+        <el-form-item :label="t('filesView.permissionLabel')">
+          <el-radio-group v-model="editForm.permission">
+            <el-radio :value="PermissionLevel.Read">{{ $t('filesView.readOnly') }}</el-radio>
+            <el-radio :value="PermissionLevel.ReadWrite">{{ $t('filesView.readWrite') }}</el-radio>
+            <el-radio :value="PermissionLevel.FullControl">{{ $t('filesView.fullControl') }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item :label="t('shares.expiresAt')">
           <el-radio-group v-model="editExpiresOption">
             <el-radio value="keep">{{ t('shares.keepCurrent') }}</el-radio>
             <el-radio value="clear">{{ t('shares.neverExpire') }}</el-radio>
             <el-radio value="7d">7{{ t('shares.days') }}</el-radio>
             <el-radio value="30d">30{{ t('shares.days') }}</el-radio>
+            <el-radio value="custom">{{ $t('filesView.custom') }}</el-radio>
           </el-radio-group>
+          <el-date-picker
+            v-if="editExpiresOption === 'custom'"
+            v-model="editCustomExpiresAt"
+            type="datetime"
+            :placeholder="t('shares.expiresAt')"
+            style="margin-top: 8px; width: 100%"
+          />
         </el-form-item>
         <el-form-item :label="t('shares.downloadLimit')">
           <el-radio-group v-model="editMaxDownloadsOption">
@@ -511,11 +655,235 @@ onMounted(() => loadData())
         <el-button type="primary" @click="handleSaveEdit">{{ t('common.save') }}</el-button>
       </template>
     </el-drawer>
+
+    <!-- 新建分享抽屉：文件选择 + 全部字段（与文件页创建侧同款字段集） -->
+    <el-drawer v-model="createDialogVisible" :title="t('shares.createShare')" :size="drawerSize('420px', '38vw', '560px')" :mask-closable="false">
+      <!-- 创建成功：展示链接与配置摘要，可复制 -->
+      <div v-if="createResult" class="create-result">
+        <el-alert type="success" :closable="false" show-icon>
+          <template #title>{{ $t('filesView.linkGeneratedTitle') }}</template>
+        </el-alert>
+        <div class="share-link-box">
+          <el-input :model-value="createResult.shareUrl" readonly>
+            <template #append>
+              <el-button @click="copyCreateResultLink">{{ $t('filesView.copyTip') }}</el-button>
+            </template>
+          </el-input>
+        </div>
+        <div class="share-info-list">
+          <div class="share-info-item">
+            <span class="label">{{ $t('filesView.accessTypeLabel') }}</span>
+            <span>{{ createResult.accessType === 0 ? $t('filesView.accessPublicCol') : createResult.accessType === 1 ? $t('filesView.accessPasswordCol') : $t('filesView.accessInternalCol') }}</span>
+          </div>
+          <div class="share-info-item" v-if="createResult.accessType === 1 && createForm.password">
+            <span class="label">{{ $t('filesView.passwordLabel') }}</span>
+            <span class="password">{{ createForm.password }}</span>
+          </div>
+          <div class="share-info-item">
+            <span class="label">{{ $t('filesView.permissionLabel') }}</span>
+            <span>{{ createResult.permission === 1 ? $t('filesView.permReadOnlyCol') : createResult.permission === 2 ? $t('filesView.permReadWriteCol') : $t('filesView.permFullCol') }}</span>
+          </div>
+          <div class="share-info-item" v-if="createResult.expiresAt">
+            <span class="label">{{ $t('filesView.expiresUntilLabel') }}</span>
+            <span>{{ formatDate(createResult.expiresAt) }}</span>
+          </div>
+          <div class="share-info-item" v-if="createResult.maxDownloads">
+            <span class="label">{{ $t('filesView.downloadLimitInfoLabel') }}</span>
+            <span>{{ $t('filesView.timesSuffix', { count: createResult.maxDownloads }) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 创建表单 -->
+      <el-form v-else label-position="top">
+        <el-form-item :label="t('shares.selectFile')" required>
+          <div v-if="selectedFile" class="selected-file">
+            <el-icon :size="18" :color="getFileIconColor(selectedFile)"><component :is="getFileIcon(selectedFile)" /></el-icon>
+            <div class="selected-file-info">
+              <div class="selected-file-name">{{ selectedFile.name }}</div>
+              <div class="selected-file-path">{{ selectedFile.path }}</div>
+            </div>
+            <el-button size="small" @click="openFilePicker">{{ t('shares.changeFile') }}</el-button>
+          </div>
+          <el-button v-else :icon="Folder" @click="openFilePicker">{{ t('shares.selectFile') }}</el-button>
+        </el-form-item>
+
+        <el-form-item :label="t('shares.accessType')">
+          <el-radio-group v-model="createForm.accessType">
+            <el-radio :value="0">{{ t('shares.public') }}</el-radio>
+            <el-radio :value="1">{{ t('shares.hasPassword') }}</el-radio>
+            <el-radio :value="2">{{ t('shares.internalOnly') }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="t('shares.newPassword')" v-if="createForm.accessType === 1">
+          <el-input v-model="createForm.password" show-password :placeholder="t('filesView.passwordSetPlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="t('filesView.permissionLabel')">
+          <el-radio-group v-model="createForm.permission">
+            <el-radio :value="PermissionLevel.Read">{{ $t('filesView.readOnly') }}</el-radio>
+            <el-radio :value="PermissionLevel.ReadWrite">{{ $t('filesView.readWrite') }}</el-radio>
+            <el-radio :value="PermissionLevel.FullControl">{{ $t('filesView.fullControl') }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="t('shares.expiresAt')">
+          <el-radio-group v-model="createForm.expiresOption">
+            <el-radio value="never">{{ $t('filesView.neverExpire') }}</el-radio>
+            <el-radio value="1d">{{ $t('filesView.oneDay') }}</el-radio>
+            <el-radio value="7d">{{ $t('filesView.sevenDays') }}</el-radio>
+            <el-radio value="30d">{{ $t('filesView.thirtyDays') }}</el-radio>
+            <el-radio value="custom">{{ $t('filesView.custom') }}</el-radio>
+          </el-radio-group>
+          <el-date-picker
+            v-if="createForm.expiresOption === 'custom'"
+            v-model="createForm.customExpiresAt"
+            type="datetime"
+            :placeholder="t('shares.expiresAt')"
+            style="margin-top: 8px; width: 100%"
+          />
+        </el-form-item>
+        <el-form-item :label="t('shares.downloadLimit')">
+          <el-radio-group v-model="createForm.maxDownloadsOption">
+            <el-radio value="unlimited">{{ $t('filesView.unlimited') }}</el-radio>
+            <el-radio value="1">{{ $t('filesView.once') }}</el-radio>
+            <el-radio value="10">{{ $t('filesView.times10') }}</el-radio>
+            <el-radio value="100">{{ $t('filesView.times100') }}</el-radio>
+            <el-radio value="custom">{{ $t('filesView.custom') }}</el-radio>
+          </el-radio-group>
+          <el-input-number
+            v-if="createForm.maxDownloadsOption === 'custom'"
+            v-model="createForm.customMaxDownloads"
+            :min="1"
+            :max="10000"
+            style="margin-top: 8px; width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createDialogVisible = false">{{ createResult ? $t('filesView.closeText') : t('common.cancel') }}</el-button>
+        <el-button v-if="!createResult" type="primary" :loading="creating" @click="handleCreateShare">
+          {{ $t('filesView.createShareBtn') }}
+        </el-button>
+        <el-button v-else type="primary" @click="copyCreateResultLink">
+          <el-icon><Link /></el-icon>
+          {{ $t('filesView.copyLinkBtn') }}
+        </el-button>
+      </template>
+    </el-drawer>
+
+    <!-- 文件选择器：浏览库内目录，双击进文件夹、单击行选中 -->
+    <el-dialog v-model="filePickerVisible" :title="t('shares.filePickerTitle')" width="560px" align-center>
+      <div class="picker-breadcrumbs">
+        <el-button
+          v-if="pickerPath !== '/'"
+          size="small"
+          :icon="ArrowLeft"
+          @click="loadPickerDirectory(pickerPath.split('/').slice(0, -1).join('/') || '/')"
+        >
+          {{ t('filesView.goBack') }}
+        </el-button>
+        <el-breadcrumb separator="/">
+          <el-breadcrumb-item v-for="crumb in pickerBreadcrumbs" :key="crumb.path">
+            <el-button link type="primary" @click="loadPickerDirectory(crumb.path)">{{ crumb.label }}</el-button>
+          </el-breadcrumb-item>
+        </el-breadcrumb>
+      </div>
+      <div v-loading="pickerLoading" class="picker-list">
+        <div
+          v-for="item in pickerItems"
+          :key="item.id"
+          class="picker-row"
+          :class="{ 'is-selected': selectedFile?.id === item.id }"
+          @click="selectedFile = item"
+          @dblclick="item.isFolder && loadPickerDirectory(item.path)"
+        >
+          <el-icon :size="18" :color="getFileIconColor(item)">
+            <component :is="item.isFolder ? Folder : Document" />
+          </el-icon>
+          <span class="picker-name">{{ item.name }}</span>
+          <span v-if="!item.isFolder" class="picker-size">{{ formatSize(item.sizeBytes) }}</span>
+        </div>
+        <el-empty v-if="pickerItems.length === 0" :description="t('shares.pickerEmpty')" :image-size="60" />
+      </div>
+      <template #footer>
+        <el-button @click="filePickerVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button
+          type="primary"
+          :disabled="!selectedFile"
+          @click="filePickerVisible = false"
+        >
+          {{ t('common.confirm') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style lang="scss" scoped>
 .shares-page { padding: 0; }
+
+// 页头操作区：新建 + 刷新并排
+.header-actions { display: flex; align-items: center; gap: 8px; }
+
+// 新建分享：已选文件行
+.selected-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--mac-hairline);
+  border-radius: var(--mac-radius-control);
+  background: var(--el-fill-color-lighter);
+
+  .selected-file-info { flex: 1; min-width: 0;
+    .selected-file-name { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .selected-file-path { font-size: 12px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
+}
+
+// 新建成功结果区：链接框 + 配置摘要（与文件页创建侧同款布局）
+.create-result { display: flex; flex-direction: column; gap: 16px; }
+
+.share-link-box { margin-top: 12px; }
+
+.share-info-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.share-info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+
+  .label { color: var(--el-text-color-secondary); }
+  .password { font-family: monospace; }
+}
+
+// 文件选择器
+.picker-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  min-height: 32px;
+}
+
+.picker-list {
+  max-height: 420px;
+  overflow-y: auto;
+
+  .picker-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: var(--mac-radius-control);
+    cursor: pointer;
+
+    &:hover { background: var(--el-fill-color-light); }
+    &.is-selected { background: color-mix(in srgb, var(--el-color-primary) 12%, transparent); }
+
+    .picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .picker-size { font-size: 12px; color: var(--el-text-color-secondary); }
+  }
+}
 
 
 // mac 卡片基类：白底 + 发丝线 + 分层柔和阴影（令牌见 main.scss）

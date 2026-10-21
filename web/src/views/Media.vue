@@ -7,12 +7,12 @@
  * （解析盒/帧头毫秒级）。图片格用现有缩略图端点，
  * 视频/音频显示时长徽章（时长来自托管解析，取不到不显示）。
  */
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import Hls from 'hls.js'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Picture, VideoCamera, Headset, Loading, Download } from '@element-plus/icons-vue'
+import { Picture, VideoCamera, Headset, Loading, Download, Warning } from '@element-plus/icons-vue'
 import { mediaApi, type MediaType } from '@/api/media'
 import { semanticApi, type SemanticHit } from '@/api/semantic'
 import { ocrApi } from '@/api/ocr'
@@ -28,6 +28,9 @@ const isMobile = useIsMobile()
 const drawerSize = useDrawerSize()
 
 const activeType = ref<MediaType>('image')
+// 月份筛选（后端 month=yyyy-MM 已支持）：与类型 tab 同构，
+// 选定后只加载该月，清空回全时间线
+const activeMonth = ref<string | null>(null)
 const items = ref<MediaItem[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -43,6 +46,14 @@ const semanticQuery = ref('')
 const semanticHits = ref<SemanticHit[]>([])
 const semanticSearching = ref(false)
 const semanticActive = computed(() => semanticHits.value.length > 0)
+// 命中相似度（后端 distance 为余弦距离，越小越相似；展示换算成百分比）
+const semanticDistance = ref<Map<string, number>>(new Map())
+
+function similarityOf(path: string): number | null {
+  const distance = semanticDistance.value.get(path)
+  if (distance === undefined) return null
+  return Math.max(0, Math.round((1 - distance) * 100))
+}
 
 // 语义模式下网格数据源：命中按距离升序（后端口径）平铺展示
 const semanticItems = computed<MediaItem[]>(() =>
@@ -67,9 +78,30 @@ const playingItem = ref<MediaItem | null>(null)
 const videoEl = ref<HTMLVideoElement | null>(null)
 let hlsInstance: Hls | null = null
 
+// 播放错误与转码等待状态：首次播放时 ffmpeg 还在转码（m3u8 未生成），
+// hls.js 的 MANIFEST_LOAD_ERROR（404）会无限循环重连——这里改成有限重试
+// 并提示"转码中"；重试耗尽或其他致命错误走错误面板 + 手动重试
+const playerError = ref<string | null>(null)
+const transcoding = ref(false)
+const MANIFEST_RETRY_LIMIT = 10
+const MANIFEST_RETRY_INTERVAL_MS = 2500
+let manifestRetryCount = 0
+let manifestRetryTimer: number | null = null
+
+function clearManifestRetry() {
+  if (manifestRetryTimer !== null) {
+    window.clearTimeout(manifestRetryTimer)
+    manifestRetryTimer = null
+  }
+}
+
 function playVideo(item: MediaItem) {
   playingItem.value = item
   playerVisible.value = true
+  playerError.value = null
+  transcoding.value = false
+  manifestRetryCount = 0
+  clearManifestRetry()
   void nextTick(mountPlayer)
 }
 
@@ -77,22 +109,55 @@ function mountPlayer() {
   const video = videoEl.value
   if (!video || !playingItem.value) return
   destroyPlayer()
+  clearManifestRetry()
 
   const token = localStorage.getItem('token')
-  const url = `/api/v1/media/stream/${playingItem.value.path.replace(/^\//, '')}`
+  const url = mediaApi.getStreamUrl(playingItem.value.path)
   if (Hls.isSupported()) {
     const hls = new Hls({
       xhrSetup: (xhr) => {
         if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
       }
     })
+    hls.on(Hls.Events.ERROR, (_evt, data) => {
+      if (!data.fatal) return
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR) {
+        // 首次播放：ffmpeg 还在转码，m3u8 尚未生成。有限重试，期间提示转码中
+        if (manifestRetryCount < MANIFEST_RETRY_LIMIT) {
+          manifestRetryCount++
+          transcoding.value = true
+          manifestRetryTimer = window.setTimeout(() => {
+            if (playerVisible.value && playingItem.value) mountPlayer()
+          }, MANIFEST_RETRY_INTERVAL_MS)
+        } else {
+          transcoding.value = false
+          playerError.value = t('media.playerTranscodeFailed')
+        }
+      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        hls.recoverMediaError()
+      } else {
+        playerError.value = t('media.playerError')
+      }
+    })
     hls.loadSource(url)
     hls.attachMedia(video)
     hlsInstance = hls
   } else {
-    // hls.js 不可用（极老浏览器）：直接挂 src，Safari 的 MSE 支持路径
+    // hls.js 不可用（极老浏览器）：直接挂 src。原生 HLS 请求不带
+    // Authorization header（Safari 下会 401），加载失败时给明确提示
+    video.onerror = () => {
+      playerError.value = t('media.playerError')
+    }
     video.src = url
   }
+}
+
+// 手动重试：重置重试计数重新挂载播放器
+function retryPlayer() {
+  playerError.value = null
+  transcoding.value = false
+  manifestRetryCount = 0
+  if (playingItem.value) void nextTick(mountPlayer)
 }
 
 function destroyPlayer() {
@@ -102,9 +167,17 @@ function destroyPlayer() {
 
 function closePlayer() {
   destroyPlayer()
+  clearManifestRetry()
   playerVisible.value = false
   playingItem.value = null
+  playerError.value = null
+  transcoding.value = false
 }
+
+onUnmounted(() => {
+  destroyPlayer()
+  clearManifestRetry()
+})
 
 async function runSemanticSearch() {
   const query = semanticQuery.value.trim()
@@ -114,6 +187,7 @@ async function runSemanticSearch() {
     const resp = await semanticApi.search(query)
     if (resp.success && resp.data) {
       semanticHits.value = resp.data.items
+      semanticDistance.value = new Map(resp.data.items.map(h => [h.path, h.distance]))
       if (resp.data.items.length === 0) {
         ElMessage.info(t('media.semanticNoHits'))
       }
@@ -128,6 +202,7 @@ async function runSemanticSearch() {
 function clearSemanticSearch() {
   semanticHits.value = []
   semanticQuery.value = ''
+  semanticDistance.value = new Map()
 }
 
 const hasMore = computed(() => items.value.length < total.value)
@@ -148,8 +223,9 @@ const groups = computed(() => {
 
 // immediate：首屏就要加载首页。没有它时 watch 只在切换 tab 时触发，
 // 首访媒体库永远是空的（只有切走再切回或手点"加载更多"才有内容）——
-// 2026-10-19 E2E 走查实证：API 有 5 张图，页面显示"暂无媒体文件"
-watch(activeType, () => {
+// 2026-10-19 E2E 走查实证：API 有 5 张图，页面显示"暂无媒体文件"。
+// 类型与月份同构：任一变化即重置分页重载
+watch([activeType, activeMonth], () => {
   page.value = 1
   items.value = []
   metadataMap.value = new Map()
@@ -161,7 +237,11 @@ async function loadMore(reset = false) {
   if (!reset && !hasMore.value) return
   loading.value = true
   try {
-    const result = await mediaApi.getList(activeType.value, { page: page.value, pageSize })
+    const result = await mediaApi.getList(activeType.value, {
+      page: page.value,
+      pageSize,
+      month: activeMonth.value || undefined
+    })
     if (result.success && result.data) {
       items.value = reset ? result.data.items : [...items.value, ...result.data.items]
       total.value = result.data.totalCount
@@ -381,12 +461,26 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
   <div class="media-page">
     <div class="media-header">
       <div class="page-header"><h1>{{ $t('media.title') }}</h1></div>
-      <el-radio-group v-model="activeType" size="large">
-        <el-radio-button v-for="tab in typeTabs" :key="tab.key" :value="tab.key">
-          <el-icon style="vertical-align: -2px; margin-right: 4px"><component :is="tab.icon" /></el-icon>
-          {{ $t(tab.labelKey) }}
-        </el-radio-button>
-      </el-radio-group>
+      <div class="media-filters">
+        <el-radio-group v-model="activeType" size="large">
+          <el-radio-button v-for="tab in typeTabs" :key="tab.key" :value="tab.key">
+            <el-icon style="vertical-align: -2px; margin-right: 4px"><component :is="tab.icon" /></el-icon>
+            {{ $t(tab.labelKey) }}
+          </el-radio-button>
+        </el-radio-group>
+        <!-- 月份筛选：语义模式按相关度排序，时间筛选不适用，隐藏 -->
+        <el-date-picker
+          v-if="!semanticActive"
+          v-model="activeMonth"
+          type="month"
+          :placeholder="$t('media.monthFilter')"
+          format="YYYY-MM"
+          value-format="YYYY-MM"
+          clearable
+          size="large"
+          style="width: 160px"
+        />
+      </div>
     </div>
 
     <!-- 语义搜图（仅图片 tab；模型未就位时后端明确提示） -->
@@ -430,6 +524,9 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
             </div>
             <div class="cell-name" :title="item.name">{{ item.name }}</div>
             <div class="cell-size">{{ formatSize(item.sizeBytes) }}</div>
+            <div v-if="similarityOf(item.path) !== null" class="cell-similarity">
+              {{ $t('media.semanticSimilarity', { pct: similarityOf(item.path) }) }}
+            </div>
           </div>
         </div>
       </template>
@@ -466,7 +563,7 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
       </template>
       <el-empty v-else-if="!loading" :description="$t('media.empty')" />
     </div>
-    <!-- 视频播放对话框（HLS，首次打开触发转码，转码中视频元素自行重试） -->
+    <!-- 视频播放对话框（HLS，首次打开触发转码；转码未就绪时有限重试并提示） -->
     <el-dialog
       v-model="playerVisible"
       :title="playingItem?.name ?? ''"
@@ -474,6 +571,15 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
       align-center
       @closed="closePlayer"
     >
+      <div v-if="transcoding && !playerError" class="player-transcoding">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        {{ $t('media.transcoding') }}
+      </div>
+      <div v-if="playerError" class="player-error">
+        <el-icon><Warning /></el-icon>
+        <span>{{ playerError }}</span>
+        <el-button size="small" @click="retryPlayer">{{ $t('media.playerRetry') }}</el-button>
+      </div>
       <video
         v-show="playerVisible"
         ref="videoEl"
@@ -572,6 +678,35 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
     margin-bottom: 16px;
   }
 
+  // 类型 tab 与月份筛选同一行：tab 组撑左，日期选择器跟右
+  .media-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .player-transcoding,
+  .player-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+
+  .player-transcoding {
+    background: var(--el-fill-color-light);
+    color: var(--el-text-color-secondary);
+  }
+
+  .player-error {
+    background: var(--el-color-danger-light-9);
+    color: var(--el-color-danger);
+  }
+
   .month-group {
     margin-bottom: 24px;
 
@@ -650,6 +785,14 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
       padding: 2px 8px 8px;
       font-size: 12px;
       color: var(--el-text-color-secondary);
+    }
+
+    // 语义命中的相似度徽章（仅语义模式网格显示）
+    .cell-similarity {
+      padding: 0 8px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--el-color-primary);
     }
   }
 

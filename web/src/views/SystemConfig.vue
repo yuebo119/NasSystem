@@ -15,7 +15,7 @@
  * ⑤ 语义搜图卡：模型四件套状态、索引进度、手动触发一轮建索引
  * ⑥ 危险区：重启/关机（真实调度）
  */
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link, ArrowRight, Monitor, Warning, Picture, VideoCamera } from '@element-plus/icons-vue'
@@ -47,11 +47,13 @@ const semanticStatus = ref<SemanticStatus | null>(null)
 const semanticLoading = ref(false)
 const semanticDownloading = ref(false)
 const semanticTriggering = ref(false)
-// 视频转码（2026-10-19 多码率阶梯）：编码器与阶梯档位，部署环境事实
-const transcodeStatus = ref<TranscodeStatus | null>(null)
-const transcodeClearing = ref(false)
+// 轮询句柄：模型下载（同步长动作，约 606MB）与后台建索引期间，
+// 唯一的真值通道是 /semantic/status 轮询——文件就位数与编码进度
+// 都在这个响应里，不做假进度条。离页时 onUnmounted 统一清理
+let semanticDownloadTimer: number | null = null
+let semanticIndexTimer: number | null = null
 
-// 模型状态：设置页打开时拉一次；下载进行中由下载方法内轮询推进
+// 模型状态：设置页打开时拉一次；下载/索引进行中由轮询持续推进
 async function loadSemanticStatus() {
   semanticLoading.value = true
   try {
@@ -62,10 +64,31 @@ async function loadSemanticStatus() {
   }
 }
 
+// 下载期间轮询：四件套逐个落盘，就位文件数实时更新
+function startDownloadPolling() {
+  stopDownloadPolling()
+  semanticDownloadTimer = window.setInterval(async () => {
+    try {
+      const resp = await semanticApi.getStatus()
+      if (resp.success && resp.data) semanticStatus.value = resp.data
+    } catch {
+      // 单次轮询失败忽略：下载结束时有一次全量刷新兜底
+    }
+  }, 3000)
+}
+
+function stopDownloadPolling() {
+  if (semanticDownloadTimer !== null) {
+    window.clearInterval(semanticDownloadTimer)
+    semanticDownloadTimer = null
+  }
+}
+
 // 下载模型四件套（约 606MB）。后端同步执行，前端轮询 status 观察
 // 文件逐个就位（下载是幂等慢动作，不做假进度条——文件就位是唯一事实）
 async function downloadSemanticModel() {
   semanticDownloading.value = true
+  startDownloadPolling()
   try {
     const resp = await semanticApi.downloadModel()
     if (resp.success) {
@@ -74,8 +97,32 @@ async function downloadSemanticModel() {
   } catch {
     // 错误消息由 http 拦截器统一弹出
   } finally {
+    stopDownloadPolling()
     semanticDownloading.value = false
     await loadSemanticStatus()
+  }
+}
+
+// 索引期间轮询：202 只表示受理，编码在后台跑，
+// 每 2s 看一次进度，完成或出错（error 非空是终态）即停
+function startIndexPolling() {
+  stopIndexPolling()
+  semanticIndexTimer = window.setInterval(async () => {
+    try {
+      const resp = await semanticApi.getStatus()
+      if (!resp.success || !resp.data) return
+      semanticStatus.value = resp.data
+      if (!resp.data.index_.isIndexing) stopIndexPolling()
+    } catch {
+      // 单次轮询失败忽略：用户可手动点刷新
+    }
+  }, 2000)
+}
+
+function stopIndexPolling() {
+  if (semanticIndexTimer !== null) {
+    window.clearInterval(semanticIndexTimer)
+    semanticIndexTimer = null
   }
 }
 
@@ -89,6 +136,7 @@ async function triggerSemanticIndex() {
     if (resp.success) {
       ElMessage.success(t('config.semanticTriggerDone'))
       await loadSemanticStatus()
+      startIndexPolling()
     }
   } catch {
     // 错误消息由 http 拦截器统一弹出（未启用/模型未就位有明确文案）
@@ -96,6 +144,15 @@ async function triggerSemanticIndex() {
     semanticTriggering.value = false
   }
 }
+
+// 模型四件套就位文件数：下载期间轮询刷新，给用户一个 n/4 的过程态
+const semanticReadyFiles = computed(() =>
+  semanticStatus.value?.model.files.filter(f => f.present).length ?? 0
+)
+
+// 视频转码（2026-10-19 多码率阶梯）：编码器与阶梯档位，部署环境事实
+const transcodeStatus = ref<TranscodeStatus | null>(null)
+const transcodeClearing = ref(false)
 
 // 清空全部缩略图缓存：下次访问全量重新生成（CPU 与磁盘压力），
 // 确认文案说明代价。失败只提示不阻断（缓存清了大不了再生成）
@@ -173,6 +230,12 @@ onMounted(() => {
   loadConfig()
   loadSemanticStatus()
   loadTranscodeStatus()
+})
+
+// 离页清理轮询句柄：否则切走后定时器继续打 /status
+onUnmounted(() => {
+  stopDownloadPolling()
+  stopIndexPolling()
 })
 
 async function loadConfig() {
@@ -404,6 +467,12 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
           indexed: semanticStatus.index_.indexedImages,
           total: semanticStatus.index_.totalImages
         }) }}</span>
+        <el-progress
+          v-if="semanticStatus.index_.totalImages > 0"
+          :percentage="Math.min(100, Math.round(semanticStatus.index_.indexedImages / semanticStatus.index_.totalImages * 100))"
+          :stroke-width="6"
+          style="margin-top: 8px; max-width: 420px"
+        />
         <el-tag v-if="semanticStatus.index_.isIndexing" type="warning" size="small">
           {{ $t('config.semanticIndexing') }}
         </el-tag>
@@ -411,6 +480,13 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
           {{ semanticStatus.index_.error }}
         </span>
       </div>
+
+      <p v-if="semanticDownloading" class="readonly-desc">
+        {{ $t('config.semanticDownloading', {
+          ready: semanticReadyFiles,
+          total: semanticStatus.model.files.length
+        }) }}
+      </p>
 
       <div class="danger-actions">
         <el-button
@@ -453,7 +529,7 @@ function setInt(item: SystemConfigItem, value: number | undefined) {
         </el-tag>
       </div>
 
-      <div class="transcode-rungs" v-if="transcodeStatus.rungs.length">
+      <div class="transcode-rungs" v-if="transcodeStatus.rungs?.length">
         <span class="rungs-label">{{ $t('config.transcodeLadder') }}</span>
         <el-tag v-for="rung in transcodeStatus.rungs" :key="rung.height" size="small" type="primary" effect="plain">
           {{ rung.name }} · {{ (rung.maxBitrateKbps / 1000).toFixed(1) }} Mbps

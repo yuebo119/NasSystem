@@ -125,6 +125,10 @@ public sealed record SearchFilesRequest
     public string? Path { get; init; }
     public FileItemType? ItemType { get; init; }
     public string? Extension { get; init; }
+
+    /// <summary>true 时只命中图片内 OCR 识别文字（去掉文件名通道），用于「识别文字搜索」</summary>
+    public bool OcrOnly { get; init; }
+
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 50;
 }

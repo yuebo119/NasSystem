@@ -13,11 +13,11 @@ import { storageApi } from '@/api/storage'
 import { ElMessage, ElMessageBox, ElCheckbox } from 'element-plus'
 import { ElTableV2, ElAutoResizer, TableV2SortOrder, type Column, type ColumnSortParams, type RowEventHandlers, type TableV2Instance } from 'element-plus'
 import type { UploadFile } from 'element-plus'
-import { 
-  Refresh, Upload, Delete, Download, 
+import {
+  Refresh, Upload, Delete, Download,
   CopyDocument, Rank, FolderAdd, Search,
   Grid, List, View, Hide, DeleteFilled, Back,
-  Document, Folder, HomeFilled, Share, Link, Loading, Reading
+  Document, Folder, HomeFilled, Share, Link, Loading, Reading, ArrowDown
 } from '@element-plus/icons-vue'
 import type { FileItem, FileVersion, OcrText, VersionComparison } from '@/types'
 import { formatSize, formatDate, getFileIcon, getFileIconColor } from '@/utils/format'
@@ -64,6 +64,9 @@ const searchLoading = ref(false)
 const searchItemType = ref('')
 const searchExtension = ref('')
 const searchInCurrentDir = ref(true)
+// 只搜识别文字（OCR）：定向检索图片内文字（后端 ocrOnly），
+// 文件名通道关闭。用于"文件名搜不到、图里有"的扫描件/截图场景
+const searchOcrOnly = ref(false)
 const previewItem = ref<FileItem | null>(null)
 
 // 搜索防抖定时器
@@ -130,7 +133,7 @@ watch(
 
 // 监听搜索关键词变化，自动触发搜索（防抖）
 watch(
-  [searchQuery, searchItemType, searchExtension, searchInCurrentDir],
+  [searchQuery, searchItemType, searchExtension, searchInCurrentDir, searchOcrOnly],
   () => {
     if (searchDebounceTimer) {
       clearTimeout(searchDebounceTimer)
@@ -402,6 +405,7 @@ async function handleSearch() {
       path: searchInCurrentDir.value ? fileStore.currentPath : undefined,
       itemType: searchItemType.value || undefined,
       extension: searchExtension.value || undefined,
+      ocrOnly: searchOcrOnly.value || undefined,
       pageSize: 200
     })
     if (result.success && result.data) {
@@ -426,6 +430,7 @@ function resetSearch() {
   searchItemType.value = ''
   searchExtension.value = ''
   searchInCurrentDir.value = true
+  searchOcrOnly.value = false
 }
 
 // 跳转到搜索结果
@@ -646,10 +651,10 @@ async function runVersionCompare() {
 
 const ocrText = ref<OcrText | null>(null)
 const ocrLoading = ref(false)
-// 目录批量 OCR：进行中状态与可用条件（恰好选中一个文件夹）
+// 目录批量 OCR：选中一个或多个文件夹时可用（多选逐个跑后汇总）
 const ocrBatchRunning = ref(false)
 const canBatchOcr = computed(() =>
-  fileStore.selectedItems.length === 1 && fileStore.selectedItems[0].isFolder)
+  fileStore.selectedItems.length >= 1 && fileStore.selectedItems.every(i => i.isFolder))
 // 预览抽屉的缩略图缓存清理（换源文件/显示异常时用）
 const thumbClearing = ref(false)
 
@@ -711,15 +716,18 @@ async function runOcr(item: FileItem) {
   }
 }
 
-// 目录批量 OCR：对选中的文件夹跑全量识别（已有文字的默认跳过）。
-// 批量可能持续数十秒（每张百毫秒级），按钮 loading 常驻，
-// 结果用汇总消息报告（成功/跳过/失败各自计数）
-async function runBatchOcr() {
-  if (!canBatchOcr.value) return
-  const folder = fileStore.selectedItems[0]
+// 目录批量 OCR：对选中的文件夹跑全量识别（已有文字的默认跳过，
+// force=true 时全部重识别）。批量可能持续数十秒（每张百毫秒级），
+// 按钮 loading 常驻，结果用汇总消息报告（成功/跳过/失败各自计数）。
+// 多选文件夹时后端单端点只接一个目录，逐个跑后汇总——
+// 单个目录失败不中断其余目录，计入 failures 一并报告
+async function runBatchOcr(force = false) {
+  const folders = fileStore.selectedItems.filter(i => i.isFolder)
+  if (folders.length === 0) return
+  const mode = force ? t('filesView.ocrBatchForceHint') : t('filesView.ocrBatchSkipHint')
   try {
     await ElMessageBox.confirm(
-      t('filesView.ocrBatchConfirm', { name: folder.name }),
+      t('filesView.ocrBatchConfirmMulti', { count: folders.length, mode }),
       t('filesView.ocrBatchTitle'),
       { type: 'info' }
     )
@@ -727,26 +735,42 @@ async function runBatchOcr() {
     return // 用户取消
   }
   ocrBatchRunning.value = true
+  let total = 0
+  let recognized = 0
+  let skipped = 0
+  let failed = 0
+  let failures = 0
   try {
-    const result = await ocrApi.recognizeDirectory(folder.path)
-    if (result.success && result.data) {
-      const r = result.data
-      if (r.total === 0) {
-        ElMessage.info(t('filesView.ocrBatchNoImages'))
-      } else {
-        ElMessage.success(t('filesView.ocrBatchDone', {
-          recognized: r.recognized,
-          skipped: r.skipped,
-          failed: r.failed
-        }))
+    for (const folder of folders) {
+      try {
+        const result = await ocrApi.recognizeDirectory(folder.path, force)
+        if (result.success && result.data) {
+          total += result.data.total
+          recognized += result.data.recognized
+          skipped += result.data.skipped
+          failed += result.data.failed
+        } else {
+          failures++
+        }
+      } catch {
+        failures++
       }
-      // 识别结果进了搜索索引，刷新当前目录让状态可见
-      await fileStore.loadDirectory(fileStore.currentPath)
-    } else {
-      ElMessage.error(result.error?.message || t('filesView.ocrFailed'))
     }
-  } catch {
-    ElMessage.error(t('filesView.ocrFailed'))
+    if (total === 0 && failures === 0) {
+      ElMessage.info(t('filesView.ocrBatchNoImages'))
+    } else if (failures > 0) {
+      ElMessage.warning(t('filesView.ocrBatchPartial', {
+        recognized, skipped, failed: failed + failures
+      }))
+    } else {
+      ElMessage.success(t('filesView.ocrBatchDone', {
+        recognized,
+        skipped,
+        failed
+      }))
+    }
+    // 识别结果进了搜索索引，刷新当前目录让状态可见
+    await fileStore.loadDirectory(fileStore.currentPath)
   } finally {
     ocrBatchRunning.value = false
   }
@@ -1293,6 +1317,18 @@ function handleCommand(command: string, item: FileItem) {
     case 'preview':
       openPreview(item)
       break
+    case 'ocr':
+      // 行菜单直认：打开预览抽屉（顺带取已有结果）并立即重新识别，
+      // 识别结果落在抽屉里的 OCR 区块
+      if (isImage(item)) {
+        openPreview(item)
+        void runOcr(item)
+      }
+      break
+    case 'permanent-delete':
+      // 永久删除：不进回收站（入口在回收站页之外唯一一处）
+      handleDeleteItem(item, true)
+      break
     case 'rename':
       openRenameDialog(item)
       break
@@ -1512,19 +1548,29 @@ onUnmounted(() => {
             <el-icon><Share /></el-icon>
           </el-button>
         </el-tooltip>
-        <!-- 目录批量 OCR（ROADMAP Phase 2）：选中单个文件夹时可用 -->
-        <el-tooltip :content="$t('filesView.ocrBatchTip')" placement="bottom">
-          <el-button
-            @click="runBatchOcr"
-            :disabled="!canBatchOcr"
-            :loading="ocrBatchRunning"
-          >
+        <!-- 目录批量 OCR（ROADMAP Phase 2）：选中一个或多个文件夹时可用。
+             下拉给两档：默认跳过已识别，force 全部重识别 -->
+        <el-dropdown trigger="click" @command="cmd => runBatchOcr(cmd === 'force')">
+          <el-button :disabled="!canBatchOcr" :loading="ocrBatchRunning" :title="$t('filesView.ocrBatchTip')">
             <el-icon><Reading /></el-icon>
+            <el-icon><ArrowDown /></el-icon>
           </el-button>
-        </el-tooltip>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="normal">{{ $t('filesView.ocrBatchSkipExisting') }}</el-dropdown-item>
+              <el-dropdown-item command="force">{{ $t('filesView.ocrBatchForce') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <!-- 删除：默认软删进回收站（可在回收站页恢复）；永久删除不进回收站 -->
         <el-tooltip :content="$t('filesView.delete')" placement="bottom">
           <el-button type="danger" @click="handleDelete(false)" :disabled="!fileStore.hasSelection">
             <el-icon><Delete /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip :content="$t('filesView.permanentDeleteTip')" placement="bottom">
+          <el-button type="danger" plain @click="handleDelete(true)" :disabled="!fileStore.hasSelection">
+            <el-icon><DeleteFilled /></el-icon>
           </el-button>
         </el-tooltip>
       </div>
@@ -1616,6 +1662,13 @@ onUnmounted(() => {
           @dblclick="navigateToFolder(cell.item)"
           @contextmenu.prevent="openContextMenu($event, cell.item)"
         >
+          <!-- 行操作按钮：与列表视图同一套全局单实例菜单（openRowActions）。
+               悬停显示，触屏（无 hover）常显 -->
+          <button
+            class="grid-item-actions"
+            :title="$t('filesView.colActions')"
+            @click.stop="openRowActions($event, cell.item)"
+          >···</button>
           <div class="grid-item-icon">
             <el-icon :size="48" :color="getFileIconColor(cell.item)">
               <component :is="getFileIcon(cell.item)" />
@@ -1702,6 +1755,7 @@ onUnmounted(() => {
           </el-select>
           
           <el-checkbox v-model="searchInCurrentDir">{{ $t('filesView.currentDirOnly') }}</el-checkbox>
+          <el-checkbox v-model="searchOcrOnly">{{ $t('filesView.ocrTextOnly') }}</el-checkbox>
         </div>
       </div>
       
@@ -2094,6 +2148,9 @@ onUnmounted(() => {
         {{ $t('filesView.actPreview') }}
       </button>
       <button class="row-actions-item" @click="runRowAction('share')">{{ $t('filesView.shareTip') }}</button>
+      <button v-if="isImage(rowActionsTarget)" class="row-actions-item" @click="runRowAction('ocr')">
+        {{ $t('filesView.ocrTitle') }}
+      </button>
       <button v-if="!rowActionsTarget.isFolder" class="row-actions-item" @click="runRowAction('version')">
         {{ $t('filesView.versionHistoryBtn') }}
       </button>
@@ -2101,6 +2158,7 @@ onUnmounted(() => {
       <button class="row-actions-item" @click="runRowAction('copy')">{{ $t('filesView.copyTip') }}</button>
       <button class="row-actions-item" @click="runRowAction('cut')">{{ $t('filesView.cutTip') }}</button>
       <button class="row-actions-item danger" @click="runRowAction('delete')">{{ $t('filesView.delete') }}</button>
+      <button class="row-actions-item danger" @click="runRowAction('permanent-delete')">{{ $t('filesView.permanentDelete') }}</button>
     </div>
   </div>
 </template>
@@ -2325,6 +2383,36 @@ onUnmounted(() => {
     &.selected {
       background: var(--el-color-primary-light-9);
       border-color: var(--el-color-primary);
+    }
+
+    // 行操作按钮：右上角，悬停显示（触屏无 hover 时常显）
+    .grid-item-actions {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 26px;
+      height: 26px;
+      border: none;
+      border-radius: 6px;
+      background: var(--el-fill-color);
+      color: var(--el-text-color-secondary);
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity var(--mac-duration-fast) ease;
+
+      &:hover {
+        background: var(--el-fill-color-dark);
+        color: var(--el-text-color-primary);
+      }
+    }
+
+    &:hover .grid-item-actions { opacity: 1; }
+
+    // 触屏无 hover：操作按钮常显
+    @media (hover: none) {
+      .grid-item-actions { opacity: 1; }
     }
 
     .grid-item-icon {

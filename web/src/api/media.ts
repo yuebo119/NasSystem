@@ -36,5 +36,9 @@ export const mediaApi = {
   // freedBytes 是实际释放的磁盘空间
   async clearTranscodeCache(): Promise<ApiResponse<{ freedBytes: number }>> {
     return http.delete('/media/stream/cache')
-  }
+  },
+
+  // HLS 播放流 URL：首次请求触发 ffmpeg 按需转码，之后命中缓存。
+  // 分片与播放列表由 query 寻址（variant/segment），播放器只挂这个基础 URL
+  getStreamUrl: (path: string): string => `/api/v1/media/stream/${path.replace(/^\//, '')}`
 }

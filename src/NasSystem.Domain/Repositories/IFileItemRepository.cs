@@ -90,6 +90,7 @@ public interface IFileItemRepository : IRepository<FileItem>
         string? basePath = null,
         string? extension = null,
         bool? isFolder = null,
+        bool ocrOnly = false,
         int page = 1,
         int pageSize = 50,
         CancellationToken cancellationToken = default);

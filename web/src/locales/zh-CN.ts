@@ -92,6 +92,7 @@ export default {
     semanticIndexing: '建索引中',
     semanticTriggerIndex: '立即建索引',
     semanticTriggerDone: '已触发一轮索引，后台执行中，进度见上方',
+    semanticDownloading: '正在下载模型（约 606MB），已就位 {ready}/{total} 个文件，请保持页面打开…',
     groupSnapshot: '清单快照',
     versionMaxCount: '单文件保留版本数',
     versionMaxCountDesc: '覆盖上传或永久删除前自动产版本，超出数量后淘汰最旧的。范围 1-100',
@@ -251,12 +252,19 @@ export default {
     tabAudio: '音频',
     empty: '暂无媒体文件',
     loadMore: '加载更多',
+    monthFilter: '选择月份',
     semanticPlaceholder: '用自然语言搜图，如：家庭合照、扫描件、海边日落',
         semanticSearch: '语义搜索',
         semanticClear: '返回时间线',
         semanticHits: '命中 {n} 张（按相关度排序）',
+        semanticSimilarity: '相似度 {pct}%',
         semanticNoHits: '没有命中相关图片',
         semanticModelNotReady: '语义模型未就位，请先到系统配置页下载模型',
+    // 视频播放：首次打开需 ffmpeg 转码，未就绪时提示并有限重试
+    transcoding: '正在准备播放（首次需转码，请稍候）…',
+    playerTranscodeFailed: '视频转码失败或超时，请重试（需服务端 ffmpeg 可用）',
+    playerError: '视频加载失败，请重试',
+    playerRetry: '重试',
     // 媒体库预览（2026-10-21：图片大图预览 + OCR 快速识别、音频播放）
     openInFiles: '在文件页打开',
     previewFailed: '预览加载失败',
@@ -497,7 +505,15 @@ export default {
     gridView: '方格视图',
     noSearchResults: '无匹配结果',
     noSearchResultsHint: '尝试更换关键词，或清除搜索条件',
-    clearSearch: '清除搜索'
+    clearSearch: '清除搜索',
+    // 新建分享（2026-10-21 补齐：管理页可直接建）
+    createShare: '新建分享',
+    createSuccess: '分享已创建',
+    selectFile: '选择文件',
+    changeFile: '更换',
+    noFileSelected: '请先选择要分享的文件或文件夹',
+    filePickerTitle: '选择要分享的文件或文件夹',
+    pickerEmpty: '此目录为空'
   },
 
   // 存储管理
@@ -852,6 +868,7 @@ export default {
     extDocs: '文档',
     extArchives: '压缩包',
     currentDirOnly: '仅当前目录',
+    ocrTextOnly: '只搜识别文字',
     foundResults: '找到 {count} 个结果',
     // 命中数超过单页封顶时如实提示还有未展示的，不拿已取回数冒充总量
     searchTruncated: '（已展示前 {shown} 条，其余请缩小范围）',
@@ -904,8 +921,15 @@ export default {
     ocrBatchTip: '批量识别此文件夹内的图片文字',
     ocrBatchTitle: '批量识别',
     ocrBatchConfirm: '确定要识别文件夹 "{name}" 内的全部图片吗？已有识别结果的图片会跳过，大文件夹可能需要数十秒',
+    ocrBatchSkipExisting: '批量识别（跳过已识别）',
+    ocrBatchForce: '强制全部重新识别',
+    ocrBatchSkipHint: '已有识别结果的跳过',
+    ocrBatchForceHint: '已有结果的也全部重识别',
+    ocrBatchConfirmMulti: '将对选中的 {count} 个文件夹执行批量识别（{mode}），大文件夹可能需要数十秒。继续？',
+    ocrBatchPartial: '批量识别部分完成：新识别 {recognized} 张，跳过 {skipped} 张，失败 {failed} 张（部分目录失败）',
     ocrBatchNoImages: '该文件夹下没有图片',
     ocrBatchDone: '批量识别完成：新识别 {recognized} 张，跳过 {skipped} 张，失败 {failed} 张',
+    permanentDeleteTip: '永久删除（不进回收站，不可恢复）',
     thumbClear: '清除缩略图缓存',
     thumbCleared: '缩略图缓存已清除，下次访问重新生成',
     thumbClearFailed: '清除缩略图缓存失败',

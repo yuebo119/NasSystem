@@ -147,6 +147,7 @@ public sealed partial class FileService
             basePath: request.Path,
             extension: request.Extension,
             isFolder: isFolder,
+            ocrOnly: request.OcrOnly,
             page: page,
             pageSize: pageSize,
             cancellationToken: cancellationToken);

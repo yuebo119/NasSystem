@@ -93,7 +93,7 @@ public static class FileEndpoints
         files.MapGet("/search", SearchFiles)
              .WithName("SearchFiles")
              .WithSummary("搜索文件")
-             .WithDescription("根据关键词搜索文件，支持按类型、大小、日期等条件过滤")
+             .WithDescription("根据关键词搜索文件（含图片内 OCR 识别文字），支持按类型、扩展名过滤；ocrOnly=true 时只搜识别文字")
              .RequireAuthorization();
 
         // 回收站
@@ -379,13 +379,14 @@ public static class FileEndpoints
         string? path,
         string? extension,
         string? itemType,
+        bool ocrOnly = false,
         int page = 1,
         int pageSize = 50,
         IFileBrowseService fileService = null!,
         ClaimsPrincipal user = null!)
     {
         var userId = GetUserId(user);
-        
+
         // 解析文件类型
         NasSystem.Domain.Enums.FileItemType? fileItemType = itemType?.ToLower() switch
         {
@@ -393,13 +394,14 @@ public static class FileEndpoints
             "folder" => NasSystem.Domain.Enums.FileItemType.Folder,
             _ => null
         };
-        
+
         var request = new SearchFilesRequest
         {
             Query = query,
             Path = path,
             Extension = extension,
             ItemType = fileItemType,
+            OcrOnly = ocrOnly,
             Page = page > 0 ? page : 1,
             PageSize = pageSize > 0 ? pageSize : 50
         };

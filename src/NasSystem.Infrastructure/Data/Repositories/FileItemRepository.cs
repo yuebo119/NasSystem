@@ -182,6 +182,7 @@ public sealed class FileItemRepository(
         string? basePath = null,
         string? extension = null,
         bool? isFolder = null,
+        bool ocrOnly = false,
         int page = 1,
         int pageSize = 50,
         CancellationToken cancellationToken = default)
@@ -198,26 +199,38 @@ public sealed class FileItemRepository(
 
         string Slot() => "{" + args.Count + "}";
 
-        // 文件名命中或图片内文字命中（ROADMAP Phase 2 OCR → 全文检索升级）。
-        // 子查询而不是 JOIN：FileOcrTexts 是稀疏表（只有识别过的图片有行），
-        // JOIN 会把未识别的文件从结果里挤出去。
+        // 命中通道：默认文件名 OR 图片内文字双通道并集；ocrOnly=true 时
+        // 只留 OCR 文字通道（前端「识别文字搜索」定向检索识别结果）。
         // OCR 通道按查询长度分流：trigram FTS 按三字子串切分，少于 3 字符的
         // 查询没有可用的 trigram（实测 MATCH 对 1-2 字符查询不命中），
         // 回退 LIKE 全表扫——短查询的命中集本来就大，LIKE 的代价可接受。
-        // 文件名通道恒定 LIKE（名称是精确包含语义，与分词无关）
-        // 占位符显式写 {{0}}/{{1}} 而不再调 Slot()：Slot() 按 args.Count 编号，
-        // 而本段的两个占位都在 args.Add 之前求值，连续调用会撞成同一个 {0}
-        // （改造前两个 LIKE 恰好都用同一 searchTerm 值，撞号被掩盖；MATCH 与
-        // LIKE 的参数形态不同后必须分开编号）
-        conditions.Add(
-            $"IsDeleted = 0 AND (Name LIKE {{0}} ESCAPE '#' " +
-            (searchTerm.Length >= 3
-                ? "OR Id IN (SELECT FileItemId FROM FileOcrTextsFts WHERE FileOcrTextsFts MATCH {1}))"
-                : "OR Id IN (SELECT FileItemId FROM FileOcrTexts WHERE Text LIKE {1} ESCAPE '#'))"));
-        args.Add("%" + EscapeLike(searchTerm) + "%");
-        args.Add(searchTerm.Length >= 3
-            ? "\"" + EscapeFtsLiteral(searchTerm) + "\""
-            : "%" + EscapeLike(searchTerm) + "%");
+        // 子查询而不是 JOIN：FileOcrTexts 是稀疏表（只有识别过的图片有行），
+        // JOIN 会把未识别的文件从结果里挤出去。
+        // 占位符编号：ocrOnly 时没有文件名参数，OCR 参数占 {0}；
+        // 否则文件名参数 {0}、OCR 参数 {1}——MATCH 与 LIKE 的参数
+        // 形态不同必须分开编号（Slot() 按 args.Count 编号会在
+        // Add 之前撞号，故显式写死占位符）
+        var useFts = searchTerm.Length >= 3;
+        var ocrSlot = ocrOnly ? 0 : 1;
+        var ocrClause = useFts
+            ? $"Id IN (SELECT FileItemId FROM FileOcrTextsFts WHERE FileOcrTextsFts MATCH {{{ocrSlot}}})"
+            : $"Id IN (SELECT FileItemId FROM FileOcrTexts WHERE Text LIKE {{{ocrSlot}}} ESCAPE '#')";
+
+        if (ocrOnly)
+        {
+            conditions.Add($"IsDeleted = 0 AND ({ocrClause})");
+            args.Add(useFts
+                ? "\"" + EscapeFtsLiteral(searchTerm) + "\""
+                : "%" + EscapeLike(searchTerm) + "%");
+        }
+        else
+        {
+            conditions.Add($"IsDeleted = 0 AND (Name LIKE {{0}} ESCAPE '#' OR {ocrClause})");
+            args.Add("%" + EscapeLike(searchTerm) + "%");
+            args.Add(useFts
+                ? "\"" + EscapeFtsLiteral(searchTerm) + "\""
+                : "%" + EscapeLike(searchTerm) + "%");
+        }
 
         if (ownerId.HasValue)
         {

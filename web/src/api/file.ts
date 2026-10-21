@@ -70,6 +70,8 @@ export const fileApi = {
     path?: string
     itemType?: string
     extension?: string
+    // true 时只命中图片内 OCR 识别文字（后端 ocrOnly），用于「识别文字搜索」
+    ocrOnly?: boolean
     page?: number
     pageSize?: number
   }): Promise<ApiResponse<PagedResult<FileItem>>> {
