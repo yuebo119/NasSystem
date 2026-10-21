@@ -83,10 +83,13 @@ public sealed partial class FileService
 
         // 检查是否已存在
         var existingItem = await _fileRepository.GetByPathAsync(filePath, cancellationToken);
-        // 多用户隔离：同名文件属他人时按不存在处理（不确认也不否认），
-        // 否则 AlreadyExists 会成为他人文件存在性的探测器
+        // 多用户隔离：路径被他人占用时整体拒绝。物理路径与虚拟路径同构
+        // （GetPhysicalPath 无用户前缀），若按"不存在"放行，File.Move 会先
+        // 覆盖掉他人文件内容、之后才被 Path 唯一索引拒绝落库——请求方看到
+        // 失败，受害者磁盘内容已被替换且库记录（旧大小/哈希）与盘错位。
+        // 按不存在处理同时不构成存在性确认（与浏览/下载/改名/删除同口径）
         if (existingItem is not null && existingItem.OwnerId != userId)
-            existingItem = null;
+            return Result<FileItemDto>.Failure(FileErrors.NotFound(filePath));
         if (existingItem != null && !metadata.Overwrite)
             return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(filePath));
 

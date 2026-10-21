@@ -8,6 +8,7 @@ namespace NasSystem.IntegrationTests;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Xunit;
@@ -117,6 +118,60 @@ public class CrossUserIsolationTests : ApiTestBase
             "跨用户 ETag 不得命中 304（否则重放他人缓存体）");
         var otherBody = await otherResponse.Content.ReadAsStringAsync();
         otherBody.Should().NotContain(secret, "重放的缓存体不得含他人条目");
+    }
+
+    [Fact]
+    public async Task Upload_ToOtherUsersPath_DoesNotReplaceTheirPhysicalContent()
+    {
+        // 多用户隔离的写路径缺口：UploadFileAsync 把"属他人"的既有记录置 null 后
+        // 仍按新文件走完整写入管线——File.Move 覆盖物理路径在先，唯一索引冲突
+        // 拒绝落库在后。受害者库记录（旧大小/哈希）与磁盘内容（攻击者字节）错位
+        var (ownerToken, otherToken, ownerUsername) = await TwoUsersAsync();
+        var name = "isoup" + Guid.NewGuid().ToString("N")[..6] + ".txt";
+        await SeedTestFileAsync($"/{name}", ownerUsername);
+        var physicalPath = await GetPhysicalPathAsync($"/{name}");
+
+        // 旁观者向同一路径上传（overwrite=true，网页冲突对话框与 WebDAV PUT 的形态）
+        SetAuthToken(otherToken);
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent("/"), "path");
+        form.Add(new StringContent("true"), "overwrite");
+        var attackerContent = new ByteArrayContent(Encoding.UTF8.GetBytes("attacker payload"));
+        attackerContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        form.Add(attackerContent, "file", name);
+
+        var response = await Client.PostAsync("/api/v1/files/upload", form);
+
+        // 断言①：请求不得成功（他人路径按已存在/不存在处理）
+        response.StatusCode.Should().NotBe(HttpStatusCode.OK,
+            "向他人已占用的路径上传不应成功");
+
+        // 断言②：受害者物理内容未被替换（核心：写盘先于冲突判定即数据销毁）
+        File.Exists(physicalPath).Should().BeTrue("受害者物理文件必须仍在");
+        (await File.ReadAllTextAsync(physicalPath)).Should().Be("isolation probe",
+            "他人上传不得覆盖受害者文件内容");
+
+        // 断言③：受害者库记录的哈希/大小未变（库与盘不错位）
+        var (scope, _, _, fileItems, _, _) = CreateDataScope();
+        using (scope)
+        {
+            var ownerItem = await fileItems.GetByPathAsync($"/{name}");
+            ownerItem.Should().NotBeNull();
+            ownerItem!.SizeBytes.Should().Be(16, "受害者记录大小不应被他人上传改动");
+            ownerItem.Hash.Should().Be("iso-hash", "受害者记录哈希不应被他人上传改动");
+        }
+    }
+
+    /// <summary>取默认池挂载点下某虚拟路径对应的物理路径</summary>
+    private async Task<string> GetPhysicalPathAsync(string virtualPath)
+    {
+        var (scope, _, pools, _, _, _) = CreateDataScope();
+        using (scope)
+        {
+            var pool = await pools.GetDefaultAsync();
+            pool.Should().NotBeNull("测试前置已种下默认池");
+            return Path.Combine(pool!.MountPath, virtualPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+        }
     }
 
     // -------------------------------------------------------------------------
