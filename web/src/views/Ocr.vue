@@ -123,6 +123,7 @@ loadSwitch()
         </el-button>
       </div>
       <div class="form-hint">{{ $t('ocr.forceHint') }}</div>
+      <div class="form-hint" v-if="batching">{{ $t('ocr.batchRunningHint') }}</div>
 
       <div v-if="batchResult" class="batch-result">
         <el-tag type="success" size="large">{{ $t('ocr.resultTotal') }} {{ batchResult.total }}</el-tag>
@@ -130,9 +131,17 @@ loadSwitch()
         <el-tag type="info" size="large">{{ $t('ocr.resultSkipped') }} {{ batchResult.skipped }}</el-tag>
         <el-tag v-if="batchResult.failed > 0" type="danger" size="large">{{ $t('ocr.resultFailed') }} {{ batchResult.failed }}</el-tag>
       </div>
+      <!-- 单张识别入口指引：批量在整目录跑，单张补认去媒体库/文件页预览 -->
+      <div class="form-hint cross-links">
+        <span>{{ $t('ocr.singleEntryHint') }}</span>
+        <router-link to="/media">{{ $t('ocr.goMedia') }}</router-link>
+        <router-link to="/files">{{ $t('ocr.goFiles') }}</router-link>
+      </div>
     </div>
 
-    <!-- ② 自动识别开关（仅管理员） -->
+    <!-- ② 自动识别开关（仅管理员）。开关影响所有用户的上传行为，
+         非管理员看不到状态（GET /system/config 要求管理员），
+         故给一条静态说明，避免全局行为对普通用户完全不可感知 -->
     <div class="card" v-if="userStore.isAdmin">
       <div class="card-head">
         <el-icon :size="20"><Picture /></el-icon>
@@ -157,6 +166,9 @@ loadSwitch()
         <li>{{ $t('ocr.howEngine') }}</li>
         <li>{{ $t('ocr.howSearch') }}</li>
         <li>{{ $t('ocr.howSingle') }}</li>
+        <!-- 非管理员对"上传后自动识别"零感知的补偿说明（开关仅管理员
+             可见，但它影响所有用户的上传行为） -->
+        <li v-if="!userStore.isAdmin">{{ $t('ocr.autoRecognizeUserNote') }}</li>
       </ul>
     </div>
 
@@ -218,6 +230,21 @@ loadSwitch()
   color: var(--el-text-color-secondary);
   line-height: 1.5;
   margin-top: 8px;
+
+  // 单张识别入口互链：媒体库/文件页
+  &.cross-links {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+
+    a {
+      color: var(--el-color-primary);
+      text-decoration: none;
+
+      &:hover { text-decoration: underline; }
+    }
+  }
 }
 
 .batch-result {

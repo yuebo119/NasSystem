@@ -150,3 +150,13 @@ export function getFileCategoryColor(category: 'image' | 'video' | 'audio' | 'do
   }
   return getFileIconColor({ isFolder: false, extension: representative[category] })
 }
+
+/**
+ * 邮箱格式校验：后端（UserService）只查重不校验格式，非法值会原样
+ * 落库。el-input 的 type="email" 不走原生 submit 约束，浏览器校验
+ * 根本不触发，故前后两端都在提交前挡一道。规则从宽：一个 @、一个
+ * 点、无空格（够挡常见手误，不追求 RFC 完备）
+ */
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+}

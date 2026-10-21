@@ -71,6 +71,32 @@ export async function subscribeDirectory(
 }
 
 /**
+ * 订阅全局文件变更：任何目录的写操作都推给订阅者（Dashboard 等聚合
+ * 视图用——它们没有"当前目录"概念，只订目录组收不到深层变更）。
+ * 返回清理函数供离开时退订
+ */
+export async function subscribeAllChanges(
+  onFileChanged: (changedPath: string, changeType: string) => void,
+): Promise<() => void> {
+  const conn = getHubConnection()
+  await ensureHubStarted()
+  await conn.invoke('SubscribeToAll')
+  const handler = (payload: { path?: string; changeType?: string }) => {
+    if (payload?.path) onFileChanged(payload.path, payload.changeType ?? 'Modified')
+  }
+  conn.on('FileChanged', handler)
+
+  return async () => {
+    conn.off('FileChanged', handler)
+    try {
+      await conn.invoke('UnsubscribeFromAll')
+    } catch {
+      /* 连接已断开时退订失败可忽略 */
+    }
+  }
+}
+
+/**
  * 监听底层连接状态：connected 变化时回调。让页面能把"实时同步已断开"
  * 显示出来（否则掉线是静默的，用户误以为外部变更还会自动出现）。
  * 连接是全局单例且 onclose/onreconnecting 无法 off，故钩子只在模块级

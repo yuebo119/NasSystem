@@ -36,6 +36,14 @@ vi.mock('@/api/http', () => ({
   default: { get: vi.fn() }
 }))
 
+// SignalR 全局订阅是 Dashboard 挂载链的一环（实时刷新）。测试环境没有
+// /hubs/nas 服务端，HubConnectionBuilder.build() 会抛 "Cannot resolve"，
+// 故 mock 整个模块：订阅返回清理函数，状态监听返回取消函数
+vi.mock('@/utils/signalr', () => ({
+  subscribeAllChanges: vi.fn(() => Promise.resolve(() => {})),
+  watchHubConnectionState: vi.fn(() => () => {})
+}))
+
 import { storageApi } from '@/api/storage'
 import { fileApi } from '@/api/file'
 import http from '@/api/http'
@@ -47,6 +55,7 @@ const mockOverview = vi.mocked(storageApi.getOverview)
 const mockPools = vi.mocked(storageApi.getPools)
 const mockDrives = vi.mocked(storageApi.getDrives)
 const mockStats = vi.mocked(fileApi.getStatistics)
+const mockRecent = vi.mocked(fileApi.getRecentFiles)
 const mockHttpGet = vi.mocked(http.get)
 
 // 返回 any 形状：storageApi 的标注签名是 AxiosResponse（生产侧用 as any
@@ -189,6 +198,33 @@ describe('Dashboard 视图层契约', () => {
 
       expect(div.querySelector('.storage-chart')).not.toBeNull()
       expect(div.querySelector('.pool-quota-hint')).toBeNull()
+      unmount()
+    })
+  })
+
+  describe('最近文件点击定位', () => {
+    // 2026-10-21 复审补齐：此前所有条目统一跳 /files 首页，深层目录的
+    // 文件点不到原位。现在文件夹直接进入、文件跳到父目录并设聚焦项
+    it('文件夹条目进入该目录，文件条目跳到父目录', async () => {
+      mockRecent.mockImplementation(() => ok([
+        { id: 'f1', name: 'a.txt', path: '/docs/deep/a.txt', isFolder: false, sizeBytes: 10 },
+        { id: 'd1', name: 'docs', path: '/docs', isFolder: true, sizeBytes: 0 }
+      ]))
+
+      const { div, unmount, router } = await mountDashboard()
+
+      const items = div.querySelectorAll('.recent-item')
+      expect(items).toHaveLength(2)
+
+      // 文件夹：直接进入该目录
+      ;(items[1] as HTMLElement).click()
+      await flush()
+      expect(router.currentRoute.value.path).toBe('/files/docs')
+
+      // 文件：跳到所在父目录（不是 /files 首页）
+      ;(items[0] as HTMLElement).click()
+      await flush()
+      expect(router.currentRoute.value.path).toBe('/files/docs/deep')
       unmount()
     })
   })

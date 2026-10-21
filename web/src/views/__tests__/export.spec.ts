@@ -102,15 +102,49 @@ describe('Export 视图层契约', () => {
     await flush(30)
 
     setInput(inputByPlaceholder(div, '/'), '/')
-    setInput(inputByPlaceholder(div, '留空则不加密'), 's3cret')
+    // 8 位以上（2026-10-21 新增最低长度约束）且两次确认一致。
+    // 确认框是 v-if 条件渲染，写完密码要等一个 tick 才出现
+    setInput(inputByPlaceholder(div, '留空则不加密'), 's3cretPass')
+    await flush(30)
+    setInput(inputByPlaceholder(div, '再次输入密码'), 's3cretPass')
     clickButton(div, '开始导出')
     await vi.waitFor(() => {
       if (!mockExport.mock.calls.length) throw new Error('not called')
     })
 
-    expect(mockExport).toHaveBeenCalledWith('/', 's3cret')
+    expect(mockExport).toHaveBeenCalledWith('/', 's3cretPass')
     // 加密格式说明必须随表单可见：用户拿到 .zip.enc 后需要解密命令
     expect(div.querySelector('.export-page')?.textContent).toContain('openssl enc -d -aes-256-cbc')
+    unmount()
+  })
+
+  it('加密密码不足 8 位时阻断且不发导出请求', async () => {
+    const { div, unmount } = await mountExport()
+    await flush(30)
+
+    setInput(inputByPlaceholder(div, '/'), '/')
+    setInput(inputByPlaceholder(div, '留空则不加密'), 'short')
+    clickButton(div, '开始导出')
+    await flush(30)
+
+    expect(elMessage.warning).toHaveBeenCalledWith('加密密码至少 8 位')
+    expect(mockExport).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('两次密码不一致时阻断且不发导出请求', async () => {
+    const { div, unmount } = await mountExport()
+    await flush(30)
+
+    setInput(inputByPlaceholder(div, '/'), '/')
+    setInput(inputByPlaceholder(div, '留空则不加密'), 's3cretPass')
+    await flush(30)
+    setInput(inputByPlaceholder(div, '再次输入密码'), 'differentPass')
+    clickButton(div, '开始导出')
+    await flush(30)
+
+    expect(elMessage.warning).toHaveBeenCalledWith('两次输入的密码不一致')
+    expect(mockExport).not.toHaveBeenCalled()
     unmount()
   })
 

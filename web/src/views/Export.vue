@@ -17,6 +17,7 @@ const { t } = useI18n()
 
 const rootPath = ref('/')
 const password = ref('')
+const passwordConfirm = ref('')
 const exporting = ref(false)
 // 目录浏览器：点选库内目录（与文件页同一棵树），不再纯手打
 const browseVisible = ref(false)
@@ -26,6 +27,19 @@ async function submit() {
   if (!path) {
     ElMessage.warning(t('export.pathRequired'))
     return
+  }
+  // 加密包密码：打错即产出永远打不开的 .zip.enc（备份包典型数月后
+  // 才解密），故非空时要求二次确认 + 最低长度，并在提示里写明
+  // "遗忘无法恢复"
+  if (password.value) {
+    if (password.value.length < 8) {
+      ElMessage.warning(t('export.passwordTooShort'))
+      return
+    }
+    if (password.value !== passwordConfirm.value) {
+      ElMessage.warning(t('export.passwordMismatch'))
+      return
+    }
   }
   exporting.value = true
   try {
@@ -40,6 +54,7 @@ async function submit() {
     anchor.click()
     URL.revokeObjectURL(url)
     password.value = ''
+    passwordConfirm.value = ''
     ElMessage.success(t('export.done'))
   } catch {
     // 错误消息由 http 拦截器统一弹出（400/404/500 分支）
@@ -76,6 +91,16 @@ async function submit() {
             :placeholder="$t('export.passwordPlaceholder')"
           />
           <div class="form-hint">{{ $t('export.passwordHint') }}</div>
+        </el-form-item>
+        <!-- 确认密码：仅填写了密码时才出现（不加密的导出无此概念） -->
+        <el-form-item v-if="password" :label="$t('export.passwordConfirm')">
+          <el-input
+            v-model="passwordConfirm"
+            type="password"
+            show-password
+            :placeholder="$t('export.passwordConfirmPlaceholder')"
+          />
+          <div class="form-hint">{{ $t('export.passwordUnrecoverable') }}</div>
         </el-form-item>
         <el-button type="primary" :icon="Download" :loading="exporting" @click="submit">
           {{ $t('export.submit') }}

@@ -221,6 +221,9 @@ onMounted(loadSystemInfo)
             {{ $t('remoteAccess.generate') }}
           </el-button>
         </div>
+        <!-- 域名回退行为明示：留空时后端用示例域名占位，用户无从知晓
+             回退发生过；不写清楚会拿到一份指向假域名的配置 -->
+        <div class="form-hint">{{ $t('remoteAccess.hostnameHint') }}</div>
 
         <div v-if="remoteConfig" class="remote-result">
           <div class="remote-config-header">

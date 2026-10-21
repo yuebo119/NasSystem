@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Refresh, Edit, Delete, Key, User, Search, UserFilled, Setting } from '@element-plus/icons-vue'
+import { Plus, Refresh, Edit, Delete, Key, User, Search, UserFilled, Setting, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '@/api/user'
 import type { User as UserType, UserStats } from '@/types'
-import { formatSize, formatDate } from '@/utils/format'
+import { formatSize, formatDate, isValidEmail } from '@/utils/format'
 import { useDrawerSize } from '@/utils/useIsMobile'
 
 const { t } = useI18n()
 const loading = ref(false)
+// 加载失败标志：空态文案"创建第一个用户"只在成功且为空时出现，
+// 失败时显示错误态（否则误导用户去创建）
+const loadFailed = ref(false)
 const users = ref<UserType[]>([])
 const totalCount = ref(0)
 const currentPage = ref(1)
@@ -91,6 +94,7 @@ const loadStats = async () => {
 
 const loadData = async () => {
   loading.value = true
+  loadFailed.value = false
   try {
     const response = await userApi.getUsers({
       page: currentPage.value,
@@ -100,8 +104,13 @@ const loadData = async () => {
     if (response.success && response.data) {
       users.value = response.data.items
       totalCount.value = response.data.totalCount
+    } else {
+      loadFailed.value = true
     }
   } catch (error) {
+    // 失败与"真的没有用户"是两种处境：空态文案会误导用户去创建，
+    // 错误态 + 重试才如实（页头刷新按钮是重试入口）
+    loadFailed.value = true
     ElMessage.error(t('common.failed'))
   } finally {
     loading.value = false
@@ -123,7 +132,9 @@ const handleCreateUser = async () => {
   if (!newUser.value.password) { ElMessage.warning(t('users.passwordRequired')); return }
   if (newUser.value.password.length < 6) { ElMessage.warning(t('users.passwordMinLength')); return }
   if (newUser.value.password !== newUser.value.confirmPassword) { ElMessage.warning(t('users.passwordMismatch')); return }
-  
+  // 邮箱格式：后端只查重不校验格式，非法值会原样落库
+  if (newUser.value.email.trim() && !isValidEmail(newUser.value.email)) { ElMessage.warning(t('settings.emailInvalid')); return }
+
   creating.value = true
   try {
     const quotaBytes = newUser.value.quotaGB > 0 ? newUser.value.quotaGB * 1024 * 1024 * 1024 : undefined
@@ -164,7 +175,9 @@ const openEditDialog = (user: UserType) => {
 
 const handleUpdateUser = async () => {
   if (!editUser.value) return
-  
+  // 邮箱格式：与创建侧同款校验（后端无格式校验）
+  if (editForm.value.email.trim() && !isValidEmail(editForm.value.email)) { ElMessage.warning(t('settings.emailInvalid')); return }
+
   updating.value = true
   try {
     const quotaBytes = editForm.value.quotaGB > 0 ? editForm.value.quotaGB * 1024 * 1024 * 1024 : 0
@@ -353,7 +366,13 @@ onMounted(() => {
         </div>
       </div>
 
-      <div v-if="users.length === 0 && !loading" class="empty-state">
+      <div v-if="loadFailed && users.length === 0 && !loading" class="empty-state">
+        <el-icon :size="64" color="var(--el-color-danger)"><WarningFilled /></el-icon>
+        <h3>{{ t('users.loadFailedTitle') }}</h3>
+        <p>{{ t('users.loadFailedHint') }}</p>
+        <el-button type="primary" @click="loadData">{{ t('common.retry') }}</el-button>
+      </div>
+      <div v-else-if="users.length === 0 && !loading" class="empty-state">
         <el-icon :size="64" color="var(--el-text-color-placeholder)"><UserFilled /></el-icon>
         <h3>{{ t('users.noUsers') }}</h3>
         <p>{{ t('users.createFirstUser') }}</p>
@@ -405,7 +424,7 @@ onMounted(() => {
           </el-col>
           <el-col :span="12">
             <el-form-item :label="t('users.quota') + ' (GB)'">
-              <el-input-number v-model="newUser.quotaGB" :min="0" :max="10240" :step="10" style="width: 100%" />
+              <el-input-number v-model="newUser.quotaGB" :min="0" :max="10240" :step="1" style="width: 100%" />
               <div class="form-tip">{{ t('users.quotaHint') }}</div>
             </el-form-item>
           </el-col>
@@ -439,7 +458,7 @@ onMounted(() => {
           </el-col>
           <el-col :span="12">
             <el-form-item :label="t('users.quota') + ' (GB)'">
-              <el-input-number v-model="editForm.quotaGB" :min="0" :max="10240" :step="10" style="width: 100%" />
+              <el-input-number v-model="editForm.quotaGB" :min="0" :max="10240" :step="1" style="width: 100%" />
               <div class="form-tip">{{ t('users.quotaHint') }}</div>
             </el-form-item>
           </el-col>

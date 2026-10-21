@@ -12,9 +12,11 @@ import { User, Lock, Monitor, Setting, PieChart } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
+import http from '@/api/http'
 import { getCurrentTheme, type ThemeType, setTheme } from '@/utils/theme'
 import { setLocale, getLocale, localeOptions, type LocaleType } from '@/locales'
 import { formatSize } from '@/utils/format'
+import { isValidEmail } from '@/utils/format'
 
 const { t } = useI18n()
 const userStore = useUserStore()
@@ -57,11 +59,19 @@ onMounted(() => {
 const saveProfile = async () => {
   if (!userStore.user) return
 
+  // 邮箱格式校验：type="email" 不走原生 submit 约束根本不触发，
+  // 后端也无格式校验，非法值会原样落库
+  const email = profileForm.value.email.trim()
+  if (email && !isValidEmail(email)) {
+    ElMessage.warning(t('settings.emailInvalid'))
+    return
+  }
+
   saving.value = true
   try {
     const response = await userApi.updateUser(userStore.user.id, {
       displayName: profileForm.value.displayName.trim() || undefined,
-      email: profileForm.value.email.trim() || undefined
+      email: email || undefined
     })
 
     if (response.success && response.data) {
@@ -142,6 +152,22 @@ const roleDisplay = computed(() => {
     case 'User': return t('users.roles.user')
     default: return role || '-'
   }
+})
+
+// 关于卡的版本信息：从 /system/info 取真实值（此前模板硬编码 v1.0.0，
+// 升级后显示假版本，与系统信息页自相矛盾）。取不到时显示 '-' 而非假值
+const aboutVersion = ref('-')
+const aboutRuntime = ref('-')
+
+onMounted(() => {
+  http.get('/system/info').then((resp: any) => {
+    if (resp?.success && resp.data) {
+      if (resp.data.version) aboutVersion.value = resp.data.version
+      if (resp.data.runtime?.version) aboutRuntime.value = `.NET ${resp.data.runtime.version}`
+    }
+  }).catch(() => {
+    // 版本号取不到不影响个人设置主流程
+  })
 })
 
 // 个人存储配额（数据来自 users/me：quotaBytes/usedBytes/usagePercentage）。
@@ -306,9 +332,9 @@ const quotaProgressColor = computed(() => {
               <h3>NAS System</h3>
               <p>Windows Network Attached Storage</p>
               <div class="about-meta">
-                <span>v1.0.0</span>
+                <span>v{{ aboutVersion }}</span>
                 <span>•</span>
-                <span>.NET 11</span>
+                <span>{{ aboutRuntime }}</span>
                 <span>•</span>
                 <span>Vue 3</span>
               </div>

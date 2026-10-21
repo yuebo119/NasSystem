@@ -11,6 +11,7 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { WarningFilled } from '@element-plus/icons-vue'
 import { backupApi } from '@/api/backup'
 import { fileApi } from '@/api/file'
 import type { BackupDevice, BackupSyncPlan } from '@/types'
@@ -21,6 +22,8 @@ const { t } = useI18n()
 
 const devices = ref<BackupDevice[]>([])
 const loading = ref(false)
+// 加载失败标志：失败与"真的没有设备"是两种处境，空态只在成功且为空时出现
+const loadFailed = ref(false)
 const registering = ref(false)
 const deviceName = ref('')
 const deviceModel = ref('')
@@ -35,6 +38,7 @@ onMounted(loadDevices)
 
 async function loadDevices() {
   loading.value = true
+  loadFailed.value = false
   try {
     const result = await backupApi.getDevices()
     if (result.success) {
@@ -44,8 +48,14 @@ async function loadDevices() {
         const first = devices.value.find(d => !d.isRevoked)
         activeDeviceId.value = first?.id ?? ''
       }
+    } else {
+      loadFailed.value = true
+      ElMessage.error(result.error?.message || t('backup.loadFailed'))
     }
   } catch {
+    // 失败时保留 devices 现状但打错误标志：空态文案"暂无设备"会
+    // 误导用户去注册（实际是加载失败），错误卡 + 重试才如实
+    loadFailed.value = true
     ElMessage.error(t('backup.loadFailed'))
   } finally {
     loading.value = false
@@ -236,9 +246,18 @@ async function startBackup() {
     <!-- 设备列表 -->
     <el-card class="backup-card" v-loading="loading">
       <template #header>
-        <span>{{ $t('backup.devicesTitle') }}</span>
+        <div class="device-card-header">
+          <span>{{ $t('backup.devicesTitle') }}</span>
+          <el-button text :loading="loading" @click="loadDevices">{{ $t('common.refresh') }}</el-button>
+        </div>
       </template>
-      <el-empty v-if="devices.length === 0" :description="$t('backup.noDevices')" />
+      <!-- 加载失败：错误态 + 重试（与"暂无设备"空态区分） -->
+      <div v-if="loadFailed" class="load-error-state">
+        <el-icon :size="32" color="var(--el-color-danger)"><WarningFilled /></el-icon>
+        <p>{{ $t('backup.loadFailedHint') }}</p>
+        <el-button type="primary" :loading="loading" @click="loadDevices">{{ $t('common.retry') }}</el-button>
+      </div>
+      <el-empty v-else-if="devices.length === 0" :description="$t('backup.noDevices')" />
       <div v-else class="device-list">
         <div
           v-for="device in devices"
@@ -324,6 +343,30 @@ async function startBackup() {
   .backup-card {
     margin-bottom: 16px;
     border-radius: var(--mac-radius-card);
+
+    // 设备卡头部：标题 + 刷新按钮同一行
+    :deep(.el-card__header) {
+      .device-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+    }
+  }
+
+  // 加载失败态：图标 + 文案 + 重试居中（与空态区分）
+  .load-error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 0;
+
+    p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--el-text-color-secondary);
+    }
   }
 
   // 移动优先：主操作按钮全宽、最小高度 44px（手机点击目标）

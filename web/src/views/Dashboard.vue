@@ -2,10 +2,13 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { storageApi } from '@/api/storage'
 import { fileApi } from '@/api/file'
 import http from '@/api/http'
+import { subscribeAllChanges, watchHubConnectionState } from '@/utils/signalr'
+import { useFileStore } from '@/stores/file'
 import {
   Files, User, Box, Share,
   Monitor, Timer, Cpu, Connection, Refresh,
@@ -46,6 +49,44 @@ const shares = ref<any[]>([])
 
 // 最近文件（/files/recent，倒序前 6 条）
 const recentFiles = ref<any[]>([])
+
+// 全局实时订阅（SignalR "all" 组）：句柄与防抖定时器
+let unsubscribeGlobal: (() => void) | null = null
+let stopRealtimeStateWatch: (() => void) | null = null
+let realtimeDebounceTimer: number | null = null
+// 实时通道连接状态（断连时在页头明示，与文件页同款语义）
+const realtimeConnected = ref(false)
+
+// 最近文件点击：直达该条目所在目录并聚焦（文件夹直接进入）。
+// 复用 Files 页的 focusItemId 机制：路由跳转后由那里的 watch 落地
+const router = useRouter()
+const fileStore = useFileStore()
+
+function openRecentItem(item: any) {
+  if (item.isFolder) {
+    router.push(`/files${item.path}`)
+    return
+  }
+  const parentPath = item.path.substring(0, item.path.lastIndexOf('/')) || '/'
+  fileStore.setFocusItem(item.id)
+  router.push(`/files${parentPath}`)
+}
+
+// 存储池"设为默认"（管理员快捷操作，与存储管理页同款能力）
+const settingDefaultPool = ref('')
+async function setDefaultPool(pool: any) {
+  if (pool.isDefault) return
+  settingDefaultPool.value = pool.id
+  try {
+    await storageApi.setDefault(pool.id)
+    ElMessage.success(t('dashboard.defaultPoolSet'))
+    await Promise.all([loadStoragePools(), loadStorageOverview()])
+  } catch {
+    // 拦截器已弹错
+  } finally {
+    settingDefaultPool.value = ''
+  }
+}
 
 // 回收站（只取条目数与总大小，恢复/清空操作在文件管理页）
 const recycleBinItems = ref<any[]>([])
@@ -409,11 +450,37 @@ onMounted(() => {
   if (autoRefresh.value) {
     startAutoRefresh()
   }
+  // 全局文件变更订阅：聚合视图（统计/最近文件/回收站/分享）没有当前
+  // 目录概念，任何目录的写操作都相关。60s 轮询保留为兜底，这里是
+  // 秒级通道。防抖 1s：批量上传/OCR 会连发多条事件，逐一重拉浪费
+  subscribeAllChanges(() => {
+    if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer)
+    realtimeDebounceTimer = window.setTimeout(() => {
+      if (document.visibilityState === 'hidden') return
+      loadFileStats()
+      loadRecentFiles()
+      loadRecycleBin()
+      loadShares()
+      loadStorageOverview()
+      lastUpdateTime.value = new Date()
+    }, 1000)
+  }).then((cleanup) => {
+    unsubscribeGlobal = cleanup
+    realtimeConnected.value = true
+  }).catch(() => {
+    realtimeConnected.value = false
+  })
+  stopRealtimeStateWatch = watchHubConnectionState((connected) => {
+    realtimeConnected.value = connected
+  })
 })
 
 onUnmounted(() => {
   stopAutoRefresh()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer)
+  void unsubscribeGlobal?.()
+  stopRealtimeStateWatch?.()
 })
 </script>
 
@@ -427,6 +494,11 @@ onUnmounted(() => {
       </div>
       <div class="header-actions">
         <span class="last-update">{{ t('dashboard.lastUpdate') }}: {{ formattedLastUpdate }}</span>
+        <!-- 实时通道状态：全局订阅断连时明示（60s 轮询仍是兜底） -->
+        <span class="realtime-state" :class="{ off: !realtimeConnected }">
+          <span class="realtime-dot" :class="{ on: realtimeConnected }" />
+          {{ realtimeConnected ? $t('filesView.realtimeOn') : $t('filesView.realtimeOff') }}
+        </span>
         <el-button-group>
           <el-button :icon="Refresh" @click="handleRefresh" :loading="loading">
             {{ t('common.refresh') }}
@@ -791,7 +863,7 @@ onUnmounted(() => {
             </div>
           </template>
           <div class="recent-list" v-loading="loading">
-            <div v-for="item in recentFiles" :key="item.id" class="recent-item" @click="$router.push('/files')">
+            <div v-for="item in recentFiles" :key="item.id" class="recent-item" @click="openRecentItem(item)">
               <div class="file-icon icon-badge icon-badge--md" :style="{ background: `linear-gradient(135deg, ${getFileIconColor(item)}, color-mix(in srgb, ${getFileIconColor(item)} 62%, #fff))` }">
                 <el-icon :size="18"><component :is="getFileIcon(item)" /></el-icon>
               </div>
@@ -889,6 +961,22 @@ onUnmounted(() => {
           </template>
         </el-table-column>
         <el-table-column v-if="!isMobile" prop="mountPath" :label="t('storage.mountPath')" min-width="150" />
+        <!-- 快捷操作：设为默认（管理员；与存储管理页同款能力，省得跳页） -->
+        <el-table-column v-if="userStore.isAdmin" :label="t('filesView.colActions')" :width="isMobile ? 70 : 100" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="!row.isDefault"
+              link
+              type="primary"
+              size="small"
+              :loading="settingDefaultPool === row.id"
+              @click="setDefaultPool(row)"
+            >
+              {{ t('dashboard.setDefaultPool') }}
+            </el-button>
+            <span v-else class="pool-default-mark">·</span>
+          </template>
+        </el-table-column>
       </el-table>
       
       <el-empty v-if="storagePools.length === 0 && !loading" :description="t('storage.noPools')" />
@@ -1091,7 +1179,32 @@ onUnmounted(() => {
       font-size: 12px;
       color: var(--el-text-color-secondary);
     }
+
+    // 实时通道状态（与文件页状态栏同款语义：绿点=在线，橙=断开）
+    .realtime-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+
+      &.off { color: var(--el-color-warning); }
+
+      .realtime-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--el-color-success);
+
+        &:not(.on) { background: var(--el-color-warning); }
+      }
+    }
   }
+}
+
+// 存储池表：非默认行的操作列占位（默认行只显示一个居中小点）
+.pool-default-mark {
+  color: var(--el-color-success);
 }
 
 // stats-row 不设行级 margin：行间距统一由卡自身的 margin-bottom 提供。

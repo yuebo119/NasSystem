@@ -49,6 +49,30 @@ public sealed class NasHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"path:{path}");
         _logger.LogDebug("客户端 {ConnectionId} 取消订阅路径: {Path}", Context.ConnectionId, path);
     }
+
+    /// <summary>
+    /// 订阅全局文件变更（聚合视图用）
+    /// </summary>
+    /// <remarks>
+    /// 目录组（SubscribeToPath）的语义是"我正浏览这个目录"；Dashboard 这类
+    /// 聚合视图（统计/最近文件/回收站）没有当前目录概念，任何目录的写操作
+    /// 都与它相关，只订目录组收不到深层目录的变更。全局组补这个缺口。
+    /// 同一连接同时在两个组里会收到重复事件，消费端都是幂等刷新，无副作用
+    /// </remarks>
+    public async Task SubscribeToAll()
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, "all");
+        _logger.LogDebug("客户端 {ConnectionId} 订阅全局文件变更", Context.ConnectionId);
+    }
+
+    /// <summary>
+    /// 取消订阅全局文件变更
+    /// </summary>
+    public async Task UnsubscribeFromAll()
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, "all");
+        _logger.LogDebug("客户端 {ConnectionId} 取消订阅全局文件变更", Context.ConnectionId);
+    }
 }
 
 
@@ -79,12 +103,19 @@ public sealed class HubNotificationService(IHubContext<NasHub> hubContext) : IHu
     {
         var groupPath = string.IsNullOrEmpty(path) ? "/" : path.Replace('\\', '/');
 
-        await hubContext.Clients.Group($"path:{groupPath}").SendAsync("FileChanged", new
+        var payload = new
         {
             Path = path,
             ChangeType = changeType.ToString(),
             Data = data,
             Timestamp = DateTime.UtcNow
-        });
+        };
+
+        // 目录组：浏览该目录的客户端（Files 页等）做精准静默刷新
+        await hubContext.Clients.Group($"path:{groupPath}").SendAsync("FileChanged", payload);
+
+        // 全局组：Dashboard 等聚合视图订阅。对目录组订阅者是冗余推送，
+        // 但消费端都是幂等刷新（防抖后重拉聚合数据），重复无副作用
+        await hubContext.Clients.Group("all").SendAsync("FileChanged", payload);
     }
 }

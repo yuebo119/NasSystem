@@ -13,7 +13,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Link, CopyDocument, FolderOpened, Monitor, Platform, Cellphone } from '@element-plus/icons-vue'
+import { Link, CopyDocument, FolderOpened, Monitor, Platform, Cellphone, Refresh, WarningFilled } from '@element-plus/icons-vue'
 import { systemConfigApi } from '@/api/systemConfig'
 import type { SystemConfigSnapshot, SystemConfigItem } from '@/types'
 
@@ -24,6 +24,9 @@ const snapshot = ref<SystemConfigSnapshot | null>(null)
 const draft = ref<Record<string, string>>({})
 const loading = ref(false)
 const saving = ref(false)
+// 加载失败标志：失败时渲染错误卡 + 重试按钮，而不是一片空白卡片
+// （此前是全站唯一"失败后只能硬刷新浏览器"的页面）
+const loadFailed = ref(false)
 
 const davUrl = computed(() => `${window.location.origin}/dav`)
 
@@ -36,6 +39,7 @@ onMounted(loadConfig)
 
 async function loadConfig() {
   loading.value = true
+  loadFailed.value = false
   try {
     const result = await systemConfigApi.get()
     if (result.success && result.data) {
@@ -45,9 +49,11 @@ async function loadConfig() {
         draft.value[item.key] = item.value
       }
     } else {
+      loadFailed.value = true
       ElMessage.error(result.error?.message || t('config.loadFailed'))
     }
   } catch {
+    loadFailed.value = true
     ElMessage.error(t('config.loadFailed'))
   } finally {
     loading.value = false
@@ -122,15 +128,29 @@ function itemOf(key: string): SystemConfigItem | undefined {
 
 <template>
   <div class="webdav-page" v-loading="loading">
-    <div class="page-header">
+    <div class="page-header page-header--with-actions">
       <div class="header-left">
         <h1>{{ $t('webdav.title') }}</h1>
         <p>{{ $t('webdav.subtitle') }}</p>
       </div>
+      <div class="header-actions">
+        <el-button :icon="Refresh" :loading="loading" @click="loadConfig">{{ $t('common.refresh') }}</el-button>
+      </div>
+    </div>
+
+    <!-- 加载失败：错误卡 + 重试（此前失败只 toast，页面留白，
+         用户只能硬刷新浏览器） -->
+    <div class="card error-card" v-if="loadFailed && !snapshot">
+      <div class="card-head">
+        <el-icon :size="20"><WarningFilled /></el-icon>
+        <span class="card-name">{{ $t('common.loadFailed') }}</span>
+      </div>
+      <p class="card-desc">{{ $t('webdav.loadFailedHint') }}</p>
+      <el-button type="primary" :loading="loading" @click="loadConfig">{{ $t('common.retry') }}</el-button>
     </div>
 
     <!-- ① 服务卡：挂载地址 + 启用开关 -->
-    <div class="card">
+    <div class="card" v-if="snapshot">
       <div class="card-head">
         <el-icon :size="20"><Link /></el-icon>
         <span class="card-name">{{ $t('webdav.serviceTitle') }}</span>
@@ -163,7 +183,7 @@ function itemOf(key: string): SystemConfigItem | undefined {
     </div>
 
     <!-- ② 客户端挂载指南：四端步骤（ROADMAP Phase 0 验收四端） -->
-    <div class="card">
+    <div class="card" v-if="snapshot">
       <h3 class="card-title">{{ $t('webdav.guideTitle') }}</h3>
       <el-collapse class="guide-collapse">
         <el-collapse-item name="windows">
@@ -207,7 +227,7 @@ function itemOf(key: string): SystemConfigItem | undefined {
     </div>
 
     <!-- ③ 认证防护：失败锁定阈值（原硬编码，现可配置） -->
-    <div class="card">
+    <div class="card" v-if="snapshot">
       <h3 class="card-title">{{ $t('webdav.authTitle') }}</h3>
       <p class="card-desc">{{ $t('webdav.authDesc') }}</p>
       <div class="threshold-grid">
@@ -256,7 +276,7 @@ function itemOf(key: string): SystemConfigItem | undefined {
     </div>
 
     <!-- ⑤ 约束说明 -->
-    <div class="card">
+    <div class="card" v-if="snapshot">
       <h3 class="card-title">{{ $t('webdav.constraintsTitle') }}</h3>
       <ul class="constraint-list">
         <li>{{ $t('webdav.constraintQuota') }}</li>
@@ -267,7 +287,7 @@ function itemOf(key: string): SystemConfigItem | undefined {
     </div>
 
     <!-- 保存栏：有改动才亮 -->
-    <div class="save-bar" :class="{ dirty }">
+    <div class="save-bar" :class="{ dirty }" v-if="snapshot">
       <span class="dirty-hint" v-if="dirty">{{ $t('config.unsaved') }}</span>
       <span class="saved-hint" v-else-if="snapshot?.lastUpdatedAt">
         {{ $t('config.lastUpdated', { time: new Date(snapshot.lastUpdatedAt).toLocaleString() }) }}
@@ -296,6 +316,14 @@ function itemOf(key: string): SystemConfigItem | undefined {
   padding: 16px;
   margin-bottom: 16px;
   background: var(--el-bg-color);
+
+  // 加载失败卡：danger 淡底 + 同色描边，与空态/正常卡视觉分层
+  &.error-card {
+    border-color: color-mix(in srgb, var(--el-color-danger) 40%, transparent);
+    background: color-mix(in srgb, var(--el-color-danger) 5%, var(--el-bg-color));
+
+    .card-name { color: var(--el-color-danger); }
+  }
 
   .card-title {
     margin: 0 0 12px;

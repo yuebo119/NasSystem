@@ -37,6 +37,9 @@ async function loadSnapshots() {
     } else {
       ElMessage.error(resp.error?.message || t('common.failed'))
     }
+  } catch {
+    // 网络层失败：拦截器已弹错。补 catch 避免 rejection 逃逸成
+    // 未处理 Promise（onMounted 不 await 时控制台噪音会掩盖真实错误）
   } finally {
     snapshotsLoading.value = false
   }
@@ -132,10 +135,23 @@ function openDiff() {
   diffTargetId.value = snapshots.value[0]?.id ?? ''
   diffBaseId.value = snapshots.value[1]?.id ?? ''
   diffResult.value = null
+  diffPage.value = 1
   diffDialogVisible.value = true
 }
 
-async function runDiff() {
+// diff 分页：后端支持 page/pageSize，此前固定 200 条封顶无翻页，
+// 汇总卡显示"新增 1200"而表格只列 200 行，其余差异看不到
+const diffPage = ref(1)
+const diffPageSize = 200
+const diffTotal = ref(0)
+
+// diff 翻页：el-pagination 的 current-change 回传页码（该事件的全局
+// 类型声明较宽，参数按 unknown 收再窄化，避免与内部声明打架）
+function onDiffPageChange(page: unknown) {
+  void runDiff(typeof page === 'number' ? page : diffPage.value)
+}
+
+async function runDiff(page = diffPage.value) {
   if (!diffBaseId.value || !diffTargetId.value) return
   if (diffBaseId.value === diffTargetId.value) {
     ElMessage.warning(t('snapshot.sameSnapshot'))
@@ -143,9 +159,11 @@ async function runDiff() {
   }
   diffLoading.value = true
   try {
-    const resp = await snapshotApi.diff(diffBaseId.value, diffTargetId.value, 1, 200)
+    const resp = await snapshotApi.diff(diffBaseId.value, diffTargetId.value, page, diffPageSize)
     if (resp.success && resp.data) {
       diffResult.value = resp.data
+      diffPage.value = page
+      diffTotal.value = resp.data.totalCount
     } else {
       ElMessage.error(resp.error?.message || t('common.failed'))
     }
@@ -370,7 +388,7 @@ onMounted(loadSnapshots)
             :label="snapshotOptionLabel(s)"
           />
         </el-select>
-        <el-button type="primary" :loading="diffLoading" @click="runDiff">
+        <el-button type="primary" :loading="diffLoading" @click="runDiff()">
           {{ $t('snapshot.runCompare') }}
         </el-button>
       </div>
@@ -414,6 +432,14 @@ onMounted(loadSnapshots)
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-model:current-page="diffPage"
+          :page-size="200"
+          :total="diffTotal"
+          layout="total, prev, pager, next"
+          class="diff-pagination"
+          @current-change="onDiffPageChange"
+        />
       </template>
     </el-drawer>
 
@@ -438,6 +464,11 @@ onMounted(loadSnapshots)
 .el-pagination {
   margin-top: 16px;
   justify-content: flex-end;
+
+  // diff 抽屉内的分页器：表格已 max-height 滚动，分页贴右即可
+  &.diff-pagination {
+    margin-top: 12px;
+  }
 }
 
 .form-hint {

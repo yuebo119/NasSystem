@@ -207,6 +207,31 @@ function clearSemanticSearch() {
 
 const hasMore = computed(() => items.value.length < total.value)
 
+// 滚动加载：哨兵元素进入视口（预留 200px）即自动加载下一页，
+// "加载更多"按钮保留作兜底（键盘/无障碍与观察器失效时仍可用）。
+// 哨兵在时间线分支内，首屏数据到手后才挂载，故 watch ref 本身而非
+// onMounted 一次性绑定
+const loadMoreSentinel = ref<HTMLElement | null>(null)
+let scrollObserver: IntersectionObserver | null = null
+
+watch(loadMoreSentinel, (el) => {
+  scrollObserver?.disconnect()
+  scrollObserver = null
+  if (!el) return
+  scrollObserver = new IntersectionObserver((entries) => {
+    if (!entries[0]?.isIntersecting) return
+    // 语义模式没有分页语义（topK 定死），不自动加载
+    if (semanticActive.value || loading.value || !hasMore.value) return
+    void loadMore()
+  }, { rootMargin: '200px' })
+  scrollObserver.observe(el)
+})
+
+onUnmounted(() => {
+  scrollObserver?.disconnect()
+  scrollObserver = null
+})
+
 // 月份分组：保持 CreatedAt DESC 的顺序，同月的连续条目归一节
 const groups = computed(() => {
   const result: { month: string; label: string; items: MediaItem[] }[] = []
@@ -331,18 +356,30 @@ function openPreview(item: MediaItem) {
   }
 }
 
-// 图片预览：token 走 Authorization 头（裸 <img> 带不上，整站 401），
-// 取 blob 转对象 URL。与 AuthImage 同款，但这里要原图而非缩略图
+// 图片预览：走缩略图端点取大尺寸服务端降采样（width=1600），
+// 不再把几十 MB 的原图整 blob 拉进内存；token 走 Authorization 头
+// （裸 <img> 带不上，整站 401）。缩略图生成失败时回落原图下载
 async function ensureImageUrl(item: MediaItem) {
   revokePreviewUrl()
+  const encodedPath = item.path.replace(/^\//, '')
+  const token = localStorage.getItem('token')
   try {
-    const token = localStorage.getItem('token')
-    const response = await fetch(`/api/v1/files/download/${item.path.replace(/^\//, '')}`, {
+    const response = await fetch(`/api/v1/thumbnails/${encodedPath}?width=1600&height=1600`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
-    if (!response.ok) throw new Error(String(response.status))
-    const blob = await response.blob()
-    previewUrl.value = URL.createObjectURL(blob)
+    if (response.ok) {
+      const blob = await response.blob()
+      if (blob.size > 0) {
+        previewUrl.value = URL.createObjectURL(blob)
+        return
+      }
+    }
+    // 缩略图不可用（格式不支持/生成失败）：回落原图下载
+    const fallback = await fetch(`/api/v1/files/download/${encodedPath}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!fallback.ok) throw new Error(String(fallback.status))
+    previewUrl.value = URL.createObjectURL(await fallback.blob())
   } catch {
     ElMessage.error(t('media.previewFailed'))
   }
@@ -377,6 +414,12 @@ function revokeAudioUrl() {
     URL.revokeObjectURL(audioUrl.value)
     audioUrl.value = ''
   }
+}
+
+// 音频 element 级播放失败（解码失败/编码不支持）：fetch 成功但
+// <audio> 播不了时此前是静默的，用户只看到不动的播放器
+function onAudioError() {
+  ElMessage.error(t('media.audioPlayFailed'))
 }
 
 function closePreview() {
@@ -560,6 +603,8 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
         <div class="load-more" v-if="hasMore">
           <el-button :loading="loading" @click="loadMore()">{{ $t('media.loadMore') }}</el-button>
         </div>
+        <!-- 滚动加载哨兵：进入视口自动加载下一页（按钮保留作兜底） -->
+        <div ref="loadMoreSentinel" class="load-more-sentinel" />
       </template>
       <el-empty v-else-if="!loading" :description="$t('media.empty')" />
     </div>
@@ -609,11 +654,13 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
           </div>
         </div>
 
-        <!-- 音频：播放器（blob 对象 URL，token 已由 fetch 带上） -->
+        <!-- 音频：播放器（blob 对象 URL，token 已由 fetch 带上）。
+             解码失败/编码不支持时 element 级 error 也给出提示（fetch 级
+             失败已有提示，element 级此前是静默的） -->
         <div v-else-if="previewItem.mediaType === 'audio'" class="preview-audio-wrap">
           <div class="audio-icon"><el-icon :size="64"><Headset /></el-icon></div>
           <div class="audio-name">{{ previewItem.name }}</div>
-          <audio v-if="audioUrl" :src="audioUrl" controls class="audio-player" />
+          <audio v-if="audioUrl" :src="audioUrl" controls class="audio-player" @error="onAudioError" />
           <div class="preview-meta">
             {{ formatSize(previewItem.sizeBytes) }}
             <span v-if="badgeOf(previewItem)"> · {{ badgeOf(previewItem) }}</span>
@@ -624,9 +671,13 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
         <div v-if="previewItem.mediaType === 'image'" class="ocr-section">
           <div class="ocr-header">
             <span class="ocr-title">{{ $t('filesView.ocrTitle') }}</span>
-            <el-button size="small" :loading="ocrLoading" @click="runOcr(previewItem!)">
-              {{ ocrText ? $t('filesView.ocrReRecognize') : $t('filesView.ocrRecognize') }}
-            </el-button>
+            <span class="ocr-header-actions">
+              <!-- 批量识别入口：单张补认 → 整目录批量 的闭环 -->
+              <router-link to="/ocr" class="ocr-batch-link">{{ $t('media.ocrBatchLink') }}</router-link>
+              <el-button size="small" :loading="ocrLoading" @click="runOcr(previewItem!)">
+                {{ ocrText ? $t('filesView.ocrReRecognize') : $t('filesView.ocrRecognize') }}
+              </el-button>
+            </span>
           </div>
           <div v-if="ocrLoading" class="ocr-loading">
             <el-icon class="is-loading"><Loading /></el-icon>
@@ -787,13 +838,18 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
       color: var(--el-text-color-secondary);
     }
 
-    // 语义命中的相似度徽章（仅语义模式网格显示）
-    .cell-similarity {
-      padding: 0 8px 8px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--el-color-primary);
-    }
+  // 语义命中的相似度徽章（仅语义模式网格显示）
+  .cell-similarity {
+    padding: 0 8px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--el-color-primary);
+  }
+
+  // 滚动加载哨兵：零高度，仅作 IntersectionObserver 的观察目标
+  .load-more-sentinel {
+    height: 1px;
+  }
   }
 
   .load-more {
@@ -886,6 +942,21 @@ const typeTabs: { key: MediaType; labelKey: string; icon: typeof Picture }[] = [
         font-size: 14px;
         font-weight: 600;
         color: var(--el-text-color-primary);
+      }
+
+      // 批量识别链接 + 识别按钮同排右端
+      .ocr-header-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .ocr-batch-link {
+        font-size: 12px;
+        color: var(--el-color-primary);
+        text-decoration: none;
+
+        &:hover { text-decoration: underline; }
       }
     }
 

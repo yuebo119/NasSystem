@@ -152,7 +152,7 @@ describe('Ocr 视图层契约', () => {
     unmount()
   })
 
-  it('普通用户看不到自动识别开关，但批量工具可用', async () => {
+  it('普通用户看不到自动识别开关，但有全局行为说明', async () => {
     mockBatch.mockResolvedValue({
       success: true,
       data: { total: 2, recognized: 2, skipped: 0, failed: 0 },
@@ -161,9 +161,12 @@ describe('Ocr 视图层契约', () => {
     const { div, unmount } = await mountOcr('User')
     await flush(50)
 
-    // 开关卡整卡不渲染
-    expect(div.querySelector('.ocr-page')?.textContent).not.toContain('上传后自动识别')
+    // 开关（可交互控件）对非管理员不渲染
     expect(div.querySelector('.el-switch')).toBeNull()
+    // 2026-10-21 复审后新增契约：开关影响所有用户的上传行为，非管理员
+    // 零感知是信息缺口，故"工作原理"卡给一条全局行为说明（只读文案，
+    // 不含开关控件）
+    expect(div.querySelector('.ocr-page')?.textContent).toContain('上传后自动识别是全局开关')
     // 批量工具仍可用
     const pathInput = div.querySelector('.path-input input') as HTMLInputElement
     setInput(pathInput, '/')
