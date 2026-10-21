@@ -953,6 +953,7 @@ public class FileServiceTests
                 It.IsAny<string?>(),
                 It.IsAny<string?>(),
                 It.IsAny<bool?>(),
+                It.IsAny<bool>(),
                 1,
                 50,
                 It.IsAny<CancellationToken>()))
@@ -988,6 +989,7 @@ public class FileServiceTests
                 It.IsAny<string?>(),
                 It.IsAny<string?>(),
                 It.IsAny<bool?>(),
+                It.IsAny<bool>(),
                 1,
                 50,
                 It.IsAny<CancellationToken>()))
