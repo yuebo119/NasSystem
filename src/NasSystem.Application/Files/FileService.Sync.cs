@@ -7,6 +7,7 @@
 
 namespace NasSystem.Application.Files;
 
+using Microsoft.Extensions.Logging;
 using NasSystem.Application.Common;
 using NasSystem.Application.Files.Dtos;
 using NasSystem.Application.FileVersions;
@@ -90,6 +91,7 @@ public sealed partial class FileService
                 updatedItems,
                 changedDirs,
                 null,  // 根目录的 parentId 为 null
+                0,     // 根深度
                 cancellationToken);
 
             // 删除集：库里有、物理上没了的活跃记录。软删记录不进（ITM-N26 语义），
@@ -162,11 +164,18 @@ public sealed partial class FileService
                 Message = $"扫描完成：新增 {counters.AddedFiles} 个文件、{counters.AddedFolders} 个文件夹，"
                     + $"删除 {counters.RemovedFiles} 个文件、{counters.RemovedFolders} 个文件夹，"
                     + $"更新 {counters.UpdatedFiles} 个文件"
+                    + (counters.SkippedTooDeep > 0
+                        ? $"（跳过 {counters.SkippedTooDeep} 个超过深度上限 {MaxScanDepth} 的目录）"
+                        : string.Empty)
             });
         }
-        catch (Exception ex)
+        // ITM-030 铁律 6：取消异常不得翻译成业务错误码（客户端断开/超时取消
+        // 走不到这里）。异常消息不回显客户端（ITM-N10 脱敏要求）：内部路径与
+        // SQLite 细节属于信息泄露面，具体原因进服务端日志
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return Result<ScanResultDto>.Failure(new Error("Scan.Failed", $"扫描失败: {ex.Message}"));
+            _logger.LogError(ex, "扫描同步失败: User={User}", userId);
+            return Result<ScanResultDto>.Failure(new Error("Scan.Failed", "扫描失败，请查看服务端日志"));
         }
     }
 
@@ -178,7 +187,34 @@ public sealed partial class FileService
         public int RemovedFolders { get; set; }
         public int UpdatedFiles { get; set; }
         public long TotalSize { get; set; }
+
+        /// <summary>因超过深度上限被跳过的目录数（超深树/junction 环）</summary>
+        public int SkippedTooDeep { get; set; }
     }
+
+    /// <summary>
+    /// 判断是否是本系统产生的临时工件文件名：上传半成品
+    /// （&lt;目标名&gt;.uploading-&lt;32位hex&gt;）或版本恢复残留（*.restore.tmp）。
+    /// 后缀锚定到精确形态：按名字模糊匹配会与用户合法文件撞名，
+    /// 把他们的记录判"已消失"删掉（ITM-N26 家族）
+    /// </summary>
+    private static bool IsTempArtifactFileName(string fileName)
+    {
+        const string uploadingMarker = ".uploading-";
+        var markerIndex = fileName.LastIndexOf(uploadingMarker, StringComparison.Ordinal);
+        if (markerIndex >= 0)
+        {
+            var suffix = fileName[(markerIndex + uploadingMarker.Length)..];
+            if (suffix.Length == 32 && suffix.All(static c => Uri.IsHexDigit(c)))
+                return true;
+        }
+
+        return fileName.EndsWith(FileVersionStore.RestoreTempSuffix, StringComparison.Ordinal);
+    }
+
+    /// <summary>目录扫描深度上限。CONVENTIONS §2.5 要求设上限：深树爆栈，
+    /// Windows 目录联接（junction）成环时无限递归</summary>
+    private const int MaxScanDepth = 32;
 
     private async Task ScanDirectoryAsync(
         string physicalDir,
@@ -192,18 +228,31 @@ public sealed partial class FileService
         List<FileItem> updatedItems,
         HashSet<string> changedDirs,
         Guid? currentDirId,  // 当前目录的 ID，作为子项的 parentId
+        int depth,  // 当前深度（根为 0）
         CancellationToken cancellationToken)
     {
+        if (depth > MaxScanDepth)
+        {
+            counters.SkippedTooDeep++;
+            return;
+        }
+
         // 扫描子目录。用 Enumerate 而非 Get：Get* 每次调用都物化整个目录的
         // 完整字符串数组，深目录树上万目录时是成比例的白分配；Enumerate 边遍历边产出
         foreach (var dir in Directory.EnumerateDirectories(physicalDir))
         {
+            // 再解析点（junction/symlink）不跟随：环状链接会让递归永不终止
+            if ((new DirectoryInfo(dir).Attributes & FileAttributes.ReparsePoint) != 0)
+                continue;
+
             var dirName = Path.GetFileName(dir);
 
             // 版本库目录（ROADMAP Phase 1）：.versions 存文件历史版本，
             // 与 .uploading- 半成品同理，物理上在池内但不对用户呈现，
-            // 扫描入库会把版本文件当正常文件导进来
-            if (dirName == FileVersionStore.DirectoryName)
+            // 扫描入库会把版本文件当正常文件导进来。
+            // 只认池挂载点顶层的那一个：用户自建的 /docs/.versions 是合法目录，
+            // 按目录名一刀切会把里面的用户文件判"已消失"删掉库记录（ITM-N26 家族）
+            if (depth == 0 && dirName == FileVersionStore.DirectoryName)
                 continue;
 
             var dirVirtualPath = CombinePath(virtualPath, dirName);
@@ -265,6 +314,7 @@ public sealed partial class FileService
                 updatedItems,
                 changedDirs,
                 dirId,
+                depth + 1,
                 cancellationToken);
         }
 
@@ -273,13 +323,13 @@ public sealed partial class FileService
         {
             var fileName = Path.GetFileName(file);
 
-            // S5：上传半成品临时文件（<目标名>.uploading-<guid>）不入库。
+            // S5：上传半成品临时文件（<目标名>.uploading-<32位hex>）不入库。
             // 上传中断（客户端断开/进程退出）会留下它，库里没有对应记录，
-            // 不跳过的话下次扫描会把半成品当用户文件导入。
-            // 版本恢复的 .restore.tmp 同理（恢复中途进程退出会残留），
-            // 后缀常量与 FileVersionStore 同源
-            if (fileName.Contains(".uploading-", StringComparison.Ordinal)
-                || fileName.EndsWith(FileVersionStore.RestoreTempSuffix, StringComparison.Ordinal))
+            // 不跳过的话下次扫描会把半成品当用户文件导入。后缀锚定到 32 位
+            // hex：用户合法文件叫 report.uploading-2024.pdf 时不应被误排除
+            // （排除规则与用户可创建的名字空间重叠就会删掉他们的记录）
+            // 版本恢复的 .restore.tmp 同理，后缀常量与 FileVersionStore 同源
+            if (IsTempArtifactFileName(fileName))
                 continue;
 
             var fileVirtualPath = CombinePath(virtualPath, fileName);
