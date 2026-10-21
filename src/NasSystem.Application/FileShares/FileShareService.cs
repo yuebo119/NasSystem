@@ -82,9 +82,13 @@ public sealed class FileShareService(
         }
         catch (UniqueConstraintException)
         {
-            // ITM-N7：并发生成相同分享码由 ShareCode 唯一索引兜底
+            // ITM-N7：并发生成相同分享码由 ShareCode 唯一索引兜底。
+            // 重试必须重新 AddAsync 登记插入：SaveChangesAsync 失败时事务已
+            // 回滚、意图队列已在 finally 清空，第一次登记的插入意图不存在了。
+            // 只 UpdateAsync 会发一条 WHERE Id 打空气的 UPDATE，0 行影响但按
+            // "命令执行数"计 1，方法报成功而库里零记录（2026-10-21 审计实证）
             share.RegenerateShareCode();
-            await fileShareRepository.UpdateAsync(share, cancellationToken);
+            await fileShareRepository.AddAsync(share, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
 

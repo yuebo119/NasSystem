@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NasSystem.Application.Users.Dtos;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Enums;
+using NasSystem.Shared;
 using Xunit;
 
 /// <summary>
@@ -26,6 +27,46 @@ public class UserEndpointsIntegrationTests : ApiTestBase
     }
 
     #region Login Tests
+
+    [Fact]
+    public async Task GetUserStats_IsSiteWide_NotCurrentPageAggregate()
+    {
+        // 2026-10-21 审计 P1 回归：管理页三张统计卡曾经对当前分页页
+        // （每页 20 条）做聚合冒充全站量，用户数超过一页时数字随翻页跳动。
+        // 这条锁 /users/stats 是全站口径，且与分页响应解耦
+        var token = await GetAuthTokenAsync("stats-admin", "password123", UserRole.Admin);
+        SetAuthToken(token);
+
+        // 前后差值断言：同工厂库被本类其他用例共享，绝对值不可依赖
+        var before = await GetStatsAsync();
+
+        for (var i = 0; i < 24; i++)
+            await SeedTestUserAsync($"stats-user-{i}", "password123");
+        await SeedTestUserAsync("stats-disabled-1", "password123", UserRole.User, isEnabled: false);
+        await SeedTestUserAsync("stats-disabled-2", "password123", UserRole.User, isEnabled: false);
+        await SeedTestUserAsync("stats-another-admin", "password123", UserRole.Admin);
+
+        var after = await GetStatsAsync();
+
+        (after.TotalUsers - before.TotalUsers).Should().Be(27, "27 个新用户必须全部计入全站总数");
+        (after.AdminCount - before.AdminCount).Should().Be(1, "新增 1 个管理员");
+        (after.EnabledCount - before.EnabledCount).Should().Be(25, "两个禁用用户不计入启用数");
+
+        // 解耦证明：分页页仍然只有 20 条，统计不受页大小限制
+        var page = await Client.GetAsync("/api/v1/users?page=1&pageSize=20");
+        var pageResult = await page.Content.ReadFromJsonAsync<ApiResponse<PagedResult<UserDto>>>(JsonOptions);
+        pageResult!.Data!.Items.Count.Should().Be(20, "分页页大小仍是 20");
+        after.TotalUsers.Should().BeGreaterThan(20, "全站总数必须超过一页，否则这条测试失去意义");
+    }
+
+    private async Task<(int TotalUsers, int AdminCount, int EnabledCount)> GetStatsAsync()
+    {
+        var response = await Client.GetAsync("/api/v1/users/stats");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ApiResponse<UserStatsDto>>(JsonOptions);
+        result!.Data.Should().NotBeNull();
+        return (result.Data!.TotalUsers, result.Data.AdminCount, result.Data.EnabledCount);
+    }
 
     [Fact]
     public async Task Login_WithValidCredentials_ReturnsTokenAndUserInfo()

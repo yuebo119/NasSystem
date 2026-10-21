@@ -43,4 +43,18 @@ public interface IUserRepository : IRepository<User>
         int pageSize,
         string? searchTerm = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 全站用户聚合（总数/管理员数/启用数）。管理页统计卡用：
+    /// 曾经前端对当前页 20 条做聚合冒充全站量，翻页数字就变
+    /// </summary>
+    Task<UserStats> GetStatsAsync(CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// 用户全站聚合统计。与分页解耦：分页只返回当前页，统计永远全站口径
+/// </summary>
+/// <param name="Total">用户总数</param>
+/// <param name="Admins">管理员数（Admin + SuperAdmin）</param>
+/// <param name="Enabled">启用用户数</param>
+public sealed record UserStats(int Total, int Admins, int Enabled);

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Refresh, Edit, Delete, Key, User, Search, UserFilled, Setting } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '@/api/user'
-import type { User as UserType } from '@/types'
+import type { User as UserType, UserStats } from '@/types'
 import { formatSize, formatDate } from '@/utils/format'
 import { useDrawerSize } from '@/utils/useIsMobile'
 
@@ -15,6 +15,9 @@ const totalCount = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const searchTerm = ref('')
+// 全站统计：服务端聚合，与当前分页页解耦。2026-10-21 审计前这里对
+// 当前页 20 条求和冒充总量，用户数超过一页时三张卡随翻页跳动
+const stats = ref<UserStats>({ totalUsers: 0, adminCount: 0, enabledCount: 0, totalUsedBytes: 0 })
 
 // 对话框状态
 const createDialogVisible = ref(false)
@@ -71,14 +74,17 @@ const getRoleTagType = (role: string): 'danger' | 'warning' | 'info' | 'success'
   }
 }
 
-// 统计数据
-const stats = computed(() => {
-  const total = users.value.length
-  const admins = users.value.filter(u => u.role === 'Admin' || u.role === 'SuperAdmin').length
-  const enabled = users.value.filter(u => u.isEnabled).length
-  const totalUsed = users.value.reduce((sum, u) => sum + (u.usedBytes || 0), 0)
-  return { total, admins, enabled, totalUsed }
-})
+// 统计数据（全站口径，来自 GET /users/stats）
+const loadStats = async () => {
+  try {
+    const response = await userApi.getUserStats()
+    if (response.success && response.data) {
+      stats.value = response.data
+    }
+  } catch {
+    // 统计卡失败不阻断列表：卡片留 0，列表照常展示（拦截器已弹错）
+  }
+}
 
 const loadData = async () => {
   loading.value = true
@@ -130,7 +136,7 @@ const handleCreateUser = async () => {
     if (response.success) {
       ElMessage.success(t('users.createSuccess'))
       createDialogVisible.value = false
-      await loadData()
+      await Promise.all([loadData(), loadStats()])
     } else {
       ElMessage.error(response.error?.message || t('common.failed'))
     }
@@ -170,7 +176,7 @@ const handleUpdateUser = async () => {
     if (response.success) {
       ElMessage.success(t('users.updateSuccess'))
       editDialogVisible.value = false
-      await loadData()
+      await Promise.all([loadData(), loadStats()])
     } else {
       ElMessage.error(response.error?.message || t('common.failed'))
     }
@@ -203,7 +209,7 @@ const handleDelete = async (user: UserType) => {
     const response = await userApi.deleteUser(user.id)
     if (response.success) {
       ElMessage.success(t('users.deleteSuccess'))
-      await loadData()
+      await Promise.all([loadData(), loadStats()])
     } else {
       ElMessage.error(response.error?.message || t('common.failed'))
     }
@@ -238,7 +244,10 @@ const handlePageChange = (page: number) => {
   loadData()
 }
 
-onMounted(() => loadData())
+onMounted(() => {
+  loadData()
+  loadStats()
+})
 </script>
 
 <template>
@@ -262,15 +271,15 @@ onMounted(() => loadData())
       </div>
       <div class="stat-card">
         <div class="stat-icon admins"><el-icon :size="24"><Setting /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ stats.admins }}</div><div class="stat-label">{{ t('users.adminCount') }}</div></div>
+        <div class="stat-info"><div class="stat-value">{{ stats.adminCount }}</div><div class="stat-label">{{ t('users.adminCount') }}</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon enabled"><el-icon :size="24"><User /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ stats.enabled }}</div><div class="stat-label">{{ t('users.enabledCount') }}</div></div>
+        <div class="stat-info"><div class="stat-value">{{ stats.enabledCount }}</div><div class="stat-label">{{ t('users.enabledCount') }}</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon storage"><el-icon :size="24"><User /></el-icon></div>
-        <div class="stat-info"><div class="stat-value">{{ formatSize(stats.totalUsed) }}</div><div class="stat-label">{{ t('users.totalUsedSpace') }}</div></div>
+        <div class="stat-info"><div class="stat-value">{{ formatSize(stats.totalUsedBytes) }}</div><div class="stat-label">{{ t('users.totalUsedSpace') }}</div></div>
       </div>
     </div>
 

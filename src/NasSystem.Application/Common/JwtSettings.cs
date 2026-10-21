@@ -37,6 +37,12 @@ public sealed class JwtSettings
     public int AccessTokenExpirationMinutes { get; set; } = 60;
 
     /// <summary>
+    /// "记住我"登录的访问令牌过期时间 (天)。勾选时用这个更长的有效期，
+    /// 不勾选回落到 AccessTokenExpirationMinutes。默认 7 天与刷新令牌同档
+    /// </summary>
+    public int RememberMeExpirationDays { get; set; } = 7;
+
+    /// <summary>
     /// 刷新令牌过期时间 (天)
     /// </summary>
     public int RefreshTokenExpirationDays { get; set; } = 7;

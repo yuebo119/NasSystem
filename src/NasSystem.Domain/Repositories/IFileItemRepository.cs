@@ -217,6 +217,12 @@ public interface IFileItemRepository : IRepository<FileItem>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 全站已使用空间（所有用户的未删文件字节和）。管理页统计卡用：
+    /// 曾经前端把当前分页页的 usedBytes 求和冒充全站总量
+    /// </summary>
+    Task<long> CalculateAllUsersUsedSpaceAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 检查路径是否存在
     /// </summary>
     Task<bool> PathExistsAsync(string path, CancellationToken cancellationToken = default);

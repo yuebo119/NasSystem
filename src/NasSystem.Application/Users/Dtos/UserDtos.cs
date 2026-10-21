@@ -79,3 +79,14 @@ public sealed record LoginResultDto(
     string RefreshToken,
     DateTime ExpiresAt,
     UserDto User);
+
+/// <summary>
+/// 用户全站统计（管理页统计卡）。与分页响应解耦：分页只含当前页数据，
+/// 统计永远全站口径。2026-10-21 审计前前端对当前页 20 条聚合冒充总量，
+/// 用户数超过一页时三张卡随翻页跳动
+/// </summary>
+public sealed record UserStatsDto(
+    int TotalUsers,
+    int AdminCount,
+    int EnabledCount,
+    long TotalUsedBytes);

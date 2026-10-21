@@ -6,6 +6,7 @@
 namespace NasSystem.UnitTests.Services;
 
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using Moq;
 using NasSystem.Application.Common;
 using NasSystem.Application.Users;
@@ -50,7 +51,8 @@ public class UserServiceTests
             _fileItemRepositoryMock.Object,
             _unitOfWorkMock.Object,
             _passwordHasherMock.Object,
-            _jwtServiceMock.Object);
+            _jwtServiceMock.Object,
+            Options.Create(new JwtSettings()));
     }
 
     #region GetByIdAsync Tests
@@ -438,7 +440,7 @@ public class UserServiceTests
             .Returns(true);
 
         _jwtServiceMock
-            .Setup(x => x.GenerateAccessToken(user))
+            .Setup(x => x.GenerateAccessToken(user, It.IsAny<TimeSpan?>()))
             .Returns("access_token_123");
 
         _jwtServiceMock
@@ -457,6 +459,78 @@ public class UserServiceTests
         result.Value.Token.Should().Be("access_token_123");
         result.Value.RefreshToken.Should().Be("refresh_token_456");
         result.Value.User.Username.Should().Be("testuser");
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithRememberMe_PassesExtendedLifetime()
+    {
+        // 2026-10-21 审计 P1 回归：LoginDto.RememberMe 曾经全链路无人读，
+        // 前端"记住我"是死控件。这里锁勾选时必须把延长后的有效期交给
+        // JWT 服务，令牌过期时间随之变长
+        var user = User.Create("rememberuser", "hashedpwd", "salt123");
+        var dto = new LoginDto { Username = "rememberuser", Password = "password123", RememberMe = true };
+
+        _userRepositoryMock
+            .Setup(x => x.GetByUsernameAsync("rememberuser", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        _passwordHasherMock
+            .Setup(x => x.VerifyPassword("password123", "hashedpwd", "salt123"))
+            .Returns(true);
+
+        TimeSpan? capturedLifetime = null;
+        _jwtServiceMock
+            .Setup(x => x.GenerateAccessToken(user, It.IsAny<TimeSpan?>()))
+            .Callback((User _, TimeSpan? lifetime) => capturedLifetime = lifetime)
+            .Returns("access_token_123");
+
+        _jwtServiceMock
+            .Setup(x => x.GenerateRefreshToken())
+            .Returns("refresh_token_456");
+
+        _jwtServiceMock
+            .Setup(x => x.GetTokenExpiration("access_token_123"))
+            .Returns(DateTime.UtcNow.AddDays(7));
+
+        var result = await _sut.LoginAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        capturedLifetime.Should().Be(TimeSpan.FromDays(7), "勾选记住我后令牌应按配置的天数签发");
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithoutRememberMe_UsesDefaultLifetime()
+    {
+        // 不勾选时不得传覆盖值：回落配置的 AccessTokenExpirationMinutes
+        var user = User.Create("plainuser", "hashedpwd", "salt123");
+        var dto = new LoginDto { Username = "plainuser", Password = "password123" };
+
+        _userRepositoryMock
+            .Setup(x => x.GetByUsernameAsync("plainuser", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        _passwordHasherMock
+            .Setup(x => x.VerifyPassword("password123", "hashedpwd", "salt123"))
+            .Returns(true);
+
+        TimeSpan? capturedLifetime = TimeSpan.FromMinutes(1);
+        _jwtServiceMock
+            .Setup(x => x.GenerateAccessToken(user, It.IsAny<TimeSpan?>()))
+            .Callback((User _, TimeSpan? lifetime) => capturedLifetime = lifetime)
+            .Returns("access_token_123");
+
+        _jwtServiceMock
+            .Setup(x => x.GenerateRefreshToken())
+            .Returns("refresh_token_456");
+
+        _jwtServiceMock
+            .Setup(x => x.GetTokenExpiration("access_token_123"))
+            .Returns(DateTime.UtcNow.AddHours(1));
+
+        var result = await _sut.LoginAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        capturedLifetime.Should().BeNull("不勾选记住我时不应覆盖有效期");
     }
 
     [Fact]

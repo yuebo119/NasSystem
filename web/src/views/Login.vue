@@ -37,7 +37,10 @@ async function handleLogin() {
   try {
     const success = await userStore.login({
       username: form.username,
-      password: form.password
+      password: form.password,
+      // 记住我：勾选后端按 RememberMeExpirationDays 签更长有效期的令牌。
+      // 2026-10-21 审计前这里只传账号密码，复选框是死控件
+      rememberMe: form.rememberMe
     })
     
     if (success) {

@@ -30,7 +30,7 @@ public sealed class JwtService : IJwtService
         _signingCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
     }
 
-    public string GenerateAccessToken(User user)
+    public string GenerateAccessToken(User user, TimeSpan? lifetime = null)
     {
         var claims = new List<Claim>
         {
@@ -49,7 +49,7 @@ public sealed class JwtService : IJwtService
         if (!string.IsNullOrEmpty(user.DisplayName))
             claims.Add(new Claim("display_name", user.DisplayName));
 
-        var expires = DateTime.UtcNow.AddMinutes(_settings.AccessTokenExpirationMinutes);
+        var expires = DateTime.UtcNow.Add(lifetime ?? TimeSpan.FromMinutes(_settings.AccessTokenExpirationMinutes));
 
         var token = new JwtSecurityToken(
             issuer: _settings.Issuer,

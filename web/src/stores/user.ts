@@ -16,7 +16,7 @@ export const useUserStore = defineStore('user', () => {
   const displayName = computed(() => user.value?.displayName || user.value?.username || '')
 
   // 方法
-  async function login(credentials: { username: string; password: string }) {
+  async function login(credentials: { username: string; password: string; rememberMe?: boolean }) {
     const response = await userApi.login(credentials)
     if (response.success && response.data) {
       token.value = response.data.token

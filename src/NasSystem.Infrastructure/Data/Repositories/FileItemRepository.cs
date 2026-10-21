@@ -675,6 +675,15 @@ public sealed class FileItemRepository(
         return rows.ToDictionary(r => r.OwnerId, r => r.UsedBytes);
     }
 
+    public async Task<long> CalculateAllUsersUsedSpaceAsync(CancellationToken cancellationToken = default)
+    {
+        var db = await sessions.GetAsync(cancellationToken);
+        return await db.ScalarAsync<long>(
+            $"SELECT COALESCE(SUM(SizeBytes), 0) FROM FileItems WHERE IsDeleted = 0 AND ItemType = 0",
+            false,
+            cancellationToken);
+    }
+
     public async Task<bool> PathExistsAsync(string path, CancellationToken cancellationToken = default)
     {
         var normalizedPath = NormalizePath(path);

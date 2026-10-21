@@ -23,6 +23,11 @@ public interface IUserService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 获取用户全站统计（管理页统计卡）。与分页解耦，永远全站口径
+    /// </summary>
+    Task<Result<UserStatsDto>> GetStatsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 根据 ID 获取用户
     /// </summary>
     Task<Result<UserDto>> GetByIdAsync(

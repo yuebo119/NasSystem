@@ -16,8 +16,12 @@ public interface IJwtService
     /// 生成访问令牌
     /// </summary>
     /// <param name="user">用户实体</param>
+    /// <param name="lifetime">
+    /// 令牌有效期。传 null 用配置的 AccessTokenExpirationMinutes；
+    /// "记住我"登录由调用方传更长的有效期（见 <see cref="JwtSettings.RememberMeExpirationDays"/>）
+    /// </param>
     /// <returns>JWT 令牌字符串</returns>
-    string GenerateAccessToken(User user);
+    string GenerateAccessToken(User user, TimeSpan? lifetime = null);
 
     /// <summary>
     /// 生成刷新令牌

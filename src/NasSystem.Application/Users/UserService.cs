@@ -5,6 +5,7 @@
 
 namespace NasSystem.Application.Users;
 
+using Microsoft.Extensions.Options;
 using NasSystem.Application.Common;
 using NasSystem.Application.Users.Dtos;
 using NasSystem.Domain.Common;
@@ -23,7 +24,8 @@ public sealed class UserService(
     IFileItemRepository fileItemRepository,
     IUnitOfWork unitOfWork,
     IPasswordHasher passwordHasher,
-    IJwtService jwtService) : IUserService
+    IJwtService jwtService,
+    IOptions<JwtSettings> jwtSettings) : IUserService
 {
     public async Task<Result<UserDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -57,6 +59,20 @@ public sealed class UserService(
         var result = PagedResult<UserDto>.Create(dtos, page, pageSize, totalCount);
 
         return Result<PagedResult<UserDto>>.Success(result);
+    }
+
+    public async Task<Result<UserStatsDto>> GetStatsAsync(CancellationToken cancellationToken = default)
+    {
+        // 全站口径两条聚合：用户表计数 + 文件表总字节。
+        // 前端不再对当前页求和（2026-10-21 审计 P1：翻页数字就变）
+        var stats = await userRepository.GetStatsAsync(cancellationToken);
+        var totalUsedBytes = await fileItemRepository.CalculateAllUsersUsedSpaceAsync(cancellationToken);
+
+        return Result<UserStatsDto>.Success(new UserStatsDto(
+            stats.Total,
+            stats.Admins,
+            stats.Enabled,
+            totalUsedBytes));
     }
 
     public async Task<Result<UserDto>> CreateAsync(CreateUserDto dto, CancellationToken cancellationToken = default)
@@ -170,8 +186,14 @@ public sealed class UserService(
         await userRepository.UpdateAsync(user, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // 生成令牌
-        var accessToken = jwtService.GenerateAccessToken(user);
+        // 生成令牌。"记住我"拉长有效期：勾选时按 RememberMeExpirationDays
+        // （默认 7 天）签发，否则回落到 AccessTokenExpirationMinutes。
+        // 2026-10-21 审计前 LoginDto.RememberMe 全链路无人读取，前端勾选框
+        // 是死控件，勾与不勾行为零差异
+        var lifetime = dto.RememberMe
+            ? TimeSpan.FromDays(jwtSettings.Value.RememberMeExpirationDays)
+            : (TimeSpan?)null;
+        var accessToken = jwtService.GenerateAccessToken(user, lifetime);
         var refreshToken = jwtService.GenerateRefreshToken();
         var expiresAt = jwtService.GetTokenExpiration(accessToken) ?? DateTime.UtcNow.AddHours(1);
 

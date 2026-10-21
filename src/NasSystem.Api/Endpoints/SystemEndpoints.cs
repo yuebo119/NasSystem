@@ -5,6 +5,9 @@
 
 namespace NasSystem.Api.Extensions;
 
+using Microsoft.Extensions.Options;
+using NasSystem.Application.Common;
+using NasSystem.Application.Storage;
 using NasSystem.Application.SystemInfo;
 using NasSystem.Shared;
 using static NasSystem.Shared.ByteSizeFormatter;
@@ -122,19 +125,28 @@ public static class SystemEndpoints
         }));
     }
 
-    private static IResult GetSystemSettings(UploadLimit uploadLimit)
+    /// <summary>
+    /// 获取系统设置。只返回有真实来源的字段：上传上限取 Kestrel 实际生效值、
+    /// 默认池与会话超时取库/配置真值。曾经另外三个字段（压缩/去重/维护模式）
+    /// 是硬编码常量，系统里没有对应能力也不落库，2026-10-21 审计按
+    /// ITM-N9（假数据比报错更危险）删除——PUT /settings 本就是诚实 501，
+    /// GET 再返回虚构字段与同一文件的自我矛盾
+    /// </summary>
+    private static async Task<IResult> GetSystemSettings(
+        UploadLimit uploadLimit,
+        IStorageService storageService,
+        IOptions<JwtSettings> jwtSettings)
     {
-        // 返回系统配置（实际应从配置服务获取）。
-        // MaxUploadSizeMB 取 Kestrel 实际生效的上限：两边必须同源，
-        // 否则前端按这里的数字做校验会被服务端真实限制打回
+        var pools = await storageService.GetPoolsAsync();
+        var defaultPool = pools.IsSuccess
+            ? pools.Value.FirstOrDefault(p => p.IsDefault)
+            : null;
+
         return Results.Ok(ApiResponse<object>.Ok(new
         {
-            DefaultStoragePool = (Guid?)null,
+            DefaultStoragePool = (Guid?)defaultPool?.Id,
             MaxUploadSizeMB = uploadLimit.MaxUploadSizeMB,
-            EnableCompression = false,
-            EnableDeduplication = false,
-            SessionTimeoutMinutes = 30,
-            MaintenanceMode = false
+            SessionTimeoutMinutes = jwtSettings.Value.AccessTokenExpirationMinutes
         }));
     }
 

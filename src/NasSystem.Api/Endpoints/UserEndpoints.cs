@@ -51,6 +51,14 @@ public static class UserEndpoints
              .WithDescription("分页获取系统中的用户列表，支持搜索。需要管理员权限。")
              .RequireAuthorization("RequireAdmin");
 
+        // 获取用户全站统计 (管理员)。管理页统计卡专用：分页响应只含当前页，
+        // 统计卡要全站口径，两者解耦（2026-10-21 审计前前端对当前页求和冒充总量）
+        users.MapGet("/stats", GetUserStats)
+             .WithName("GetUserStats")
+             .WithSummary("获取用户全站统计")
+             .WithDescription("总数/管理员数/启用数/总使用空间，全站口径。需要管理员权限。")
+             .RequireAuthorization("RequireAdmin");
+
         // 获取单个用户 (管理员)
         users.MapGet("/{id:guid}", GetUserById)
              .WithName("GetUserById")
@@ -129,6 +137,16 @@ public static class UserEndpoints
         string? searchTerm = null)
     {
         var result = await userService.GetPagedAsync(page, pageSize, searchTerm);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> GetUserStats(
+        IUserService userService,
+        CancellationToken cancellationToken)
+    {
+        // 全站统计。与 /{id:guid} 的路由不冲突：stats 不是 guid 形态，
+        // 约束直接排歧，无需依赖注册顺序
+        var result = await userService.GetStatsAsync(cancellationToken);
         return result.ToHttpResult();
     }
 

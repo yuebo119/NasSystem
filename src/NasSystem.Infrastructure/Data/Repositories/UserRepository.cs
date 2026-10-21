@@ -92,6 +92,24 @@ public sealed class UserRepository(
         return (rows.Select(r => r.ToDomain()).ToList(), totalCount);
     }
 
+    public async Task<UserStats> GetStatsAsync(CancellationToken cancellationToken = default)
+    {
+        var db = await sessions.GetAsync(cancellationToken);
+
+        // 三条 COUNT 全站口径。本地 SQLite 往返成本≈0，拆三条比拼一条
+        // 可读性更高（实测过压往返是负优化，勿合并）。Role 库存 INTEGER，
+        // 管理员 = Admin + SuperAdmin 两档，显式列出不用 >= 防未来插档误伤
+        var total = (int)await db.ScalarAsync<long>(
+            $"SELECT COUNT(*) FROM Users", false, cancellationToken);
+        var admins = (int)await db.ScalarAsync<long>(
+            $"SELECT COUNT(*) FROM Users WHERE Role IN ({(int)NasSystem.Domain.Enums.UserRole.Admin}, {(int)NasSystem.Domain.Enums.UserRole.SuperAdmin})",
+            false, cancellationToken);
+        var enabled = (int)await db.ScalarAsync<long>(
+            $"SELECT COUNT(*) FROM Users WHERE IsEnabled = 1", false, cancellationToken);
+
+        return new UserStats(total, admins, enabled);
+    }
+
     public async ValueTask<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var db = await sessions.GetAsync(cancellationToken);

@@ -131,6 +131,42 @@ describe('Login 视图层契约', () => {
     unmount()
   })
 
+  // 2026-10-21 全量审计 P1 回归：LoginDto.RememberMe 后端字段一直都在，
+  // 但 Login.vue 提交对象只含 username/password，复选框是死控件，
+  // 勾与不勾行为零差异。这两条锁住勾选状态必须进请求体
+  it('勾选记住我：登录请求体带 rememberMe=true', async () => {
+    mockLogin.mockResolvedValue(loginOk())
+    const { div, unmount } = await mountView(Login, { route: '/login' })
+
+    fillForm(div, 'admin', 'admin123')
+    const checkbox = div.querySelector('.login-form input[type="checkbox"]') as HTMLInputElement
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+    submit(div)
+    await vi.waitFor(() => {
+      if (!mockLogin.mock.calls.length) throw new Error('not called')
+    })
+
+    expect(mockLogin).toHaveBeenCalledWith(
+      expect.objectContaining({ username: 'admin', password: 'admin123', rememberMe: true }))
+    unmount()
+  })
+
+  it('不勾选记住我：登录请求体带 rememberMe=false', async () => {
+    mockLogin.mockResolvedValue(loginOk())
+    const { div, unmount } = await mountView(Login, { route: '/login' })
+
+    fillForm(div, 'admin', 'admin123')
+    submit(div)
+    await vi.waitFor(() => {
+      if (!mockLogin.mock.calls.length) throw new Error('not called')
+    })
+
+    expect(mockLogin).toHaveBeenCalledWith(
+      expect.objectContaining({ username: 'admin', password: 'admin123', rememberMe: false }))
+    unmount()
+  })
+
   it('无 redirect 参数时成功登录跳默认仪表盘', async () => {
     mockLogin.mockResolvedValue(loginOk())
     const { div, router, unmount } = await mountView(Login, { route: '/login' })

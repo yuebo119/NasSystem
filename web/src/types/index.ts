@@ -46,6 +46,14 @@ export interface User {
 
 export type UserRole = 'SuperAdmin' | 'Admin' | 'User' | 'Guest'
 
+/** 用户全站统计（GET /users/stats）。统计卡专用，与分页数据解耦 */
+export interface UserStats {
+  totalUsers: number
+  adminCount: number
+  enabledCount: number
+  totalUsedBytes: number
+}
+
 export interface LoginRequest {
   username: string
   password: string

@@ -1,5 +1,5 @@
 import http from './http'
-import type { ApiResponse, User, LoginRequest, LoginResponse, PagedResult } from '@/types'
+import type { ApiResponse, User, UserStats, LoginRequest, LoginResponse, PagedResult } from '@/types'
 
 export const userApi = {
   // 登录
@@ -27,6 +27,12 @@ export const userApi = {
     searchTerm?: string
   }): Promise<ApiResponse<PagedResult<User>>> {
     return http.get('/users', { params })
+  },
+
+  // 获取用户全站统计（管理页统计卡）。分页响应只含当前页，
+  // 统计卡必须全站口径（2026-10-21 审计前前端对当前页求和冒充总量）
+  async getUserStats(): Promise<ApiResponse<UserStats>> {
+    return http.get('/users/stats')
   },
 
   // 获取用户详情
