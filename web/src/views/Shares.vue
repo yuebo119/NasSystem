@@ -72,7 +72,7 @@ const openFilePicker = () => {
 // 面包屑：'/a/b/c' → ['/', '/a', '/a/b', '/a/b/c']
 const pickerBreadcrumbs = computed(() => {
   const segments = pickerPath.value.split('/').filter(Boolean)
-  const crumbs: { path: string; label: string }[] = [{ path: '/', label: t('filesView.rootDir') }]
+  const crumbs: { path: string; label: string }[] = [{ path: '/', label: t('filesView.rootCrumb') }]
   let acc = ''
   for (const seg of segments) {
     acc += '/' + seg

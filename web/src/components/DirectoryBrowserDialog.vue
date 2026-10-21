@@ -48,7 +48,7 @@ async function load(path: string) {
 // 面包屑：'/a/b' → ['/', '/a', '/a/b']（根目录标签用 i18n）
 const breadcrumbs = computed(() => {
   const segments = currentPath.value.split('/').filter(Boolean)
-  const crumbs: { path: string; label: string }[] = [{ path: '/', label: t('filesView.rootDir') }]
+  const crumbs: { path: string; label: string }[] = [{ path: '/', label: t('filesView.rootCrumb') }]
   let acc = ''
   for (const seg of segments) {
     acc += '/' + seg
