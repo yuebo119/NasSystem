@@ -342,6 +342,10 @@ public sealed partial class FileService
         var destPath = NormalizePath(request.DestinationPath);
         var movedFromPaths = new List<string>();
 
+        // 已完成的物理移动（旧路径 → 新路径）。库提交失败时按它回滚，
+        // 避免"盘上新位置、库里旧路径"的库盘错位（F-021）
+        var movedPhysicalPaths = new List<(string OldPhysicalPath, string NewPhysicalPath)>();
+
         // ROADMAP Phase 2 只读保护预检：移出受保护目录（内容从可见位置消失，
         // 变相删除）与写入受保护目录（目标被覆盖，变相篡改）都拦截。
         // 放在目录准备与物理移动之前：权限判定先于资源存在性检查
@@ -398,6 +402,7 @@ public sealed partial class FileService
                     await RewriteDescendantPathsAsync(normalized, newPath, oldPhysicalPath, newPhysicalPath, cancellationToken);
 
                 movedFromPaths.Add(GetParentPath(normalized));
+                movedPhysicalPaths.Add((oldPhysicalPath, newPhysicalPath));
                 results.Add(MapToDto(item));
             }
             catch (Exception ex)
@@ -414,7 +419,27 @@ public sealed partial class FileService
 
         var saved = await SaveChangesWithConflictGuardAsync(FileErrors.AlreadyExists(destPath), cancellationToken);
         if (saved.IsFailure)
+        {
+            // 物理移动已在循环内完成而库提交失败（并发撞 Path 唯一索引）：
+            // 不回滚的话盘上是新位置、库里是旧路径，下载 404 而文件在盘上。
+            // 尽力把已移的项移回原物理路径，补偿失败只记日志（最坏退化为
+            // 与修复前一致，不会更坏）
+            foreach (var moved in movedPhysicalPaths)
+            {
+                try
+                {
+                    _fileSystemService.Move(moved.NewPhysicalPath, moved.OldPhysicalPath);
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError(rollbackEx,
+                        "移动回滚失败（库已拒绝、物理已移）: From={From}, To={To}",
+                        moved.NewPhysicalPath, moved.OldPhysicalPath);
+                }
+            }
+
             return Result<IReadOnlyList<FileItemDto>>.Failure(saved.Error);
+        }
 
         if (results.Count > 0)
         {
