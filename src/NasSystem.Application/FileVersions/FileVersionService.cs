@@ -7,6 +7,8 @@ namespace NasSystem.Application.FileVersions;
 
 using Microsoft.Extensions.Logging;
 using NasSystem.Application.Configuration;
+using NasSystem.Application.Files;
+using NasSystem.Application.Notifications;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Entities;
 using NasSystem.Domain.Repositories;
@@ -24,6 +26,7 @@ public class FileVersionService : IFileVersionService
     private readonly ILogger<FileVersionService> _logger;
     private readonly IFileSystemService _fileSystemService;
     private readonly ISystemConfigService _configService;
+    private readonly IHubNotificationService _notifier;
 
     public FileVersionService(
         IFileVersionRepository versionRepository,
@@ -31,7 +34,8 @@ public class FileVersionService : IFileVersionService
         IUnitOfWork unitOfWork,
         ILogger<FileVersionService> logger,
         IFileSystemService fileSystemService,
-        ISystemConfigService configService)
+        ISystemConfigService configService,
+        IHubNotificationService notifier)
     {
         _versionRepository = versionRepository;
         _fileItemRepository = fileItemRepository;
@@ -39,6 +43,7 @@ public class FileVersionService : IFileVersionService
         _logger = logger;
         _fileSystemService = fileSystemService;
         _configService = configService;
+        _notifier = notifier;
     }
 
     /// <inheritdoc />
@@ -48,6 +53,11 @@ public class FileVersionService : IFileVersionService
         Guid userId,
         CancellationToken cancellationToken = default)
     {
+        // 快照落盘先于 DB 插入。两者之间失败（典型：并发覆盖同一文件，
+        // 版本号先读后写撞 IX_FileVersions_FileItemId_VersionNumber 唯一
+        // 索引）会留下无记录引用的孤儿文件——保留策略只按库记录删文件，
+        // 清不掉它。落库成功即置空，之后的保留策略失败不动它
+        string? orphanSnapshot = null;
         try
         {
             if (!File.Exists(item.PhysicalPath))
@@ -61,6 +71,7 @@ public class FileVersionService : IFileVersionService
 
             var versionPath = FileVersionStore.GetVersionPath(poolMountPath, item.Id, item.Name);
             FileVersionStore.CreateSnapshot(item.PhysicalPath, versionPath);
+            orphanSnapshot = versionPath;
 
             // 版本号取现有最大值 + 1（版本记录可能被手动删除过，不能依赖条数）
             var existing = await _versionRepository.GetByFileItemIdAsync(item.Id, cancellationToken);
@@ -88,6 +99,7 @@ public class FileVersionService : IFileVersionService
 
             await _versionRepository.AddAsync(version, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            orphanSnapshot = null; // 已落库，快照有记录引用，不再是孤儿
 
             _logger.LogInformation(
                 "自动版本已创建: FileItemId={FileItemId}, Version={Version}, Snapshot={Path}",
@@ -97,6 +109,21 @@ public class FileVersionService : IFileVersionService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // 落库失败时补删孤儿快照（硬链接只删链接不动源文件）。
+            // 删失败只记日志：主流程已放行，清理是尽力而为
+            if (orphanSnapshot is not null)
+            {
+                try
+                {
+                    File.Delete(orphanSnapshot);
+                }
+                catch (Exception cleanupEx)
+                {
+                    _logger.LogWarning(cleanupEx,
+                        "孤儿版本快照清理失败: {Path}", orphanSnapshot);
+                }
+            }
+
             // 快照失败不阻断主流程：覆盖上传/永久删除是用户明确意图，
             // 为版本失败回滚主操作会把"保险"凌驾于主路径之上
             _logger.LogWarning(ex, "自动版本创建失败（主操作继续）: FileItemId={FileItemId}", item.Id);
@@ -256,6 +283,16 @@ public class FileVersionService : IFileVersionService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // ROADMAP Phase 1 验收"版本操作纳入 SignalR 推送"：恢复换了文件内容，
+        // 订阅了所在目录的客户端要实时看到新大小/新内容。ETag 失效由 UoW 的
+        // 目录版本号递增自动覆盖（FileItem 被写），这里是实时推送那一半
+        if (fileItem is not null)
+        {
+            var parentPath = DirectoryVersion.GetParentDirectory(fileItem.Path);
+            if (parentPath is not null)
+                await _notifier.NotifyFileChangedAsync(parentPath, FileChangeType.Modified, new { path = fileItem.Path });
+        }
 
         _logger.LogInformation(
             "恢复文件版本: FileItemId={FileItemId}, Version={Version}",

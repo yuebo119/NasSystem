@@ -67,6 +67,14 @@ public sealed class GlobalExceptionHandler(
             // ITM-N10：客户端断开导致的取消——连接已终止，不再尝试写响应（与 Pal.DDD ITM-030 同型）
             OperationCanceledException => (HttpStatusCode.RequestTimeout, null),
 
+            // 唯一约束冲突是客户端错误（重名/重复码），不是服务端故障：
+            // 落默认分支会变 500，调用方把"我提交了重复数据"当成"服务端挂了"
+            // 重试。服务层守卫覆盖主路径，这里是漏网之物的统一出口
+            // （2026-10-21 审计：并发建池/配置 upsert 竞态曾穿透成 500）
+            NasSystem.Domain.Common.UniqueConstraintException => (
+                HttpStatusCode.Conflict,
+                new ApiError("Error.Conflict", "相同记录已被并发创建，请修改后重试")),
+
             _ => (
                 HttpStatusCode.InternalServerError,
                 new ApiError(

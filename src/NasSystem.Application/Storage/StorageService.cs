@@ -159,7 +159,19 @@ public sealed class StorageService(
         await RefreshPoolCapacityAsync(pool, cancellationToken, force: true);
 
         await poolRepository.AddAsync(pool, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (UniqueConstraintException)
+        {
+            // ITM-N7：预检与提交之间的竞态（两个同名/同路径建池请求同时通过
+            // 预检）由 IX_StoragePools_Name / IX_StoragePools_MountPath 唯一
+            // 索引兜底。不捕获会穿透到 GlobalExceptionHandler 变 500，
+            // 而同仓 User/Backup/File/FileShare 四条路径都有守卫，
+            // 此处是 2026-10-21 审计发现的唯一缺口
+            return Result<StoragePoolDto>.Failure(StorageErrors.PoolNameExists(request.Name));
+        }
 
         return Result<StoragePoolDto>.Success(MapToDto(pool));
     }

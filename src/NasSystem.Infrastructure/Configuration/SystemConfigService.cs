@@ -93,7 +93,19 @@ public sealed class SystemConfigService(
             }
         }
 
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (UniqueConstraintException)
+        {
+            // 两个管理员会话竞态插同一个新键时 IX_SystemSettings_Key 唯一索引
+            // 兜底。不捕获会穿透成 500（2026-10-21 审计 P3）。upsert 语义
+            // 幂等，让用户重试即可，不需要自动重试循环
+            return Result.Failure(new Error("Config.ConcurrentUpdate",
+                "配置正被其他会话修改，请重试"));
+        }
+
         logger.LogInformation(
             "系统配置已更新: 操作人={Operator}, 变更 {Count} 项", operatorUserId, values.Count);
         return Result.Success();

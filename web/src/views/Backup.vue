@@ -157,9 +157,16 @@ async function startBackup() {
       syncProgress.value.done = ++syncProgress.value.done
     }
 
-    // ③ 登记同步完成（上传数 >= 1 才登记：全量已最新时不该刷新最近同步时间）
+    // ③ 登记同步完成（上传数 >= 1 才登记：全量已最新时不该刷新最近同步时间）。
+    // 独立 try：登记失败不能把"文件已全部备份成功"的事实报成计划失败——
+    // 上传是主目的，登记只是刷新设备的最近同步时间（2026-10-21 审计 P3）
+    let recordFailed = false
     if (uploaded > 0) {
-      await backupApi.recordComplete(device.id, uploaded)
+      try {
+        await backupApi.recordComplete(device.id, uploaded)
+      } catch {
+        recordFailed = true
+      }
     }
 
     if (failed > 0) {
@@ -168,6 +175,11 @@ async function startBackup() {
       ElMessage.success(t('backup.done', { count: uploaded }))
     } else {
       ElMessage.success(t('backup.allUpToDate'))
+    }
+    if (recordFailed) {
+      // 拦截器已先弹过服务器错误，这里补一句登记未成功的实话，
+      // 不让"备份计划失败"掩盖文件已上传成功
+      ElMessage.warning(t('backup.recordFailed'))
     }
 
     selectedFiles.value = []
