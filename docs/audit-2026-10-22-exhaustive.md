@@ -74,7 +74,7 @@
 | F-018 | Medium | 安全 | FileShareService.cs:525 | 分享访问令牌不随口令轮换/分享码变更失效 | 待裁决 |
 | F-019 | Medium | 安全 | FileShareService.cs:176 | Update 可把密码型分享改成永锁死，MaxDownloads 无取值校验 | 待裁决 |
 | F-020 | Medium | 安全 | ZipDirectoryResult.cs:51 | 匿名 ZIP 下载无条目数/体积上限 | 待裁决 |
-| F-021 | Medium | 并发 | FileService.Transfer.cs:299,380 | Rename/Move 物理操作先于库提交，失败无补偿 | 待裁决 |
+| F-021 | Medium | 并发 | FileService.Transfer.cs:415 | Move 库提交失败不回滚物理移动 | 已修 0d9f86f |
 | F-022 | Medium | 错误处理 | FileService.Transfer.cs:394 | Move/Copy 裸 catch 静默跳过，无日志无失败项 | 待裁决 |
 | F-023 | Medium | 安全 | BackupService.cs:171 | sync-complete 不校验设备吊销，吊销语义被旁路 | 待裁决 |
 | F-024 | Low | 架构 | BackupService.cs:206 | NormalizeRelativePath 注释声称拒盘符，代码未实现 | 待裁决 |
@@ -87,7 +87,7 @@
 | F-031 | Medium | 并发 | FileService.Transfer.cs:202-237 | 上传 File.Move 后库提交失败，物理已替换而记录未更新 | 待裁决 |
 | F-032 | Medium | 前端 | Dashboard.vue:403-432 | visibilitychange 恢复不校验开关，关闭的自动刷新被静默重建 | 待裁决 |
 | F-033 | Medium | 前端 | Files.vue:73,143 | 搜索防抖定时器无卸载清理，离开页面仍发请求写状态 | 待裁决 |
-| F-034 | Medium | 前端 | signalr.ts:8-45 | 无 stop() 出口，登出后连接不释放；startPromise 双重置路径竞态 | 待裁决 |
+| F-034 | Medium | 前端 | signalr.ts:8-45 | 无 stop() 出口，登出后连接不释放；startPromise 双重置路径竞态 | 已修 39b9976 |
 | F-035 | Medium | 前端 | Media.vue:373-399,177 | 图片/音频预览 objectURL 无卸载释放 | 待裁决 |
 | F-036 | High | 前端 | Media.vue:253-283 | loadMore 无请求序号闸，快切 tab 旧回包覆盖新状态且无自愈 | 待裁决 |
 | F-037 | Low | 前端 | Media.vue:214-233 | 哨兵 IntersectionObserver 切 tab 有一帧无观察者窗口 | 待裁决 |
@@ -97,7 +97,7 @@
 | F-041 | Low | 前端 | api/file.ts:16 | dirContents/dirEtags 无上限无淘汰，深浏览内存单调增长 | 待裁决 |
 | F-042 | Low | 前端 | theme.ts:49 | matchMedia 监听只加不减（应用级单例，低危） | 待裁决 |
 | F-043 | Low | 前端 | main.ts:42 / sw.js:30 | SW load 监听无移除；缓存只增不减无淘汰 | 待裁决 |
-| F-044 | Medium | 前端 | Dashboard/Storage/SystemInfo/Files | 20 处 as any 根因：AxiosResponse 标注与拦截器脱壳不符 | 待裁决 |
+| F-044 | Medium | 前端 | api/http.ts（根因） | 20 处 as any 根因：AxiosResponse 标注与拦截器脱壳不符 | 已修 39b9976 |
 | F-045 | Low | 前端 | router/index.ts | 懒加载 chunk 失败无 onError 兜底，发版后旧会话假死 | 待裁决 |
 | F-046 | 无（干净通过） | 前端 | 全前端 | v-html/innerHTML 零命中，不可信内容全走文本插值 | 已确认无缺陷 |
 | F-047 | 无（干净通过） | 前端 | 全前端 | 业务代码 @ts-ignore/eslint-disable 零命中（仅生成物） | 已确认无缺陷 |
@@ -124,7 +124,7 @@
 | F-068 | Low | 文档 | README.md:190-205 | 配置示例键名/结构与 appsettings 不符，且示范明文密钥形态 | 待裁决 |
 | F-069 | Low | 文档 | DESIGN.md:91 | TypeScript 5.x，实测 6.0.3 | 待裁决 |
 | F-070 | Low | 文档 | TESTING.md:17-35 | 测试项目结构树漏列 51 个文件中的 45+ | 待裁决 |
-| F-071 | 推测 | 后端 | FileItems.Path collation | Path 列 collation（BINARY/NOCASE）未逐字确认，影响大小写语义 | 推测 |
+| F-071 | 推测→已查证 | 后端 | FileItems.Path collation | PRAGMA 实测无显式 collation（SQLite TEXT 默认 BINARY，大小写敏感） | 已修 0d9f86f（锁定测试） |
 | F-072 | 推测 | 后端 | WebDavEndpoints.cs:145 | 锁定按 IP 计数，反代后 RemoteIpAddress 取不到时全局共享一个失败桶 | 推测 |
 | F-073 | 推测 | 后端 | FileShareService | 分享码枚举实际吞吐未实测，威胁程度取决于速率 | 推测 |
 
@@ -822,22 +822,22 @@
 
 `.ai` 独立仓合同步提交 `07cd9a7`（gate-check.sh 白名单 + README/lessons 编号对账）。
 
-### 8.2 登记待专项的发现（13 条，含理由）
+### 8.2 登记待专项的发现（第一轮 13 条 → 第二轮后余 5 条）
+
+第一轮（2026-10-22 白天）修复 61 条后登记 13 条待专项；第二轮（同日续）按同一裁决继续处理，F-021 / F-034 / F-037 / F-042 / F-043 / F-044 / F-071 七条已修复（提交 `39b9976` / `0d9f86f` / `b2b6d72`），余下 5 条及理由：
 
 | 编号 | 不修的原因 | 建议处置 |
 |---|---|---|
-| F-021 | Rename/Move 物理先于库的补偿逻辑需要「DB 先占位」或「失败回移」两种设计之一，涉及并发语义裁决，不宜夹带在修复轮尾部 | 独立批次，先出 ADR 再实现 |
-| F-027 / F-028 | Application 裸 IO 收口与 IDateTimeProvider 注入是大范围重构（门禁 G15/G16 的真实债务，审计起点即超标）。修它要动版本/分享/存储多个域的构造签名 | 独立收口批次，按域渐进；每步同步下调基线（三同步） |
-| F-031 | 上传 File.Move 后库提交失败的「DB 先占位」方案要重排上传管线的事务边界，风险高于收益 | 与 F-021 同批次设计 |
-| F-034 | signalr.ts 无 stop() 出口需要登出/401 链路改造，涉及前端认证流程 | 前端独立批次 |
-| F-037 / F-042 / F-043 | 低危边缘时序与应用级单例监听，有按钮兜底或无累积 | 随手清批次 |
-| F-044 | 20 处 as any 的根因修复涉及 13 个 api 文件的签名重标，机械但面广 | 前端独立批次，先加 grep CI 卡防新增 |
-| F-071 / F-072 / F-073 / F-074 | 待验证推测（Path collation、WebDAV 锁定 IP 归属、分享码枚举吞吐、advisory 可利用性），需部署环境或进一步查证 | 按第 6 节优先级下一轮处理 |
+| F-027 / F-028 | Application 裸 IO 收口与 IDateTimeProvider 注入是大范围重构（门禁 G15/G16 的真实债务，审计起点即超标）。修它要动版本/分享/存储多个域的构造签名；且实体工厂（FileVersion/FileShare/FileItem 等 10 处 UtcNow）不在构造注入可达范围，半程注入反而造成「部分注入部分硬编码」的风格不一致 | 独立收口批次：先服务层（可构造注入的 20 处）后实体层（传时间戳入工厂），每步同步下调基线（三同步） |
+| F-031 | 上传 File.Move 后库提交失败的补偿要重排上传管线的事务边界（新文件分支可删孤儿物理文件，覆盖分支需从刚建的版本快照回拷旧内容），风险高于收益 | 与 F-027 收口批次同批设计 |
+| F-072 | WebDAV 认证锁定按 IP 计数，反代后 RemoteIpAddress 取不到时全部归到 "unknown" 键（一个攻击者可锁死所有人）是推断，未实测部署拓扑 | 部署环境实测后按结论修（加 X-Forwarded-For 信任配置或改按 shareCode+IP 复合键） |
+| F-073 | 分享码枚举吞吐未实测（31^6 ≈ 8.9×10⁸ 空间，限流已补但可枚举性取决于速率实测） | 部署环境压测后裁决是否加验证码或缩短码长 |
+| F-074 | ImageSharp 5 条 advisory 已修（3.2.0），但各条的具体可利用路径（需构造恶意 ICC/TIFF 文件）未逐条验证 | 如需量化风险可按 GHSA 逐条写 PoC 验证；包级修复已完成 |
 
-### 8.3 修复轮最终基线（2026-10-22 实测）
+### 8.3 修复轮最终基线（2026-10-22 两轮后实测）
 
 - 后端构建：exit 0，0 错误；NU19xx 漏洞警告 **5 → 0**
 - 单元测试：**199 total / 0 failed** / exit 0
-- 集成测试：**288 total / 0 failed** / exit 0（基线 270，新增 18 条锁定测试）
-- 前端：vitest **183 tests / 26 files 全过**；oxlint **0 警告**；vue-tsc exit 0；生产构建 exit 0
+- 集成测试：**290 total / 0 failed** / exit 0（基线 270，新增 20 条锁定测试）
+- 前端：vitest **183 tests / 26 files 全过**；oxlint **0 警告**；vue-tsc exit 0；生产构建 exit 0；业务代码 `as any` **20 → 0**
 - 项目门禁：exit 1，**18 通过 / 2 失败**（G7 已修复恢复 PASS；G15/G16 为 F-027/F-028 的真实基线债务，按项目「只减不增」规则保留 FAIL 待收口，未靠调基线遮掩）
