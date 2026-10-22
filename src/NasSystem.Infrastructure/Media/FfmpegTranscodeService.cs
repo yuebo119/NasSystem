@@ -44,6 +44,13 @@ public sealed class FfmpegTranscodeService : ITranscodeService
     /// <summary>硬件编码探测缓存 TTL：硬件可达性是部署事实，不需要每请求探</summary>
     private static readonly TimeSpan EncoderProbeTtl = TimeSpan.FromMinutes(10);
 
+    /// <summary>
+    /// 探测与抽帧这类短命令的超时上限。畸形容器可能让 ffmpeg 挂在解析阶段，
+    /// 没有超时就会一直占着请求线程与进程槽；超时后按"探测失败"降级。
+    /// 正式转码不设内部超时（长视频耗时不确定），依赖客户端取消 + 杀进程兜底。
+    /// </summary>
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
+
     /// <summary>硬件编码候选（按优先级）。全部不可用回落 libx264</summary>
     private static readonly string[] HardwareEncoders =
         ["h264_nvenc", "h264_qsv", "h264_amf", "h264_vaapi", "h264_videotoolbox"];
@@ -130,11 +137,22 @@ public sealed class FfmpegTranscodeService : ITranscodeService
 
         // -i 不带输出：ffmpeg 打印流信息到 stderr 后以错误码退出（无输出目标），
         // 这里的 stderr 就是探测结果，退出码无意义
-        var (_, stderr) = await RunProcessAsync(ffmpeg, $"-hide_banner -i \"{physicalPath}\"", cancellationToken);
-        var result = MediaProbeParser.Parse(stderr);
+        MediaProbeResult probe;
+        try
+        {
+            var (_, stderr) = await RunProcessAsync(
+                ffmpeg, $"-hide_banner -i \"{physicalPath}\"", cancellationToken, ProbeTimeout);
+            probe = MediaProbeParser.Parse(stderr);
+        }
+        catch (TimeoutException ex)
+        {
+            // 探测超时按"探测失败"降级：单档 1080p 继续，不把探测问题升级成播放失败
+            _logger.LogWarning(ex, "媒体探测超时，降级单档: {Path}", physicalPath);
+            probe = new MediaProbeResult(null, null, false);
+        }
 
-        _probeCache[physicalPath] = (result, _dateTime.UtcNow);
-        return result;
+        _probeCache[physicalPath] = (probe, _dateTime.UtcNow);
+        return probe;
     }
 
     /// <summary>
@@ -180,7 +198,7 @@ public sealed class FfmpegTranscodeService : ITranscodeService
             var arguments =
                 $"-y -hide_banner -loglevel error -f lavfi -i \"testsrc=size=320x240:rate=10:duration=1\" " +
                 $"-c:v {encoder} -b:v 500k \"{probeFile}\"";
-            var (exitCode, _) = await RunProcessAsync(ffmpeg, arguments, cancellationToken);
+            var (exitCode, _) = await RunProcessAsync(ffmpeg, arguments, cancellationToken, ProbeTimeout);
             return exitCode == 0 && File.Exists(probeFile) && new FileInfo(probeFile).Length > 0;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -403,13 +421,13 @@ public sealed class FfmpegTranscodeService : ITranscodeService
             var arguments =
                 $"-y -hide_banner -loglevel error -ss 1 -i \"{physicalPath}\" " +
                 $"-frames:v 1 -f image2 \"{tempFrame}\"";
-            var (exitCode, _) = await RunProcessAsync(ffmpeg, arguments, cancellationToken);
+            var (exitCode, _) = await RunProcessAsync(ffmpeg, arguments, cancellationToken, ProbeTimeout);
             if (exitCode != 0 || !File.Exists(tempFrame))
             {
                 arguments =
                     $"-y -hide_banner -loglevel error -i \"{physicalPath}\" " +
                     $"-frames:v 1 -f image2 \"{tempFrame}\"";
-                (exitCode, _) = await RunProcessAsync(ffmpeg, arguments, cancellationToken);
+                (exitCode, _) = await RunProcessAsync(ffmpeg, arguments, cancellationToken, ProbeTimeout);
                 if (exitCode != 0 || !File.Exists(tempFrame))
                     return null;
             }
@@ -448,8 +466,9 @@ public sealed class FfmpegTranscodeService : ITranscodeService
         return Task.FromResult(freed);
     }
 
-    private static async Task<(int ExitCode, string Stderr)> RunProcessAsync(
-        string fileName, string arguments, CancellationToken cancellationToken)
+    internal static async Task<(int ExitCode, string Stderr)> RunProcessAsync(
+        string fileName, string arguments, CancellationToken cancellationToken,
+        TimeSpan? timeout = null, Action<int>? onStarted = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -460,11 +479,62 @@ public sealed class FfmpegTranscodeService : ITranscodeService
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"无法启动 {fileName}");
-        var stderr = await process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-        return (process.ExitCode, stderr);
+        onStarted?.Invoke(process.Id);
+
+        using var timeoutCts = timeout.HasValue
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : null;
+        timeoutCts?.CancelAfter(timeout!.Value);
+        var effectiveToken = timeoutCts?.Token ?? cancellationToken;
+
+        try
+        {
+            // 两条管道必须同时吸收：只读 stderr、把 stdout 重定向却不读，
+            // 子进程写满 stdout 管道后会永久阻塞（经典管道死锁）
+            var stderrTask = process.StandardError.ReadToEndAsync(effectiveToken);
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(effectiveToken);
+            await process.WaitForExitAsync(effectiveToken);
+            var stderr = await stderrTask;
+            await stdoutTask;
+            return (process.ExitCode, stderr);
+        }
+        catch (OperationCanceledException) when (timeoutCts is not null && !cancellationToken.IsCancellationRequested)
+        {
+            TryKill(process);
+            throw new TimeoutException($"{Path.GetFileName(fileName)} 在 {timeout} 内未结束");
+        }
+        catch (OperationCanceledException)
+        {
+            // 客户端断开：using 只释放句柄，不终止子进程。不显式杀的话
+            // ffmpeg 会带着 CPU 与磁盘继续跑，转码闸一放开就是多个孤儿并行
+            TryKill(process);
+            throw;
+        }
+        catch
+        {
+            TryKill(process);
+            throw;
+        }
+    }
+
+    /// <summary>终止子进程树并等待回收。失败只吞异常，不覆盖原始失败原因</summary>
+    private static void TryKill(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(5000);
+            }
+        }
+        catch (Exception)
+        {
+            // 进程已退出或权限不足：清理失败不影响原始异常传播
+        }
     }
 
     /// <summary>缓存键：物理路径 + 阶梯签名 + 编码器的 SHA256 前 16 字节。
