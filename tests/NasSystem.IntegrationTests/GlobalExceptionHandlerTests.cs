@@ -39,6 +39,27 @@ public sealed class GlobalExceptionHandlerTests
             "InvalidOperationException 是服务端故障，不能按客户端错误回 400");
     }
 
+    [Fact]
+    public async Task InvokeAsync_FileNotFound_DoesNotLeakPhysicalPath()
+    {
+        var environment = new TestHostEnvironment { EnvironmentName = "Production" };
+        var middleware = new GlobalExceptionHandler(
+            _ => throw new FileNotFoundException("missing", "/mnt/secret-pool/user/file.txt"),
+            NullLogger<GlobalExceptionHandler>.Instance,
+            environment);
+        var context = new DefaultHttpContext();
+        var body = new MemoryStream();
+        context.Response.Body = body;
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        body.Position = 0;
+        using var reader = new StreamReader(body);
+        var text = await reader.ReadToEndAsync();
+        text.Should().NotContain("/mnt/secret-pool", "物理路径不能回显给客户端");
+    }
+
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = "Production";

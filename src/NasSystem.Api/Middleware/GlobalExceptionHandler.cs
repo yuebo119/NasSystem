@@ -45,9 +45,11 @@ public sealed class GlobalExceptionHandler(
                 HttpStatusCode.Unauthorized,
                 new ApiError("Error.Unauthorized", "未授权访问")),
 
-            FileNotFoundException fileEx => (
+            // 不回显异常里的文件路径：内部 IO 异常常带物理路径（池挂载点、用户名、
+            // 目录布局），客户端只需要"不存在"这一事实
+            FileNotFoundException => (
                 HttpStatusCode.NotFound,
-                new ApiError("Error.NotFound", $"文件未找到: {fileEx.FileName}")),
+                new ApiError("Error.NotFound", "请求的文件或目录不存在")),
 
             DirectoryNotFoundException => (
                 HttpStatusCode.NotFound,
