@@ -43,7 +43,7 @@ try
         .AddApplicationServices()
         .AddInfrastructureServices(builder.Configuration)
         .AddJwtAuthentication(builder.Configuration, builder.Environment)
-        .AddApiServices(builder.Environment);
+        .AddApiServices(builder.Environment, builder.Configuration);
 
     var app = builder.Build();
 
@@ -52,6 +52,10 @@ try
     await app.Services.InitializeDatabaseAsync(builder.Environment.EnvironmentName);
 
     // 配置中间件管道
+    // 反代真实客户端 IP（审计 F-072）：必须在限流、WebDAV 失败锁定等任何
+    // 读 Connection.RemoteIpAddress 的环节之前。未配置可信代理时不安装，
+    // 行为与配置前一致（不无条件信任 X-Forwarded-For，那等于允许伪造键）
+    app.UseConfiguredForwardedHeaders(builder.Configuration);
     app.UseRequestLogging();
     app.UseGlobalExceptionHandler();
     app.UseJwtAuthentication();

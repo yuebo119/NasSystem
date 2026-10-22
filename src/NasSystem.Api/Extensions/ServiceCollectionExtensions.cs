@@ -25,7 +25,8 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddApiServices(
         this IServiceCollection services,
-        Microsoft.Extensions.Hosting.IHostEnvironment environment)
+        Microsoft.Extensions.Hosting.IHostEnvironment environment,
+        Microsoft.Extensions.Configuration.IConfiguration appConfiguration)
     {
         // 配置 JSON 序列化选项
         services.ConfigureHttpJsonOptions(options =>
@@ -99,26 +100,36 @@ public static class ServiceCollectionExtensions
             options.MaximumReceiveMessageSize = 64 * 1024; // 64 KB
         });
 
-        // 限流（CONVENTIONS §4.5）：认证端点严格窗口，防暴力破解/用户名枚举
+        // 限流（CONVENTIONS §4.5）：认证端点严格窗口，防暴力破解/用户名枚举。
+        // 阈值走配置（NasSystem:RateLimiting:*），缺省按环境：生产严格、
+        // 测试/开发放宽供并发用例。部署可按实际调，测试可设小值锁定行为
+        int AuthPerMinute(IConfiguration c) =>
+            c.GetValue<int?>("NasSystem:RateLimiting:AuthPerMinute")
+            ?? (environment.IsProduction() ? 10 : int.MaxValue);
+        int SharePerMinute(IConfiguration c) =>
+            c.GetValue<int?>("NasSystem:RateLimiting:SharePerMinute")
+            ?? (environment.IsProduction() ? 20 : int.MaxValue);
+        // 分享信息端点的全局桶不走限流策略：策略在同一端点上叠加不都生效
+        // （实测只有端点级那个生效，会把组级的按 IP 窗口覆盖掉），
+        // 改由 ShareEnumerationGuard 在 handler 内显式检查，见该类型注释
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             options.AddFixedWindowLimiter("auth", limiterOptions =>
             {
-                // 集成测试并发登录不受限（仅生产启用严格窗口防暴力破解）
-                limiterOptions.PermitLimit = environment.IsProduction() ? 10 : int.MaxValue;
+                limiterOptions.PermitLimit = AuthPerMinute(appConfiguration);
                 limiterOptions.Window = TimeSpan.FromMinutes(1);
                 limiterOptions.QueueLimit = 0;
             });
 
-            // 公开分享端点（匿名）：/verify 是口令判定端点，零限流即可在线爆破；
-            // 分享码 6 字符也可被枚举。按客户端 IP 分区——共享链接的正常多人
-            // 使用不应互相挤掉，单个来源的失败轰炸必须被拦
+            // 公开分享端点（匿名）：/verify 是口令判定端点，零限流即可在线爆破。
+            // 按客户端 IP 分区——共享链接的正常多人使用不应互相挤掉，
+            // 单个来源的失败轰炸必须被拦
             options.AddPolicy("share", context => RateLimitPartition.GetFixedWindowLimiter(
                 partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 factory: _ => new FixedWindowRateLimiterOptions
                 {
-                    PermitLimit = environment.IsProduction() ? 20 : int.MaxValue,
+                    PermitLimit = SharePerMinute(appConfiguration),
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0
                 }));
@@ -146,6 +157,10 @@ public static class ServiceCollectionExtensions
 
         // WebDAV Basic 认证失败锁定（ROADMAP Phase 0）：单例，全进程共享失败计数
         services.AddSingleton<IWebDavAuthGuard, WebDavAuthGuard>();
+
+        // 分享码枚举全局速率闸（审计 F-073）：单例，全进程共享探测计数。
+        // 与 "share" 限流策略（按 IP）互补：那个挡单来源轰炸，这个挡分布式枚举
+        services.AddSingleton<Security.ShareEnumerationGuard>();
 
         // 健康检查
         services.AddHealthChecks();

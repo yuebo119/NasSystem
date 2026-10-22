@@ -7,6 +7,7 @@ namespace NasSystem.Api.Extensions;
 
 using System.Security.Claims;
 using NasSystem.Api.Endpoints;
+using NasSystem.Api.Security;
 using NasSystem.Application.FileShares;
 using NasSystem.Application.FileShares.Dtos;
 using NasSystem.Shared;
@@ -83,6 +84,11 @@ public static class FileShareEndpoints
             .RequireRateLimiting("share")
             .WithTags("公开分享访问");
 
+        // 信息端点是分享码存在性预言机（404 vs 200）。ASP.NET Core 的
+        // RequireRateLimiting 是端点级元数据，同端点叠加第二个策略不会
+        // 都生效（实测只有端点级那个生效），因此全局桶不走策略叠加，
+        // 改由 ShareEnumerationGuard 在 handler 内显式检查，与组级的
+        // 按 IP 窗口（对本端点仍生效）叠加成双闸
         publicShares.MapGet("/{shareCode}", GetPublicShareInfo)
                     .WithName("GetPublicShareInfo")
                     .WithSummary("获取公开分享信息");
@@ -190,8 +196,14 @@ public static class FileShareEndpoints
 
     private static async Task<IResult> GetPublicShareInfo(
         string shareCode,
-        IFileShareService fileShareService)
+        IFileShareService fileShareService,
+        ShareEnumerationGuard enumerationGuard)
     {
+        // 全局枚举闸（F-073）：本端点是分享码存在性预言机，按 IP 的窗口
+        // 挡不住分布式枚举，这里再钉一层总速率。超限回 429 且不查库
+        if (!enumerationGuard.TryAcquire())
+            return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+
         var result = await fileShareService.GetPublicShareInfoAsync(shareCode);
         return result.ToHttpResult();
     }
