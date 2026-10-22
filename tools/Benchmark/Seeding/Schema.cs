@@ -123,8 +123,18 @@ public static class Schema
         "CREATE INDEX \"IX_FileItems_OwnerId\" ON \"FileItems\" (\"OwnerId\")",
         "CREATE INDEX \"IX_FileItems_ParentId\" ON \"FileItems\" (\"ParentId\")",
         "CREATE INDEX \"IX_FileItems_ParentId_Name\" ON \"FileItems\" (\"ParentId\", \"Name\")",
-        "CREATE UNIQUE INDEX \"IX_FileItems_Path\" ON \"FileItems\" (\"Path\") WHERE [IsDeleted] = 0",
+        // 路径索引四件套与生产 DDL（DependencyInjection.cs 启动期幂等 DDL）逐条对齐。
+        // 2026-10-22 优化轮实测发现夹具此前与生产漂移：夹具把 IX_FileItems_Path 建成了
+        // 「唯一部分索引 WHERE IsDeleted=0」，而生产里这个名字是**全量 BINARY** 索引，
+        // 唯一部分索引另名 UX_FileItems_Path_Active。漂移的后果是夹具上任何不带
+        // IsDeleted 条件的路径查询（子树软删/恢复/路径重写/快照采集）都用不上索引，
+        // 实测同一子树查询在漂移夹具上要 12.9ms 全扫、在生产同构索引下只要 0.17ms——
+        // 用夹具做性能判断会得出与生产相反的结论（本轮就被误导过一次）
+        "CREATE UNIQUE INDEX \"UX_FileItems_Path_Active\" ON \"FileItems\" (\"Path\") WHERE \"IsDeleted\" = 0",
+        "CREATE INDEX \"IX_FileItems_Path\" ON \"FileItems\" (\"Path\")",
+        "CREATE INDEX \"IX_FileItems_Path_Nocase\" ON \"FileItems\" (\"Path\" COLLATE NOCASE)",
         "CREATE INDEX \"IX_FileItems_Path_Prefix\" ON \"FileItems\" (\"Path\" COLLATE NOCASE) WHERE \"IsDeleted\" = 0",
+        "CREATE INDEX \"IX_FileItems_OwnerId_CreatedAt\" ON \"FileItems\" (\"OwnerId\", \"CreatedAt\" DESC) WHERE \"IsDeleted\" = 0",
         "CREATE INDEX \"IX_FileItems_StoragePoolId\" ON \"FileItems\" (\"StoragePoolId\")",
         "CREATE INDEX \"IX_FileShares_CreatedByUserId\" ON \"FileShares\" (\"CreatedByUserId\")",
         "CREATE INDEX \"IX_FileShares_FileItemId\" ON \"FileShares\" (\"FileItemId\")",
@@ -139,6 +149,11 @@ public static class Schema
         "CREATE UNIQUE INDEX \"IX_Users_Email\" ON \"Users\" (\"Email\") WHERE [Email] IS NOT NULL",
         "CREATE INDEX \"IX_Users_IsEnabled\" ON \"Users\" (\"IsEnabled\")",
         "CREATE UNIQUE INDEX \"IX_Users_Username\" ON \"Users\" (\"Username\")",
+        // 注意：本夹具只声明 5 张热路径表（FileItems/FileShares/FileVersions/
+        // StoragePools/Users），生产还有 BackupDevices/DirectorySnapshots/
+        // FileOcrTexts/ProtectedDirectories/SnapshotEntries/SystemSettings 等表
+        // 及其索引。那些表不在夹具范围内（基准不跑它们的路径），故此处不声明
+        // —— 一致性由 BenchmarkFixtureSchemaTests 按「夹具声明的表」逐表锁定
     ];
 
 }
