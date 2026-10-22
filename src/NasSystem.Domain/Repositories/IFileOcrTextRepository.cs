@@ -16,6 +16,13 @@ public interface IFileOcrTextRepository
 
     void Update(FileOcrText ocrText);
 
+    /// <summary>
+    /// 原子 upsert（按 FileItemId 冲突则覆盖文本字段，保留原 CreatedAt）。
+    /// 并发首次识别同一张图时，读后写会双双 INSERT 撞唯一索引；
+    /// 单条 ON CONFLICT 语句把判定交给数据库，两个请求都成功。
+    /// </summary>
+    Task UpsertAsync(FileOcrText ocrText, CancellationToken cancellationToken = default);
+
     Task DeleteAsync(FileOcrText ocrText, CancellationToken cancellationToken = default);
 
     Task<FileOcrText?> GetByFileItemIdAsync(Guid fileItemId, CancellationToken cancellationToken = default);

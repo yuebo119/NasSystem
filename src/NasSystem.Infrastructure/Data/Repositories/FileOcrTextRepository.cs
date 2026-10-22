@@ -49,6 +49,32 @@ public sealed class FileOcrTextRepository(
     }
 
     /// <summary>
+    /// 原子 upsert：判定交给数据库的 ON CONFLICT，避免并发首次识别
+    /// 双双走 INSERT 撞 FileItemId 唯一索引。冲突时只覆盖文本相关列，
+    /// 保留首次识别的 CreatedAt（与 UpdateText 的语义一致）。
+    /// </summary>
+    public Task UpsertAsync(FileOcrText ocrText, CancellationToken cancellationToken = default)
+    {
+        var row = ocrText.ToRow();
+        unitOfWork.EnqueueCommand(async (db, ct) =>
+        {
+            await db.ExecuteAsync(
+                System.Runtime.CompilerServices.FormattableStringFactory.Create(
+                    "INSERT INTO \"FileOcrTexts\" " +
+                    "(\"Id\",\"FileItemId\",\"Text\",\"Regions\",\"CharCount\",\"Model\",\"ElapsedMs\",\"CreatedAt\") " +
+                    "VALUES ({0},{1},{2},{3},{4},{5},{6},{7}) " +
+                    "ON CONFLICT(\"FileItemId\") DO UPDATE SET " +
+                    "\"Text\"=excluded.\"Text\",\"Regions\"=excluded.\"Regions\"," +
+                    "\"CharCount\"=excluded.\"CharCount\",\"Model\"=excluded.\"Model\"," +
+                    "\"ElapsedMs\"=excluded.\"ElapsedMs\"",
+                    row.Id, row.FileItemId, row.Text, (object?)row.Regions ?? DBNull.Value,
+                    row.CharCount, row.Model, row.ElapsedMs, row.CreatedAt), ct);
+            await SyncFtsAsync(db, row.FileItemId, row.Text, ct);
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// FTS 镜像同步：先删后插（upsert 语义——重复识别覆盖，与业务表
     /// FileItemId 唯一索引同口径）。删插两条都在同一意图队列里，
     /// 与业务表写入同事务

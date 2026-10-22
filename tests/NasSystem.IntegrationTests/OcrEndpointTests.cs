@@ -93,6 +93,32 @@ public class OcrEndpointTests : ApiTestBase, IDisposable
     }
 
     [Fact]
+    public async Task Recognize_SameImageConcurrently_NoRequestFails()
+    {
+        var (_, token) = await SeedOcrUserAsync();
+        await EnsureClassPoolAsync();
+
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var fileName = $"{suffix}-concurrent.png";
+        CreateTextImage(Path.Combine(ClassStorageRoot, fileName), "并发识别 2026");
+        await UploadAsync(token, fileName);
+
+        // 同一图片并发首次识别：两个请求都可能读到「尚无文本」，
+        // 随后都走 INSERT，FileOcrTexts.FileItemId 唯一索引让后者 500。
+        var requests = Enumerable.Range(0, 8)
+            .Select(_ => Client.SendAsync(CreateBearerRequest(
+                HttpMethod.Post, $"/api/v1/files/ocr/{fileName}", token)))
+            .ToArray();
+        var responses = await Task.WhenAll(requests);
+
+        responses.Should().OnlyContain(
+            response => response.StatusCode == HttpStatusCode.OK,
+            "同一图片的并发识别不应把唯一索引冲突暴露成 500");
+        foreach (var response in responses)
+            response.Dispose();
+    }
+
+    [Fact]
     public async Task Recognize_ReturnsNormalizedRegions_MatchingDrawnPosition()
     {
         // 2026-10-21 OCR 叠加定位：识别响应必须带行区域（归一化四角），

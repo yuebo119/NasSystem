@@ -200,18 +200,12 @@ public sealed class OcrService(
 
             started.Stop();
 
-            var existing = await ocrTextRepository.GetByFileItemIdAsync(item.Id, cancellationToken);
-            if (existing is null)
-            {
-                var created = NasSystem.Domain.Entities.FileOcrText.Create(
-                    item.Id, text, PaddleOcrEngineHolder.ModelName, (int)started.ElapsedMilliseconds, regions);
-                await ocrTextRepository.AddAsync(created, cancellationToken);
-            }
-            else
-            {
-                existing.UpdateText(text, PaddleOcrEngineHolder.ModelName, (int)started.ElapsedMilliseconds, regions);
-                ocrTextRepository.Update(existing);
-            }
+            // 原子 upsert：并发首次识别同一张图时，先读后写的两方都会走 INSERT，
+            // FileItemId 唯一索引让后者 500；ON CONFLICT 把判定交给数据库，
+            // 冲突方变成覆盖更新，两个请求都成功
+            var ocrText = NasSystem.Domain.Entities.FileOcrText.Create(
+                item.Id, text, PaddleOcrEngineHolder.ModelName, (int)started.ElapsedMilliseconds, regions);
+            await ocrTextRepository.UpsertAsync(ocrText, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
 
             logger.LogInformation(
