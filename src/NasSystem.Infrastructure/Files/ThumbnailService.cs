@@ -14,6 +14,11 @@ using NasSystem.Application.Files;
 using NasSystem.Shared;
 
 /// <summary>
+/// 源文件无法解码或超出兜底像素上限（用户输入问题，端点映射 400）
+/// </summary>
+internal sealed class ThumbnailDecodeFailedException(string message) : Exception(message);
+
+/// <summary>
 /// 缩略图生成服务实现
 /// </summary>
 /// <remarks>
@@ -161,6 +166,13 @@ public class ThumbnailService : IThumbnailService
                 Height: height,
                 FromCache: false));
         }
+        catch (ThumbnailDecodeFailedException ex)
+        {
+            // 源文件损坏/伪装扩展名/超出兜底像素上限：客户端输入问题，回 400 而非 500
+            _logger.LogWarning(ex, "缩略图源文件无法解码: {FilePath}", virtualPath);
+            return Result<ThumbnailResult>.Failure(
+                new Error("Thumbnail.DecodeFailed", "图片无法解码或尺寸过大"));
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "生成缩略图失败: {FilePath}", virtualPath);
@@ -306,7 +318,7 @@ public class ThumbnailService : IThumbnailService
     {
         using var sourceBitmap = ImageDecoder.Decode(
                 source, DecodeMaxPixels(targetWidth, targetHeight), MaxFullDecodePixels)
-            ?? throw new InvalidOperationException("视频帧解码失败");
+            ?? throw new ThumbnailDecodeFailedException("视频帧解码失败");
 
         // 与 GenerateImageThumbnailAsync 逐字同口径：等比缩放适配目标框，
         // 不放大小图（scale 上限夹到 1）
@@ -354,7 +366,7 @@ public class ThumbnailService : IThumbnailService
 
         using var source = ImageDecoder.Decode(
                 filePath, DecodeMaxPixels(targetWidth, targetHeight), MaxFullDecodePixels)
-            ?? throw new InvalidOperationException($"图像解码失败: {Path.GetFileName(filePath)}");
+            ?? throw new ThumbnailDecodeFailedException($"图像解码失败: {Path.GetFileName(filePath)}");
 
         // 等比缩放适配目标框（不放大小图、不留白边）
         var scale = Math.Min(
