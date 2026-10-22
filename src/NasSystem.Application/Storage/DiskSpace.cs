@@ -5,54 +5,45 @@
 
 namespace NasSystem.Application.Storage;
 
+using NasSystem.Domain.Services;
+
 /// <summary>
 /// 磁盘物理剩余探测。文件池是虚拟池（一个池一个文件夹），文件夹能长多大
 /// 最终受所在磁盘约束：上传预检与可用容量都以此为上限，避免把盘写爆
 /// </summary>
 /// <remarks>
-/// 用静态 Directory/DriveInfo 而不是注入 IFileSystemService：这是纯环境查询，
-/// 没有可伪造的业务语义；挂载点不可达时返回 null，由调用方退回配额口径
+/// 2026-10-22 审计 F-027：从静态 Directory/DriveInfo 直调改为经
+/// IFileSystemService（CONVENTIONS §1.5 收口）。这确实是纯环境查询，
+/// 但收口的收益是测试可注入替身（容量预检的边界路径不必依赖真实盘符），
+/// 且与全项目同一口径。挂载点不可达时仍返回 null，由调用方退回配额口径。
+/// public：出现在 StorageService/FileService 的公共构造签名里（DI 注入）
 /// </remarks>
-internal static class DiskSpace
+public sealed class DiskSpace
 {
+    private readonly IFileSystemService _fileSystem;
+
+    public DiskSpace(IFileSystemService fileSystem)
+    {
+        _fileSystem = fileSystem;
+    }
+
     /// <summary>
-    /// 挂载点所在磁盘的物理剩余字节。目录不存在、路径取不到盘根或磁盘未就绪
+    /// 挂载点所在磁盘的物理剩余字节。目录不存在、取不到盘根或磁盘未就绪
     /// 时返回 null
     /// </summary>
-    public static long? GetPhysicalFreeBytes(string mountPath)
+    public long? GetPhysicalFreeBytes(string mountPath)
     {
-        try
-        {
-            if (!Directory.Exists(mountPath))
-                return null;
-            var pathRoot = Path.GetPathRoot(mountPath);
-            if (string.IsNullOrEmpty(pathRoot))
-                return null;
-            var driveInfo = new DriveInfo(pathRoot);
-            return driveInfo.IsReady ? driveInfo.AvailableFreeSpace : null;
-        }
-        catch
-        {
-            // 与刷新同策略：无法访问时不当异常抛给读端点
+        if (!_fileSystem.DirectoryExists(mountPath))
             return null;
-        }
+        return _fileSystem.GetAvailableFreeSpace(mountPath);
     }
 
     /// <summary>
     /// 池是否可达：挂载点目录存在且所在磁盘就绪。不可达时容量数字已经不可信
     /// </summary>
-    public static bool IsPoolReachable(string mountPath)
+    public bool IsPoolReachable(string mountPath)
     {
-        try
-        {
-            if (!Directory.Exists(mountPath))
-                return false;
-            var pathRoot = Path.GetPathRoot(mountPath);
-            return !string.IsNullOrEmpty(pathRoot) && new DriveInfo(pathRoot).IsReady;
-        }
-        catch
-        {
-            return false;
-        }
+        return _fileSystem.DirectoryExists(mountPath)
+            && _fileSystem.IsVolumeReady(mountPath);
     }
 }

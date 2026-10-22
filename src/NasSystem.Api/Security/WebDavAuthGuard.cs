@@ -36,6 +36,14 @@ internal sealed class WebDavAuthGuard : IWebDavAuthGuard
 {
     private readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _failures = new();
 
+    // 时间源注入（CONVENTIONS §5.1 / 审计 F-028）：锁窗口的边界判定可测试
+    private readonly NasSystem.Domain.Services.IDateTimeProvider _dateTime;
+
+    public WebDavAuthGuard(NasSystem.Domain.Services.IDateTimeProvider dateTime)
+    {
+        _dateTime = dateTime;
+    }
+
     public bool IsLockedOut(string clientKey, int maxFailures, TimeSpan window)
     {
         if (!_failures.TryGetValue(clientKey, out var failure))
@@ -48,7 +56,7 @@ internal sealed class WebDavAuthGuard : IWebDavAuthGuard
             return false;
         }
 
-        if (DateTime.UtcNow - failure.WindowStart >= window)
+        if (_dateTime.UtcNow - failure.WindowStart >= window)
         {
             // 窗口已过：重置而非判锁，避免过期条目把字典撑大
             _failures.TryRemove(clientKey, out _);
@@ -62,10 +70,10 @@ internal sealed class WebDavAuthGuard : IWebDavAuthGuard
     {
         _failures.AddOrUpdate(
             clientKey,
-            _ => (1, DateTime.UtcNow),
-            (_, current) => DateTime.UtcNow - current.WindowStart < window
+            _ => (1, _dateTime.UtcNow),
+            (_, current) => _dateTime.UtcNow - current.WindowStart < window
                 ? (current.Count + 1, current.WindowStart)
-                : (1, DateTime.UtcNow));
+                : (1, _dateTime.UtcNow));
     }
 
     public void Reset(string clientKey)

@@ -211,7 +211,9 @@ public sealed partial class FileService
                 }
             }
 
-            File.Move(tempPath, physicalPath, overwrite: true);
+            // 同卷 rename 替换（覆盖语义）。经 IFileSystemService：默认 overwrite:false，
+            // 上传落位必须是覆盖（CONVENTIONS §1.5 收口后不留裸 IO）
+            _fileSystemService.MoveFile(tempPath, physicalPath, overwrite: true);
         }
         catch
         {
@@ -219,13 +221,29 @@ public sealed partial class FileService
             throw;
         }
 
-        // 创建或更新记录
+        // 创建或更新记录。File.Move 已成功（物理内容是新文件），此后的库提交
+        // 失败会造成库盘错位：新文件分支留下无记录孤儿（下次扫描归给触发者），
+        // 覆盖分支留下「DB 旧大小/哈希 + 盘上新内容」。两条都补偿：
+        // 新文件删掉孤儿物理文件；覆盖分支从刚建的版本快照拷回旧内容
+        // （快照在 Move 之前创建，内容就是被覆盖前的旧文件）
         if (existingItem != null && metadata.Overwrite)
         {
             existingItem.UpdateSize(totalBytes);
             existingItem.UpdateHash(hash);
             await _fileRepository.UpdateAsync(existingItem, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 覆盖分支：版本快照里是旧内容，拷回去让库与盘重新一致
+                var restored = await TryRestoreOverwrittenContentAsync(existingItem, cancellationToken);
+                _logger.LogError(ex,
+                    "覆盖上传库提交失败，已补偿（从版本快照恢复旧内容: {Restored}）: Path={Path}",
+                    restored, existingItem.Path);
+                throw;
+            }
             // ITM-N25：覆盖上传是 Modified 变更，与新建同等推送（否则订阅端不刷新）
             await NotifyChangedAsync(destPath, FileChangeType.Modified, existingItem.Path);
             await AutoRecognizeAsync(existingItem, cancellationToken);
@@ -246,11 +264,55 @@ public sealed partial class FileService
         await _fileRepository.AddAsync(file, cancellationToken);
         var saved = await SaveChangesWithConflictGuardAsync(FileErrors.AlreadyExists(filePath), cancellationToken);
         if (saved.IsFailure)
+        {
+            // 新文件分支：删掉刚落位的孤儿物理文件。不删的话它没有库记录，
+            // 下次扫描会把它当新发现入库、归属记为触发扫描的人（审计 F-031）
+            TryDeletePhysicalFile(physicalPath);
             return Result<FileItemDto>.Failure(saved.Error);
+        }
 
         await NotifyChangedAsync(destPath, FileChangeType.Created, file.Path);
         await AutoRecognizeAsync(file, cancellationToken);
         return Result<FileItemDto>.Success(MapToDto(file));
+    }
+
+    /// <summary>
+    /// 覆盖上传库提交失败的补偿：把该文件最新的版本快照内容拷回活动路径。
+    /// 返回是否真的恢复了内容（无快照时 false，此时库盘错位只能人工处理）
+    /// </summary>
+    private async Task<bool> TryRestoreOverwrittenContentAsync(
+        FileItem item,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var snapshotPath = await _fileVersionService.GetLatestSnapshotPathAsync(
+                item.Id, item.OwnerId, cancellationToken);
+            if (snapshotPath is null || !_fileSystemService.FileExists(snapshotPath))
+                return false;
+
+            _fileSystemService.CopyFile(snapshotPath, item.PhysicalPath, overwrite: true);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "覆盖上传补偿失败（从版本快照恢复旧内容）: Path={Path}", item.Path);
+            return false;
+        }
+    }
+
+    /// <summary>删掉刚落位的孤儿物理文件（库提交失败后的补偿，尽力而为）</summary>
+    private void TryDeletePhysicalFile(string physicalPath)
+    {
+        try
+        {
+            if (_fileSystemService.FileExists(physicalPath))
+                _fileSystemService.DeleteFile(physicalPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "孤儿物理文件清理失败: {Path}", physicalPath);
+        }
     }
 
     public async Task<Result<(Stream Stream, string FileName, string ContentType)>> DownloadFileAsync(
@@ -607,7 +669,7 @@ public sealed partial class FileService
             // 复制物理文件
             if (_fileSystemService.FileExists(source.PhysicalPath))
             {
-                File.Copy(source.PhysicalPath, newPhysicalPath, overwrite: false);
+                _fileSystemService.CopyFile(source.PhysicalPath, newPhysicalPath, overwrite: false);
             }
             else
             {

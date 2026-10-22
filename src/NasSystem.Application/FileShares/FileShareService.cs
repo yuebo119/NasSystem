@@ -29,13 +29,21 @@ public sealed class FileShareService(
     IUserRepository userRepository,
     IPasswordHasher passwordHasher,
     IUnitOfWork unitOfWork,
-    IOptions<JwtSettings> jwtOptions) : IFileShareService
+    IOptions<JwtSettings> jwtOptions,
+    IFileSystemService fileSystemService,
+    IDateTimeProvider dateTime) : IFileShareService
 {
     // 访问令牌有效期（小时）
     private const int AccessTokenExpirationHours = 24;
 
     // 访问令牌签名密钥（复用 JWT 主密钥，ITM-N1：令牌必须带签名防伪造）
     private readonly byte[] _tokenKey = Encoding.UTF8.GetBytes(jwtOptions.Value.SecretKey);
+
+    // 文件系统访问经 IFileSystemService（CONVENTIONS §1.5 / 审计 F-027）
+    private readonly IFileSystemService _fileSystemService = fileSystemService;
+
+    // 时间源注入（CONVENTIONS §5.1 / 审计 F-028）：令牌过期与过期时间校验可测试
+    private readonly IDateTimeProvider _dateTime = dateTime;
 
     // 下载计数的按分享闸门。读改写（IsDownloadLimitReached 判定 + IncrementDownloadCount
     // + SaveChanges）在闸外并发时两个请求都读到同一个旧值：MaxDownloads=1 的分享
@@ -172,7 +180,7 @@ public sealed class FileShareService(
             expiresAt = null;
         else if (request.ExpiresAt.HasValue)
         {
-            if (request.ExpiresAt.Value <= DateTime.UtcNow)
+            if (request.ExpiresAt.Value <= _dateTime.UtcNow)
                 return Result<FileShareDto>.Failure(Error.Validation("过期时间必须晚于当前时间"));
             expiresAt = request.ExpiresAt.Value;
         }
@@ -384,7 +392,7 @@ public sealed class FileShareService(
         }
 
         // 检查物理文件是否存在
-        if (!File.Exists(targetFile.PhysicalPath))
+        if (!_fileSystemService.FileExists(targetFile.PhysicalPath))
             return Result<ShareDownloadTarget>.Failure(FileShareErrors.PhysicalFileNotFound());
 
         // 增加下载计数（闸内串行化限流判定 + 增量，防并发打穿 MaxDownloads）
@@ -392,7 +400,7 @@ public sealed class FileShareService(
         if (recorded.IsFailure)
             return Result<ShareDownloadTarget>.Failure(recorded.Error);
 
-        var stream = new FileStream(targetFile.PhysicalPath, FileMode.Open, FileAccess.Read, System.IO.FileShare.Read);
+        var stream = _fileSystemService.OpenRead(targetFile.PhysicalPath);
         var contentType = targetFile.MimeType ?? "application/octet-stream";
 
         return Result<ShareDownloadTarget>.Success(new ShareDownloadTarget
@@ -499,7 +507,7 @@ public sealed class FileShareService(
         FileItem folder,
         CancellationToken cancellationToken)
     {
-        if (!Directory.Exists(folder.PhysicalPath))
+        if (!_fileSystemService.DirectoryExists(folder.PhysicalPath))
             return Result<ShareDownloadTarget>.Failure(FileShareErrors.PhysicalFileNotFound());
 
         // 同单文件下载：计数走闸内串行（限流判定 + 增量 + 落库）
@@ -618,7 +626,7 @@ public sealed class FileShareService(
 
     private string GenerateAccessToken(string shareCode, string? passwordFingerprint)
     {
-        var expiration = DateTime.UtcNow.AddHours(AccessTokenExpirationHours);
+        var expiration = _dateTime.UtcNow.AddHours(AccessTokenExpirationHours);
         // payload 带口令指纹：改口令/清口令后旧令牌立即失效。
         // 无状态令牌没有版本号可绑，指纹是最小绑定面（公开/内部分享传 null，
         // 指纹段为空串，与旧令牌格式兼容）
@@ -659,7 +667,7 @@ public sealed class FileShareService(
             if (!DateTime.TryParse(expirationStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out var expiration))
                 return false;
 
-            return expiration > DateTime.UtcNow;
+            return expiration > _dateTime.UtcNow;
         }
         catch
         {

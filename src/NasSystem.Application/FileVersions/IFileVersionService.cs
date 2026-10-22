@@ -37,6 +37,16 @@ public interface IFileVersionService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 取该文件最新版本快照的物理路径（服务内部补偿用：覆盖上传库提交失败时
+    /// 把旧内容拷回活动路径）。不属于对外契约，不走 DTO——DTO 有意不暴露
+    /// StoragePath，避免把服务器目录布局泄露给客户端
+    /// </summary>
+    Task<string?> GetLatestSnapshotPathAsync(
+        Guid fileItemId,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 获取指定版本的详情
     /// </summary>
     Task<Result<FileVersionDto>> GetVersionAsync(

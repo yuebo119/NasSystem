@@ -40,9 +40,9 @@ public sealed partial class FileService
 
             var storagePath = defaultPool.Value.MountPath;
 
-            if (!Directory.Exists(storagePath))
+            if (!_fileSystemService.DirectoryExists(storagePath))
             {
-                Directory.CreateDirectory(storagePath);
+                _fileSystemService.CreateDirectory(storagePath);
             }
 
             // S2：轻量对比表。原实现载全池活跃实体 + 软删实体两份再 concat 建字典，
@@ -239,7 +239,7 @@ public sealed partial class FileService
 
         // 扫描子目录。用 Enumerate 而非 Get：Get* 每次调用都物化整个目录的
         // 完整字符串数组，深目录树上万目录时是成比例的白分配；Enumerate 边遍历边产出
-        foreach (var dir in Directory.EnumerateDirectories(physicalDir))
+        foreach (var dir in _fileSystemService.EnumerateDirectories(physicalDir))
         {
             // 再解析点（junction/symlink）不跟随：环状链接会让递归永不终止
             if ((new DirectoryInfo(dir).Attributes & FileAttributes.ReparsePoint) != 0)
@@ -319,7 +319,7 @@ public sealed partial class FileService
         }
 
         // 扫描文件。同用 Enumerate：GetFiles 会物化整目录文件名字符串数组
-        foreach (var file in Directory.EnumerateFiles(physicalDir))
+        foreach (var file in _fileSystemService.EnumerateFiles(physicalDir))
         {
             var fileName = Path.GetFileName(file);
 

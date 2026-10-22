@@ -66,12 +66,17 @@ public sealed class FfmpegTranscodeService : ITranscodeService
 
     public FfmpegTranscodeService(
         TranscodeOptions options,
-        ILogger<FfmpegTranscodeService> logger)
+        ILogger<FfmpegTranscodeService> logger,
+        NasSystem.Domain.Services.IDateTimeProvider dateTime)
     {
         _options = options;
         _logger = logger;
+        _dateTime = dateTime;
         _cacheRoot = Path.GetFullPath(options.CacheDirectory);
     }
+
+    /// <summary>时间源注入（CONVENTIONS §5.1 / 审计 F-028）：探测缓存 TTL 可测试</summary>
+    private readonly NasSystem.Domain.Services.IDateTimeProvider _dateTime;
 
     public bool IsAvailable => ResolveFfmpegPath() is not null;
 
@@ -118,7 +123,7 @@ public sealed class FfmpegTranscodeService : ITranscodeService
         string ffmpeg, string physicalPath, CancellationToken cancellationToken)
     {
         if (_probeCache.TryGetValue(physicalPath, out var cached)
-            && DateTime.UtcNow - cached.At < ProbeCacheTtl)
+            && _dateTime.UtcNow - cached.At < ProbeCacheTtl)
         {
             return cached.Probe;
         }
@@ -128,7 +133,7 @@ public sealed class FfmpegTranscodeService : ITranscodeService
         var (_, stderr) = await RunProcessAsync(ffmpeg, $"-hide_banner -i \"{physicalPath}\"", cancellationToken);
         var result = MediaProbeParser.Parse(stderr);
 
-        _probeCache[physicalPath] = (result, DateTime.UtcNow);
+        _probeCache[physicalPath] = (result, _dateTime.UtcNow);
         return result;
     }
 
@@ -144,7 +149,7 @@ public sealed class FfmpegTranscodeService : ITranscodeService
         {
             if (_encoderCache.TryGetValue(encoder, out var cached))
             {
-                if (DateTime.UtcNow - cached.At < EncoderProbeTtl)
+                if (_dateTime.UtcNow - cached.At < EncoderProbeTtl)
                 {
                     if (cached.Usable) return encoder;
                     continue;
@@ -152,7 +157,7 @@ public sealed class FfmpegTranscodeService : ITranscodeService
             }
 
             var usable = await ProbeEncoderAsync(ffmpeg, encoder, cancellationToken);
-            _encoderCache[encoder] = (usable, DateTime.UtcNow);
+            _encoderCache[encoder] = (usable, _dateTime.UtcNow);
             if (usable)
             {
                 _logger.LogInformation("硬件编码器可用: {Encoder}", encoder);

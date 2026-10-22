@@ -42,6 +42,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     private readonly IUserRepository _userRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileSystemService _fileSystemService;
+    private readonly DiskSpace _diskSpace;
     private readonly IHubNotificationService _notifier;
     private readonly IMemoryCache _cache;
 
@@ -86,6 +87,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         IOcrService ocrService,
         ISystemConfigService configService,
         IProtectedDirectoryService protectedDirectoryService,
+        DiskSpace diskSpace,
         ILogger<FileService> logger)
     {
         _fileRepository = fileRepository;
@@ -100,6 +102,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         _ocrService = ocrService;
         _configService = configService;
         _protectedDirectoryService = protectedDirectoryService;
+        _diskSpace = diskSpace;
         _logger = logger;
     }
 
@@ -218,7 +221,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         var pool = await _storagePoolRepository.GetByIdAsync(poolId, cancellationToken);
         if (pool is not null)
         {
-            var available = pool.AvailableBytesWithin(DiskSpace.GetPhysicalFreeBytes(pool.MountPath));
+            var available = pool.AvailableBytesWithin(_diskSpace.GetPhysicalFreeBytes(pool.MountPath));
             if (available is null || available.Value < declaredSize)
                 return Result<(long?, long?)>.Failure(StorageErrors.InsufficientSpace);
             poolAvailable = available;
@@ -228,12 +231,12 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     }
 
     /// <summary>清理上传半成品临时文件（存在性竞争与 IO 错误都吞掉：它本来就是可弃的）</summary>
-    private static void TryDeleteTempFile(string tempPath)
+    private void TryDeleteTempFile(string tempPath)
     {
         try
         {
-            if (File.Exists(tempPath))
-                File.Delete(tempPath);
+            if (_fileSystemService.FileExists(tempPath))
+                _fileSystemService.DeleteFile(tempPath);
         }
         catch
         {

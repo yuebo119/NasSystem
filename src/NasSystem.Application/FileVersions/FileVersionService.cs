@@ -25,6 +25,8 @@ public class FileVersionService : IFileVersionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<FileVersionService> _logger;
     private readonly IFileSystemService _fileSystemService;
+    private readonly FileVersionStore _versionStore;
+    private readonly IDateTimeProvider _dateTime;
     private readonly ISystemConfigService _configService;
     private readonly IHubNotificationService _notifier;
 
@@ -34,6 +36,8 @@ public class FileVersionService : IFileVersionService
         IUnitOfWork unitOfWork,
         ILogger<FileVersionService> logger,
         IFileSystemService fileSystemService,
+        FileVersionStore versionStore,
+        IDateTimeProvider dateTime,
         ISystemConfigService configService,
         IHubNotificationService notifier)
     {
@@ -42,6 +46,8 @@ public class FileVersionService : IFileVersionService
         _unitOfWork = unitOfWork;
         _logger = logger;
         _fileSystemService = fileSystemService;
+        _versionStore = versionStore;
+        _dateTime = dateTime;
         _configService = configService;
         _notifier = notifier;
     }
@@ -60,7 +66,7 @@ public class FileVersionService : IFileVersionService
         string? orphanSnapshot = null;
         try
         {
-            if (!File.Exists(item.PhysicalPath))
+            if (!_fileSystemService.FileExists(item.PhysicalPath))
             {
                 // 库有记录但物理文件缺失（历史遗留或外部删除）：无内容可快照
                 _logger.LogWarning(
@@ -69,8 +75,9 @@ public class FileVersionService : IFileVersionService
                 return;
             }
 
-            var versionPath = FileVersionStore.GetVersionPath(poolMountPath, item.Id, item.Name);
-            FileVersionStore.CreateSnapshot(item.PhysicalPath, versionPath);
+            var now = _dateTime.UtcNow;
+            var versionPath = FileVersionStore.GetVersionPath(poolMountPath, item.Id, item.Name, now);
+            _versionStore.CreateSnapshot(item.PhysicalPath, versionPath);
             orphanSnapshot = versionPath;
 
             // 版本号先读后写，并发覆盖同一文件时两个请求都读到同一个 max：
@@ -91,8 +98,8 @@ public class FileVersionService : IFileVersionService
                         "自动版本号冲突（并发覆盖？），重试: FileItemId={FileItemId}, Attempt={Attempt}",
                         item.Id, attempt);
                     // 换一个新快照名：旧路径已被上一次尝试占用（硬链接/复制皆唯一）
-                    versionPath = FileVersionStore.GetVersionPath(poolMountPath, item.Id, item.Name);
-                    FileVersionStore.CreateSnapshot(item.PhysicalPath, versionPath);
+                    versionPath = FileVersionStore.GetVersionPath(poolMountPath, item.Id, item.Name, _dateTime.UtcNow);
+                    _versionStore.CreateSnapshot(item.PhysicalPath, versionPath);
                     orphanSnapshot = versionPath;
                 }
             }
@@ -113,7 +120,7 @@ public class FileVersionService : IFileVersionService
             {
                 try
                 {
-                    File.Delete(orphanSnapshot);
+                    _fileSystemService.DeleteFile(orphanSnapshot);
                 }
                 catch (Exception cleanupEx)
                 {
@@ -184,7 +191,7 @@ public class FileVersionService : IFileVersionService
         if (maxVersions < 1) maxVersions = 1;
         if (maxAgeDays < 1) maxAgeDays = 1;
 
-        var cutoff = DateTime.UtcNow.AddDays(-maxAgeDays);
+        var cutoff = _dateTime.UtcNow.AddDays(-maxAgeDays);
         var evictable = versions
             .Where(v => !v.IsCurrent)
             .OrderBy(v => v.VersionNumber)
@@ -207,7 +214,7 @@ public class FileVersionService : IFileVersionService
         var removed = 0;
         foreach (var victim in expired)
         {
-            if (!FileVersionStore.TryDeleteSnapshot(victim.StoragePath))
+            if (!_versionStore.TryDeleteSnapshot(victim.StoragePath))
             {
                 _logger.LogWarning(
                     "保留策略跳过：版本文件删除失败，保留记录: FileItemId={FileItemId}, Path={Path}",
@@ -250,6 +257,19 @@ public class FileVersionService : IFileVersionService
     }
 
     /// <inheritdoc />
+    public async Task<string?> GetLatestSnapshotPathAsync(
+        Guid fileItemId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var versions = await _versionRepository.GetByFileItemIdAsync(fileItemId, cancellationToken);
+        return versions
+            .Where(v => v.CreatedByUserId == userId)
+            .OrderByDescending(v => v.VersionNumber)
+            .FirstOrDefault()?.StoragePath;
+    }
+
+    /// <inheritdoc />
     public async Task<Result<FileVersionDto>> GetVersionAsync(
         Guid fileItemId,
         int versionNumber,
@@ -285,7 +305,7 @@ public class FileVersionService : IFileVersionService
         }
 
         // 检查版本文件是否存在
-        if (!File.Exists(version.StoragePath))
+        if (!_fileSystemService.FileExists(version.StoragePath))
         {
             return Result<FileVersionDto>.Failure(
                 new Error("FileVersion.StorageNotFound", "版本文件已丢失"));
@@ -326,23 +346,23 @@ public class FileVersionService : IFileVersionService
             // 之间仍有崩溃窗口（删了旧的、新的没移入，两边皆丢），File.Replace
             // 是 NTFS 上的原子替换原语，一个调用闭合该窗口
             var targetPath = fileItem.PhysicalPath;
-            var tempPath = targetPath + ".restore.tmp";
+            var tempPath = targetPath + FileVersionStore.RestoreTempSuffix;
             try
             {
-                File.Copy(version.StoragePath, tempPath, overwrite: true);
+                _fileSystemService.CopyFile(version.StoragePath, tempPath, overwrite: true);
 
-                if (File.Exists(targetPath))
-                    File.Replace(tempPath, targetPath, null);
+                if (_fileSystemService.FileExists(targetPath))
+                    _fileSystemService.ReplaceFile(tempPath, targetPath);
                 else
-                    File.Move(tempPath, targetPath);
+                    _fileSystemService.MoveFile(tempPath, targetPath);
             }
             finally
             {
                 // 替换失败的残留临时文件必须清掉：它不在扫描排除清单上，
                 // 下次扫描会被当用户文件入库（审计 F-017）
-                if (File.Exists(tempPath))
+                if (_fileSystemService.FileExists(tempPath))
                 {
-                    try { File.Delete(tempPath); } catch { /* 尽力而为 */ }
+                    try { _fileSystemService.DeleteFile(tempPath); } catch { /* 尽力而为 */ }
                 }
             }
 
@@ -389,7 +409,7 @@ public class FileVersionService : IFileVersionService
                 new Error("FileVersion.NotFound", $"版本 {versionNumber} 不存在"));
         }
 
-        if (!File.Exists(version.StoragePath))
+        if (!_fileSystemService.FileExists(version.StoragePath))
         {
             return Result<(Stream, string, string)>.Failure(
                 new Error("FileVersion.StorageNotFound", "版本文件已丢失"));
@@ -400,11 +420,7 @@ public class FileVersionService : IFileVersionService
         // MIME 统一经 IFileSystemService 真源（原本地映射表为漂移副本，ITM-N2 批次收敛）
         var contentType = _fileSystemService.GetMimeType(fileName);
 
-        var stream = new FileStream(
-            version.StoragePath,
-            FileMode.Open,
-            FileAccess.Read,
-            System.IO.FileShare.Read);
+        var stream = _fileSystemService.OpenRead(version.StoragePath);
 
         return Result<(Stream, string, string)>.Success((stream, fileName, contentType));
     }
@@ -438,7 +454,7 @@ public class FileVersionService : IFileVersionService
         // 后者在物理删除失败时留反向孤儿（记录没了文件还在，.versions 被扫描
         // 排除，永远扫不回来）。先删物理则文件占用时记录保留 + 明确报错，
         // 用户知道"文件被占用"而不是看到一个坏掉的版本条目
-        var physicalDeleted = FileVersionStore.TryDeleteSnapshot(version.StoragePath);
+        var physicalDeleted = _versionStore.TryDeleteSnapshot(version.StoragePath);
         if (!physicalDeleted)
         {
             _logger.LogWarning(

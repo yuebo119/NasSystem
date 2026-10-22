@@ -24,7 +24,9 @@ public sealed class StorageService(
     IFileItemRepository fileItemRepository,
     IUnitOfWork unitOfWork,
     IFileSystemService fileSystemService,
-    IMemoryCache cache) : IStorageService
+    IMemoryCache cache,
+    DiskSpace diskSpace,
+    NasSystem.Domain.Services.IDateTimeProvider dateTime) : IStorageService
 {
     /// <summary>
     /// 池容量上次刷新时间的内存缓存键前缀。按池 Id 分键，
@@ -43,6 +45,7 @@ public sealed class StorageService(
     /// 无等待者时移除闸门，字典规模不随池的增删增长。
     /// </remarks>
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> RefreshGates = new();
+
     public async Task<Result<StorageOverviewDto>> GetOverviewAsync(
         CancellationToken cancellationToken = default)
     {
@@ -298,7 +301,7 @@ public sealed class StorageService(
         // 上传预检按这个数判定才不会把盘写爆；两者都不可知时（无配额且挂载点
         // 不可达）判为放不下，由健康状态的 Warning 暴露真正原因
         var availableBytes = pool.AvailableBytesWithin(
-            DiskSpace.GetPhysicalFreeBytes(pool.MountPath));
+            diskSpace.GetPhysicalFreeBytes(pool.MountPath));
         var hasEnoughSpace = availableBytes >= request.FileSize;
 
         return Result<CheckStorageSpaceResponse>.Success(new CheckStorageSpaceResponse
@@ -337,7 +340,7 @@ public sealed class StorageService(
             return true;
 
         if (cache.TryGetValue(PoolRefreshKeyPrefix + pool.Id.ToString("D"), out DateTime lastRefreshUtc))
-            return DateTime.UtcNow - lastRefreshUtc >= CapacityRefreshInterval;
+            return dateTime.UtcNow - lastRefreshUtc >= CapacityRefreshInterval;
 
         return true;
     }
@@ -345,7 +348,7 @@ public sealed class StorageService(
     private void MarkPoolRefreshed(StoragePool pool) =>
         cache.Set(
             PoolRefreshKeyPrefix + pool.Id.ToString("D"),
-            DateTime.UtcNow,
+            dateTime.UtcNow,
             CapacityRefreshInterval);
 
     /// <summary>
@@ -367,25 +370,25 @@ public sealed class StorageService(
     /// 可用容量按盘根去重后求和。同一磁盘上的多个池共享该盘剩余，
     /// 逐个池相加会把一块盘的剩余重复计几次
     /// </summary>
-    private static long SumFreeBytesByDistinctDrive(IReadOnlyList<StoragePool> pools)
+    private long SumFreeBytesByDistinctDrive(IReadOnlyList<StoragePool> pools)
     {
         return pools
             .Where(p => p.IsEnabled)
             .GroupBy(p => Path.GetPathRoot(p.MountPath) ?? string.Empty)
-            .Sum(g => DiskSpace.GetPhysicalFreeBytes(g.First().MountPath) ?? 0);
+            .Sum(g => diskSpace.GetPhysicalFreeBytes(g.First().MountPath) ?? 0);
     }
 
     /// <summary>
     /// 存储健康状态，由池的真实可达性推导而非硬编码：任一启用池不可达
     /// 或使用率超过 90% 记 Warning
     /// </summary>
-    private static string DeriveHealthStatus(IReadOnlyList<StoragePool> pools)
+    private string DeriveHealthStatus(IReadOnlyList<StoragePool> pools)
     {
         var enabled = pools.Where(p => p.IsEnabled).ToList();
         if (enabled.Count == 0)
             return "Healthy";
 
-        if (enabled.Any(p => !DiskSpace.IsPoolReachable(p.MountPath)))
+        if (enabled.Any(p => !diskSpace.IsPoolReachable(p.MountPath)))
             return "Warning";
 
         return enabled.Any(p => p.IsNearlyFull) ? "Warning" : "Healthy";
@@ -448,12 +451,12 @@ public sealed class StorageService(
         return true;
     }
 
-    private static StoragePoolDto MapToDto(StoragePool pool)
+    private StoragePoolDto MapToDto(StoragePool pool)
     {
         // 可用 = 文件夹的增长空间（配额剩余与磁盘物理剩余取小），
         // 与概览、上传预检同一口径；不可知时显示 0
         var availableBytes = pool.AvailableBytesWithin(
-            DiskSpace.GetPhysicalFreeBytes(pool.MountPath));
+            diskSpace.GetPhysicalFreeBytes(pool.MountPath));
         return new StoragePoolDto
         {
             Id = pool.Id,
@@ -471,7 +474,7 @@ public sealed class StorageService(
             AvailableDisplay = FormatSize(availableBytes ?? 0),
             IsDefault = pool.IsDefault,
             IsEnabled = pool.IsEnabled,
-            Status = DiskSpace.IsPoolReachable(pool.MountPath) ? 1 : 5,
+            Status = diskSpace.IsPoolReachable(pool.MountPath) ? 1 : 5,
             IsNearlyFull = pool.IsNearlyFull,
             CreatedAt = pool.CreatedAt
         };

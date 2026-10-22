@@ -75,6 +75,9 @@ public static class DependencyInjection
         // 注册基础设施服务
         services.AddSingleton<IFileSystemService, FileSystemService>();
 
+        // 时间源（CONVENTIONS §5.1 / 审计 F-028）。单例：无状态，全进程同一真源
+        services.AddSingleton<Domain.Services.IDateTimeProvider, Services.SystemDateTimeProvider>();
+
         // 系统信息采集（运行时自省 + 数据库版本 + 网卡统计）。
         // Scoped：内部用 PalormSessionHolder 查 SQLite 版本，与仓储同生命周期
         services.AddScoped<Application.SystemInfo.ISystemInfoService, SystemInfoService>();

@@ -79,6 +79,8 @@ public class ProtectedDirectoryEnforcementTests
             new Mock<NasSystem.Application.Ocr.IOcrService>().Object,
             new Mock<NasSystem.Application.Configuration.ISystemConfigService>().Object,
             _protectedDirectoryServiceMock.Object,
+            // 磁盘物理剩余探测（F-027 收口后为注入依赖）
+            new NasSystem.Application.Storage.DiskSpace(_fileSystemServiceMock.Object),
             NullLogger<FileService>.Instance);
     }
 

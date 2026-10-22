@@ -88,7 +88,8 @@ public class FfmpegTranscodeTests : IDisposable
         // 1080p 带音频源：验证三档阶梯（1080/720/480）与音频映射
         var video = await CreateTestVideoAsync(ffmpeg, _workDir, "1920x1080", withAudio: true);
         var options = new TranscodeOptions { CacheDirectory = _cacheDir, FfmpegPath = ffmpeg };
-        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance);
+        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance,
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
 
         service.IsAvailable.Should().BeTrue();
 
@@ -139,7 +140,8 @@ public class FfmpegTranscodeTests : IDisposable
         // 360p 源（低于最低档 480p）：单档且高度=源高度，不上放大
         var video = await CreateTestVideoAsync(ffmpeg, _workDir, "640x360", withAudio: false);
         var options = new TranscodeOptions { CacheDirectory = _cacheDir, FfmpegPath = ffmpeg };
-        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance);
+        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance,
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
 
         var result = await service.GetOrCreateHlsAsync(video);
         result.IsSuccess.Should().BeTrue(result.Error.Message);
@@ -157,7 +159,8 @@ public class FfmpegTranscodeTests : IDisposable
         if (ffmpeg is null)
             Assert.Skip("ffmpeg 不可用，跳过");
         var options = new TranscodeOptions { CacheDirectory = _cacheDir, FfmpegPath = ffmpeg };
-        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance);
+        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance,
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
 
         var result = await service.GetStatusAsync();
         result.IsSuccess.Should().BeTrue();
@@ -177,7 +180,8 @@ public class FfmpegTranscodeTests : IDisposable
             CacheDirectory = _cacheDir,
             FfmpegPath = Path.Combine(_workDir, "no-such-ffmpeg.exe"),
         };
-        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance);
+        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance,
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
 
         // 注意：PATH 里可能有 ffmpeg（本机探针位不算 PATH），这里用显式
         // 坏路径覆盖。若 PATH 有 ffmpeg，IsAvailable 仍可能为 true——
@@ -197,7 +201,8 @@ public class FfmpegTranscodeTests : IDisposable
         if (ffmpeg is null)
             Assert.Skip("ffmpeg 不可用，跳过");
         var options = new TranscodeOptions { CacheDirectory = _cacheDir, FfmpegPath = ffmpeg };
-        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance);
+        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance,
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
 
         var result = await service.GetOrCreateHlsAsync(Path.Combine(_workDir, "ghost.mp4"));
         result.IsFailure.Should().BeTrue();
@@ -212,7 +217,8 @@ public class FfmpegTranscodeTests : IDisposable
             Assert.Skip("ffmpeg 不可用，跳过");
         var video = await CreateTestVideoAsync(ffmpeg, _workDir);
         var options = new TranscodeOptions { CacheDirectory = _cacheDir, FfmpegPath = ffmpeg };
-        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance);
+        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance,
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
 
         var frame = await service.ExtractVideoFrameAsync(video);
         frame.Should().NotBeNull("抽帧应成功");
@@ -231,7 +237,8 @@ public class FfmpegTranscodeTests : IDisposable
             Assert.Skip("ffmpeg 不可用，跳过");
         var video = await CreateTestVideoAsync(ffmpeg, _workDir);
         var options = new TranscodeOptions { CacheDirectory = _cacheDir, FfmpegPath = ffmpeg };
-        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance);
+        var service = new FfmpegTranscodeService(options, NullLogger<FfmpegTranscodeService>.Instance,
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
 
         await service.GetOrCreateHlsAsync(video);
         var freed = await service.ClearCacheAsync();

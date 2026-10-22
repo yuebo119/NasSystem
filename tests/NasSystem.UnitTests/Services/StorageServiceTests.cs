@@ -39,7 +39,11 @@ public class StorageServiceTests
             _unitOfWorkMock.Object,
             _fileSystemServiceMock.Object,
             new Microsoft.Extensions.Caching.Memory.MemoryCache(
-                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
+                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
+            // 磁盘物理剩余探测（F-027 收口后为注入依赖）
+            new NasSystem.Application.Storage.DiskSpace(_fileSystemServiceMock.Object),
+            // 时间源（CONVENTIONS §5.1 / 审计 F-028）
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
     }
 
     #region GetOverviewAsync Tests

@@ -22,9 +22,13 @@ public sealed class JwtService : IJwtService
     private readonly JwtSettings _settings;
     private readonly SigningCredentials _signingCredentials;
 
-    public JwtService(IOptions<JwtSettings> settings)
+    // 时间源注入（CONVENTIONS §5.1 / 审计 F-028）：令牌签发/过期时间可测试
+    private readonly NasSystem.Domain.Services.IDateTimeProvider _dateTime;
+
+    public JwtService(IOptions<JwtSettings> settings, NasSystem.Domain.Services.IDateTimeProvider dateTime)
     {
         _settings = settings.Value;
+        _dateTime = dateTime;
 
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.SecretKey));
         _signingCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
@@ -36,7 +40,7 @@ public sealed class JwtService : IJwtService
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new(JwtRegisteredClaimNames.Iat, new DateTimeOffset(_dateTime.UtcNow).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, user.Username),
             new(ClaimTypes.Role, user.Role.ToString()),
@@ -49,13 +53,13 @@ public sealed class JwtService : IJwtService
         if (!string.IsNullOrEmpty(user.DisplayName))
             claims.Add(new Claim("display_name", user.DisplayName));
 
-        var expires = DateTime.UtcNow.Add(lifetime ?? TimeSpan.FromMinutes(_settings.AccessTokenExpirationMinutes));
+        var expires = _dateTime.UtcNow.Add(lifetime ?? TimeSpan.FromMinutes(_settings.AccessTokenExpirationMinutes));
 
         var token = new JwtSecurityToken(
             issuer: _settings.Issuer,
             audience: _settings.Audience,
             claims: claims,
-            notBefore: DateTime.UtcNow,
+            notBefore: _dateTime.UtcNow,
             expires: expires,
             signingCredentials: _signingCredentials);
 

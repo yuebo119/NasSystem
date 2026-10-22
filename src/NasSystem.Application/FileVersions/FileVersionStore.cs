@@ -5,6 +5,8 @@
 
 namespace NasSystem.Application.FileVersions;
 
+using NasSystem.Domain.Services;
+
 /// <summary>
 /// 版本库的物理布局与创建。版本存放在所属存储池挂载点下的 .versions 目录：
 /// {池挂载点}/.versions/{fileItemId}/{时间戳}-{文件名}
@@ -15,9 +17,19 @@ namespace NasSystem.Application.FileVersions;
 /// 二、池可整体迁移/备份时版本随数据一起走，不会漏。
 /// 扫描同步已显式跳过 .versions 目录（FileService.Sync），
 /// 版本文件不会当用户文件入库；目录名以点开头，网页端默认也不显示隐藏项。
+///
+/// 2026-10-22 审计 F-027：从静态类改为可注入服务，文件系统访问全部经
+/// IFileSystemService（CONVENTIONS §1.5 收口）。纯路径运算保持静态无副作用。
 /// </remarks>
-public static class FileVersionStore
+public sealed class FileVersionStore
 {
+    private readonly IFileSystemService _fileSystem;
+
+    public FileVersionStore(IFileSystemService fileSystem)
+    {
+        _fileSystem = fileSystem;
+    }
+
     /// <summary>版本库目录名。扫描同步的排除清单与此常量同源</summary>
     public const string DirectoryName = ".versions";
 
@@ -39,9 +51,9 @@ public static class FileVersionStore
     /// 某文件一个新版本的存放路径。时间戳精确到毫秒再加短 Guid：
     /// 同一毫秒内的连续覆盖（批量场景）不会互相撞名
     /// </summary>
-    public static string GetVersionPath(string poolMountPath, Guid fileItemId, string fileName)
+    public static string GetVersionPath(string poolMountPath, Guid fileItemId, string fileName, DateTime now)
     {
-        var stamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+        var stamp = now.ToString("yyyyMMddHHmmssfff");
         var suffix = Guid.NewGuid().ToString("N")[..6];
         var safeName = SanitizeFileName(fileName);
         return Path.Combine(GetFileVersionDirectory(poolMountPath, fileItemId), $"{stamp}-{suffix}-{safeName}");
@@ -55,25 +67,26 @@ public static class FileVersionStore
     /// <remarks>
     /// 硬链接的正确性前提：当前文件的所有写路径都是"临时文件 + rename 替换"
     /// （上传、版本恢复均是），不存在原地截断写。若未来新增原地写路径，
-    /// 版本内容会被悄悄改掉，届时必须改为复制语义
+    /// 版本内容会被悄悄改掉，届时必须改为复制语义。
+    /// 哨兵测试：VersionAtomicityRegressionTests.VersionSnapshot_SurvivesSubsequentOverwrite
     /// </remarks>
-    public static void CreateSnapshot(string sourcePhysicalPath, string versionPath)
+    public void CreateSnapshot(string sourcePhysicalPath, string versionPath)
     {
         var directory = Path.GetDirectoryName(versionPath)!;
-        Directory.CreateDirectory(directory);
+        _fileSystem.CreateDirectory(directory);
 
         try
         {
-            File.CreateHardLink(versionPath, sourcePhysicalPath);
+            _fileSystem.CreateHardLink(versionPath, sourcePhysicalPath);
         }
         catch (IOException)
         {
             // 跨卷或文件系统不支持：降级复制（版本路径已保证唯一，不会撞已存在文件）
-            File.Copy(sourcePhysicalPath, versionPath, overwrite: false);
+            _fileSystem.CopyFile(sourcePhysicalPath, versionPath, overwrite: false);
         }
         catch (PlatformNotSupportedException)
         {
-            File.Copy(sourcePhysicalPath, versionPath, overwrite: false);
+            _fileSystem.CopyFile(sourcePhysicalPath, versionPath, overwrite: false);
         }
     }
 
@@ -82,12 +95,12 @@ public static class FileVersionStore
     /// 调用方据此决定是否删库记录——物理删失败时保留记录并报错，
     /// 避免"记录没了文件还在"的反向孤儿（.versions 被扫描排除，扫不回来）
     /// </summary>
-    public static bool TryDeleteSnapshot(string versionPath)
+    public bool TryDeleteSnapshot(string versionPath)
     {
         try
         {
-            if (File.Exists(versionPath))
-                File.Delete(versionPath);
+            if (_fileSystem.FileExists(versionPath))
+                _fileSystem.DeleteFile(versionPath);
             return true;
         }
         catch

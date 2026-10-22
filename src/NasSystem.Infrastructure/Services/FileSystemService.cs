@@ -104,8 +104,8 @@ public sealed class FileSystemService : IFileSystemService
             Directory.Move(sourcePath, destinationPath);
     }
 
-    public void MoveFile(string sourcePath, string destinationPath) => 
-        File.Move(sourcePath, destinationPath, overwrite: false);
+    public void MoveFile(string sourcePath, string destinationPath, bool overwrite = false) =>
+        File.Move(sourcePath, destinationPath, overwrite);
 
     public void MoveDirectory(string sourcePath, string destinationPath) => 
         Directory.Move(sourcePath, destinationPath);
@@ -190,6 +190,53 @@ public sealed class FileSystemService : IFileSystemService
             FileShare.None,
             DefaultBufferSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+    public void CreateHardLink(string linkPath, string existingFilePath) =>
+        File.CreateHardLink(linkPath, existingFilePath);
+
+    public void CopyFile(string sourcePath, string destinationPath, bool overwrite = false) =>
+        File.Copy(sourcePath, destinationPath, overwrite);
+
+    public void ReplaceFile(string tempPath, string targetPath) =>
+        File.Replace(tempPath, targetPath, null);
+
+    public IEnumerable<string> EnumerateFiles(string path) =>
+        Directory.EnumerateFiles(path);
+
+    public IEnumerable<string> EnumerateDirectories(string path) =>
+        Directory.EnumerateDirectories(path);
+
+    public long? GetAvailableFreeSpace(string path)
+    {
+        try
+        {
+            var pathRoot = Path.GetPathRoot(path);
+            if (string.IsNullOrEmpty(pathRoot))
+                return null;
+            var driveInfo = new DriveInfo(pathRoot);
+            return driveInfo.IsReady ? driveInfo.AvailableFreeSpace : null;
+        }
+        catch
+        {
+            // 目录不存在/权限不足/磁盘未就绪：不当异常抛给读端点，由调用方退回配额口径
+            return null;
+        }
+    }
+
+    public bool IsVolumeReady(string path)
+    {
+        try
+        {
+            var pathRoot = Path.GetPathRoot(path);
+            if (string.IsNullOrEmpty(pathRoot))
+                return false;
+            return new DriveInfo(pathRoot).IsReady;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     public long GetAvailableSpace(string path)
     {

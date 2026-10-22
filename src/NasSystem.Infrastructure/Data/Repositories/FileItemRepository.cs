@@ -25,7 +25,8 @@ using PalORM.Sqlite;
 /// </remarks>
 public sealed class FileItemRepository(
     PalormSessionHolder sessions,
-    PalormUnitOfWork unitOfWork) : IFileItemRepository
+    PalormUnitOfWork unitOfWork,
+    NasSystem.Domain.Services.IDateTimeProvider dateTime) : IFileItemRepository
 {
     public async Task<FileItem?> GetByPathAsync(string path, CancellationToken cancellationToken = default)
     {
@@ -434,7 +435,7 @@ public sealed class FileItemRepository(
         // 同理不能用 string.Format(template, index) 重编号：那会把模板里的 {0}
         // 当成 string.Format 自己的格式孔吃掉，产出 "Name LIKE 0" 这种不报错
         // 但静默变味的 SQL（实测：条件变味后查询恒返回 0 行）。
-        var recentLiteral = DateTime.UtcNow.AddDays(-7).ToString("yyyy-MM-dd HH:mm:ss.fffffff");
+        var recentLiteral = dateTime.UtcNow.AddDays(-7).ToString("yyyy-MM-dd HH:mm:ss.fffffff");
         var ownerClause = ownerId.HasValue ? " AND OwnerId = {0}" : "";
 
         const string AggregateColumns =
@@ -642,7 +643,7 @@ public sealed class FileItemRepository(
         string rootPath,
         CancellationToken cancellationToken = default)
     {
-        var now = DateTime.UtcNow;
+        var now = dateTime.UtcNow;
         var prefix = DescendantPrefix(rootPath);
         unitOfWork.EnqueueCommand(async (db, ct) => await db.ExecuteAsync(
             System.Runtime.CompilerServices.FormattableStringFactory.Create(

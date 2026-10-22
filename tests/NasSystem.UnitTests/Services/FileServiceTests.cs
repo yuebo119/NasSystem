@@ -71,6 +71,11 @@ public class FileServiceTests
 
             new Mock<NasSystem.Application.ProtectedDirectories.IProtectedDirectoryService>().Object,
 
+            // 磁盘物理剩余探测（F-027 收口后为注入依赖）：本测试类不覆盖容量
+            // 预检边界，mock 的 GetPhysicalFreeBytes 默认 null（退回配额口径）
+            new NasSystem.Application.Storage.DiskSpace(
+                new Mock<NasSystem.Domain.Services.IFileSystemService>().Object),
+
             NullLogger<NasSystem.Application.Files.FileService>.Instance);
     }
 

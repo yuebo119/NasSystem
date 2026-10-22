@@ -202,6 +202,12 @@ public class StorageOverviewTests : IDisposable
             scope.ServiceProvider.GetRequiredService<IFileItemRepository>(),
             scope.ServiceProvider.GetRequiredService<IUnitOfWork>(),
             scope.ServiceProvider.GetRequiredService<NasSystem.Domain.Services.IFileSystemService>(),
-            scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>());
+            scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
+            // 磁盘物理剩余探测（F-027 收口后为注入依赖）。本测试的容器只装了
+            // Infrastructure（无 AddApplicationServices），直接构造而非取服务
+            new NasSystem.Application.Storage.DiskSpace(
+                scope.ServiceProvider.GetRequiredService<NasSystem.Domain.Services.IFileSystemService>()),
+            // 时间源（CONVENTIONS §5.1 / 审计 F-028）
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
     }
 }

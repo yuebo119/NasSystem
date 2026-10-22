@@ -37,6 +37,14 @@ public static class DependencyInjection
         services.AddScoped<IFileShareService, FileShareService>();
         services.AddScoped<IBackupService, BackupService>();
 
+        // 版本库物理存储（F-027 收口：文件系统访问经 IFileSystemService，
+        // 从静态类改为可注入服务）。单例：无状态，只有路径运算与 IO 委派
+        services.AddSingleton<FileVersionStore>();
+
+        // 磁盘物理剩余探测（F-027 收口：从静态 Directory/DriveInfo 直调改为
+        // 可注入服务，容量预检的边界路径因此可注入替身测试）。单例：无状态
+        services.AddSingleton<DiskSpace>();
+
         return services;
     }
 }
