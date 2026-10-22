@@ -53,9 +53,10 @@ public sealed class GlobalExceptionHandler(
                 HttpStatusCode.NotFound,
                 new ApiError("Error.NotFound", "目录未找到")),
 
-            InvalidOperationException => (
-                HttpStatusCode.BadRequest,
-                new ApiError("Error.InvalidOperation", "当前状态下无法执行此操作")),
+            // 不再把 InvalidOperationException 一律当 400：仓库内该类异常
+            // 主要来自服务端故障（缩略图缩放失败、ffmpeg 启动失败、模型下载为空），
+            // 映射成客户端错误会让调用方误判并掩盖真实故障。客户端状态类错误
+            // 由服务层返回 Error.Validation/Error.Conflict，不靠异常类型表达。
 
             // 参数绑定失败（必填参数缺失、JSON 反序列化失败）： minimal API 在
             // 绑定层抛 BadHttpRequestException，落在默认分支会变 500。这是
