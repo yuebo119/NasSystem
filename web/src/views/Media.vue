@@ -8,7 +8,10 @@
  * 视频/音频显示时长徽章（时长来自托管解析，取不到不显示）。
  */
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
-import Hls from 'hls.js'
+// hls.js 改为动态导入（见 mountPlayer）：它是 608KB 未压缩的库，静态导入
+// 会把媒体库首屏 chunk 长期撑到 590KB（实测 Media-*.js = 589825 字节），
+// 而视频播放只在用户点开视频格时才需要。import type 不产生运行时代码
+import type HlsType from 'hls.js'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -76,7 +79,7 @@ const semanticItems = computed<MediaItem[]>(() =>
 const playerVisible = ref(false)
 const playingItem = ref<MediaItem | null>(null)
 const videoEl = ref<HTMLVideoElement | null>(null)
-let hlsInstance: Hls | null = null
+let hlsInstance: HlsType | null = null
 
 // 播放错误与转码等待状态：首次播放时 ffmpeg 还在转码（m3u8 未生成），
 // hls.js 的 MANIFEST_LOAD_ERROR（404）会无限循环重连——这里改成有限重试
@@ -105,7 +108,7 @@ function playVideo(item: MediaItem) {
   void nextTick(mountPlayer)
 }
 
-function mountPlayer() {
+async function mountPlayer() {
   const video = videoEl.value
   if (!video || !playingItem.value) return
   destroyPlayer()
@@ -113,6 +116,20 @@ function mountPlayer() {
 
   const token = localStorage.getItem('token')
   const url = mediaApi.getStreamUrl(playingItem.value.path)
+
+  // 按需加载 hls.js：首次点开视频时才拉这个 608KB 的库（浏览器会缓存，
+  // 后续播放秒开）。加载失败按播放错误处理，不阻塞页面其余功能
+  let Hls: typeof HlsType
+  try {
+    Hls = (await import('hls.js')).default
+  } catch {
+    playerError.value = t('media.playerError')
+    return
+  }
+
+  // 期间的关闭/切换：await 之后重新校验，避免给已关闭的对话框挂播放器
+  if (!playerVisible.value || !playingItem.value || videoEl.value !== video) return
+
   if (Hls.isSupported()) {
     const hls = new Hls({
       xhrSetup: (xhr) => {
@@ -127,7 +144,7 @@ function mountPlayer() {
           manifestRetryCount++
           transcoding.value = true
           manifestRetryTimer = window.setTimeout(() => {
-            if (playerVisible.value && playingItem.value) mountPlayer()
+            if (playerVisible.value && playingItem.value) void mountPlayer()
           }, MANIFEST_RETRY_INTERVAL_MS)
         } else {
           transcoding.value = false
@@ -264,6 +281,15 @@ const groups = computed(() => {
   return result
 })
 
+// 快切类型/月份 tab 时，旧分页请求的后回包会把新 tab 已清空的首屏
+// 覆盖成旧数据。序号闸：只有最后一次 loadMore 的结果允许写
+// items/total/page，loadMetadata 同受一闸。
+// 声明必须在下面的 immediate watch 之前：`let` 有暂时性死区，watch 的
+// immediate 回调在 setup 期同步执行并调用 loadMore，此时若 loadSeq 还未
+// 求值会抛 "Cannot access 'loadSeq' before initialization"（浏览器实测
+// 在 2026-10-22 抓到该回归——原实现把声明写在 watch 之后）
+let loadSeq = 0
+
 // immediate：首屏就要加载首页。没有它时 watch 只在切换 tab 时触发，
 // 首访媒体库永远是空的（只有切走再切回或手点"加载更多"才有内容）——
 // 2026-10-19 E2E 走查实证：API 有 5 张图，页面显示"暂无媒体文件"。
@@ -274,11 +300,6 @@ watch([activeType, activeMonth], () => {
   metadataMap.value = new Map()
   void loadMore(true)
 }, { immediate: true })
-
-// 快切类型/月份 tab 时，旧分页请求的后回包会把新 tab 已清空的首屏
-// 覆盖成旧数据。序号闸：只有最后一次 loadMore 的结果允许写
-// items/total/page，loadMetadata 同受一闸
-let loadSeq = 0
 
 async function loadMore(reset = false) {
   // reset（切 tab）不屈服于 loading 闸：旧请求在途时也要立刻发新车，
