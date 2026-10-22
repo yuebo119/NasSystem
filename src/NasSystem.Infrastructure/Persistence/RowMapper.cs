@@ -169,7 +169,31 @@ public static class RowMapper
     public static FileOcrText ToDomain(this FileOcrTextRow row) =>
         FileOcrText.Restore(
             row.Id, row.FileItemId, row.Text, row.CharCount,
-            row.Model, row.ElapsedMs, row.CreatedAt, row.Regions);
+            row.Model, row.ElapsedMs, row.CreatedAt, ParseOcrRegions(row.Regions));
+
+    /// <summary>
+    /// 区域 JSON 列 → 强类型列表。Domain 只接收解析后的列表，不感知存储格式。
+    /// null/空/损坏/坐标数不为 8 一律降级为空列表或过滤该行：位置信息是增强，
+    /// 不能影响文本主流程（原实现在 Domain 实体的 ParseMany，2026-10-22 第 3 轮移到映射层）。
+    /// </summary>
+    internal static IReadOnlyList<OcrTextRegion> ParseOcrRegions(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return [];
+
+        try
+        {
+            var rows = System.Text.Json.JsonSerializer.Deserialize<List<OcrTextRegion>>(json);
+            return rows?
+                .Where(r => !string.IsNullOrEmpty(r.Text) && r.Points is { Length: 8 })
+                .Select(r => new OcrTextRegion(r.Text, r.Points!))
+                .ToList() ?? [];
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return [];
+        }
+    }
 
     public static FileOcrTextRow ToRow(this FileOcrText entity) =>
         new()

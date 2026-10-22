@@ -76,7 +76,7 @@ public sealed class FileOcrText : Entity
     }
 
     /// <summary>从持久化状态恢复实体（供基础设施层影子模型映射使用）。
-    /// regionsJson 为存量库的 null/空串时降级为空列表（识别于叠加特性之前）</summary>
+    /// 区域列表由 Infrastructure 从存储格式解析后传入，Domain 不感知 JSON 列</summary>
     internal static FileOcrText Restore(
         Guid id,
         Guid fileItemId,
@@ -85,7 +85,7 @@ public sealed class FileOcrText : Entity
         string model,
         int elapsedMs,
         DateTime createdAt,
-        string? regionsJson = null)
+        IReadOnlyList<OcrTextRegion>? regions = null)
     {
         return new FileOcrText
         {
@@ -96,7 +96,7 @@ public sealed class FileOcrText : Entity
             Model = model,
             ElapsedMs = elapsedMs,
             CreatedAt = createdAt,
-            Regions = OcrTextRegion.ParseMany(regionsJson)
+            Regions = regions ?? []
         };
     }
 }
@@ -108,27 +108,4 @@ public sealed class FileOcrText : Entity
 /// </summary>
 /// <param name="Text">该行识别出的文字</param>
 /// <param name="Points">归一化四角坐标（8 值）</param>
-public sealed record OcrTextRegion(string Text, float[] Points)
-{
-    /// <summary>
-    /// 从持久化 JSON 解析区域列表。null/空/损坏一律返回空列表——
-    /// 位置信息是增强，缺了不能影响文本主流程
-    /// </summary>
-    public static IReadOnlyList<OcrTextRegion> ParseMany(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return [];
-        try
-        {
-            var rows = System.Text.Json.JsonSerializer.Deserialize<List<OcrTextRegion>>(json);
-            return rows?
-                .Where(r => !string.IsNullOrEmpty(r.Text) && r.Points is { Length: 8 })
-                .Select(r => new OcrTextRegion(r.Text, r.Points!))
-                .ToList() ?? [];
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return [];
-        }
-    }
-}
+public sealed record OcrTextRegion(string Text, float[] Points);

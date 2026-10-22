@@ -216,7 +216,7 @@ public static class DependencyInjection
         // FileOcrTexts.Regions 加列迁移（2026-10-21 OCR 叠加定位）：行模型新增
         // 可空列，MigrateAsync 对存量库不 ALTER（只建缺失的表）。检测列不存在
         // 才补：SQLite ADD COLUMN 只增不删，重复执行报错，故先查 pragma。
-        // 存量行的 Regions 为 NULL，读取侧（FileOcrText.Restore → ParseMany）
+        // 存量行的 Regions 为 NULL，读取侧（RowMapper.ParseOcrRegions）
         // 统一降级为空列表——识别于本特性之前的图片无位置信息，前端纯文本展示
         await MigrateOcrRegionsColumnAsync(db, logger);
 
