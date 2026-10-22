@@ -30,9 +30,9 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 | 1.5 | 文件系统访问收口 `IFileSystemService` 抽象；Application 层裸 IO 调用（`File.X`/`Directory.X`/`new FileStream|StreamReader|StreamWriter|ZipArchive|DriveInfo`）属存量债务，只减不增 |
 | 1.6 | 具体异常类型必须 `sealed`；公共接口必须 `I` 前缀 |
 
-### 现状基线（2026-08-24）
+### 现状基线（2026-08-24；2026-10-22 审计收口后重定标）
 
-- Application 层裸 IO 直调 **21 处**（白名单口径：`File.Exists|Create|Delete|Copy|Move|...` 等真实 System.IO 成员名，剔除 `"File.Xxx"` 错误码字符串误报；2026-08-25 口径修正后从宽口径 31 重定标）→ 收口计划见 action-items
+- Application 层裸 IO 直调 **0 处**（白名单口径：`File.Exists|Create|Delete|Copy|Move|...` 等真实 System.IO 成员名，剔除 `"File.Xxx"` 错误码字符串误报）。2026-10-22 审计 F-027 收口归零：FileVersionStore 从静态类改为可注入服务，版本/分享/扫描/磁盘探测域全部经 IFileSystemService，接口补齐 CreateHardLink/CopyFile/ReplaceFile/EnumerateFiles/EnumerateDirectories/GetAvailableFreeSpace/IsVolumeReady
 - 异常 sealed 违规 0；接口 I 前缀违规 0 ✓
 
 ## §2 异步与并发
@@ -113,7 +113,7 @@ curl -sD- -o /dev/null -H 'Accept-Encoding: br' https://<host>/api/v1/system/hea
 
 ### 现状基线（2026-08-24）
 
-- 硬编码 UtcNow 共 **35 处**（src 下非注释口径）→ 注入 IDateTimeProvider 计划见 action-items
+- 硬编码 UtcNow 共 **33 处**（src 下非注释口径）。2026-10-22 审计 F-028 收口：IDateTimeProvider 重新引入（ITM-N33 曾当死代码清掉），版本/分享/转码/WebDAV 守卫/JWT/仓储/存储域已完成注入；余下 33 处为 Domain 实体工厂（FileVersion/SystemSetting/Entity/User/FileShare/FileItem/BackupDevice/FileOcrText/IDomainEvent）与 Shared 的 ApiResponse 信封，不在构造注入可达范围，留待「传时间戳入工厂」的下一批
 
 ## §6 测试规范（xUnit）
 
@@ -156,6 +156,6 @@ curl -sD- -o /dev/null -H 'Accept-Encoding: br' https://<host>/api/v1/system/hea
 | 数字 | 真源 |
 |------|------|
 | NAS-G 编号 | `.ai/scripts/gate-check.sh`（现行 G1..G22） |
-| 基线数字（UtcNow 35 / 裸 IO 21 / 测试命名 6） | 本文件 §5.1 / §1.5 / §6.2，改动须同步脚本基线常量 |
+| 基线数字（UtcNow 33 / 裸 IO 0 / 测试命名 6） | 本文件 §5.1 / §1.5 / §6.2，改动须同步脚本基线常量 |
 | 缺陷登记 ITM-N 编号 | `.ai/lessons.md` 第二章 |
 | 误判模式 NPD-N 编号 | `.ai/review/known-false-positives.md` |
