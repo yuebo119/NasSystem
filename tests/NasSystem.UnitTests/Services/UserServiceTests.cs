@@ -52,7 +52,9 @@ public class UserServiceTests
             _unitOfWorkMock.Object,
             _passwordHasherMock.Object,
             _jwtServiceMock.Object,
-            Options.Create(new JwtSettings()));
+            Options.Create(new JwtSettings()),
+            // 时间源（CONVENTIONS §5.1 / 审计 F-028）
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
     }
 
     #region GetByIdAsync Tests

@@ -28,7 +28,7 @@ public sealed partial class FileService
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        var startTime = DateTime.UtcNow;
+        var startTime = _dateTime.UtcNow;
         var counters = new ScanCounters();
 
         try
@@ -150,7 +150,7 @@ public sealed partial class FileService
             foreach (var dir in changedDirs)
                 DirectoryVersion.Bump(dir);
 
-            var duration = DateTime.UtcNow - startTime;
+            var duration = _dateTime.UtcNow - startTime;
             return Result<ScanResultDto>.Success(new ScanResultDto
             {
                 AddedFiles = counters.AddedFiles,

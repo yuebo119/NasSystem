@@ -43,6 +43,9 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileSystemService _fileSystemService;
     private readonly DiskSpace _diskSpace;
+
+    /// <summary>时间源注入（CONVENTIONS §5.1）：扫描耗时与软删时间可测试</summary>
+    private readonly NasSystem.Domain.Services.IDateTimeProvider _dateTime;
     private readonly IHubNotificationService _notifier;
     private readonly IMemoryCache _cache;
 
@@ -88,6 +91,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         ISystemConfigService configService,
         IProtectedDirectoryService protectedDirectoryService,
         DiskSpace diskSpace,
+        NasSystem.Domain.Services.IDateTimeProvider dateTime,
         ILogger<FileService> logger)
     {
         _fileRepository = fileRepository;
@@ -103,6 +107,7 @@ public sealed partial class FileService : IFileBrowseService, IFileTransferServi
         _configService = configService;
         _protectedDirectoryService = protectedDirectoryService;
         _diskSpace = diskSpace;
+        _dateTime = dateTime;
         _logger = logger;
     }
 

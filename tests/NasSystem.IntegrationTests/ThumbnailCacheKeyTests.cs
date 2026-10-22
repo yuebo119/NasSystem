@@ -41,7 +41,8 @@ public class ThumbnailCacheKeyTests
             var service = new ThumbnailService(
                 Options.Create(new ThumbnailOptions { CacheDirectory = cacheDir }),
                 NullLogger<ThumbnailService>.Instance,
-                new NoOpTranscodeService());
+                new NoOpTranscodeService(),
+                new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
 
             var generated = await service.GetThumbnailAsync(
                 virtualPath, physicalFile, 128, 128, Guid.NewGuid());
@@ -82,7 +83,8 @@ public class ThumbnailCacheKeyTests
             var service = new ThumbnailService(
                 Options.Create(new ThumbnailOptions { CacheDirectory = cacheDir }),
                 NullLogger<ThumbnailService>.Instance,
-                new NoOpTranscodeService());
+                new NoOpTranscodeService(),
+                new NasSystem.Infrastructure.Services.SystemDateTimeProvider());
 
             await service.GetThumbnailAsync("/a.png", fileA, 128, 128, Guid.NewGuid());
             await service.GetThumbnailAsync("/b.png", fileB, 128, 128, Guid.NewGuid());

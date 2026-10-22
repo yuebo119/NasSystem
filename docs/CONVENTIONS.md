@@ -113,7 +113,7 @@ curl -sD- -o /dev/null -H 'Accept-Encoding: br' https://<host>/api/v1/system/hea
 
 ### 现状基线（2026-08-24）
 
-- 硬编码 UtcNow 共 **33 处**（src 下非注释口径）。2026-10-22 审计 F-028 收口：IDateTimeProvider 重新引入（ITM-N33 曾当死代码清掉），版本/分享/转码/WebDAV 守卫/JWT/仓储/存储域已完成注入；余下 33 处为 Domain 实体工厂（FileVersion/SystemSetting/Entity/User/FileShare/FileItem/BackupDevice/FileOcrText/IDomainEvent）与 Shared 的 ApiResponse 信封，不在构造注入可达范围，留待「传时间戳入工厂」的下一批
+- 硬编码 UtcNow 共 **16 处**（src 下非注释口径）。2026-10-22 审计 F-028 收口（两批）：IDateTimeProvider 重新引入（ITM-N33 曾当死代码清掉），第一批覆盖版本/分享/转码/WebDAV 守卫/JWT/仓储/存储域，第二批覆盖 Api 层端点、Infrastructure 四服务与 Application 的 FileService/UserService。余下 16 处 = Domain 实体 13 处（Entity 基类 MarkAsModified、IDomainEvent.OccurredAt、FileVersion/SystemSetting/FileItem/FileShare/User/BackupDevice/FileOcrText 的工厂与变更方法）+ Shared ApiResponse 信封 2 处 + SystemDateTimeProvider 自身 1 处（合法实现）。实体层收口需要把时间戳穿进每个工厂与变更方法，属领域语义改动，单独批次处理；生产语义本就正确（实体在请求内创建/变更时读当时时间），代价只是实体级测试无法冻结时间
 
 ## §6 测试规范（xUnit）
 
@@ -156,6 +156,6 @@ curl -sD- -o /dev/null -H 'Accept-Encoding: br' https://<host>/api/v1/system/hea
 | 数字 | 真源 |
 |------|------|
 | NAS-G 编号 | `.ai/scripts/gate-check.sh`（现行 G1..G22） |
-| 基线数字（UtcNow 33 / 裸 IO 0 / 测试命名 6） | 本文件 §5.1 / §1.5 / §6.2，改动须同步脚本基线常量 |
+| 基线数字（UtcNow 16 / 裸 IO 0 / 测试命名 6） | 本文件 §5.1 / §1.5 / §6.2，改动须同步脚本基线常量 |
 | 缺陷登记 ITM-N 编号 | `.ai/lessons.md` 第二章 |
 | 误判模式 NPD-N 编号 | `.ai/review/known-false-positives.md` |

@@ -25,7 +25,8 @@ public sealed class UserService(
     IUnitOfWork unitOfWork,
     IPasswordHasher passwordHasher,
     IJwtService jwtService,
-    IOptions<JwtSettings> jwtSettings) : IUserService
+    IOptions<JwtSettings> jwtSettings,
+    NasSystem.Domain.Services.IDateTimeProvider dateTime) : IUserService
 {
     public async Task<Result<UserDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -205,7 +206,7 @@ public sealed class UserService(
             : (TimeSpan?)null;
         var accessToken = jwtService.GenerateAccessToken(user, lifetime);
         var refreshToken = jwtService.GenerateRefreshToken();
-        var expiresAt = jwtService.GetTokenExpiration(accessToken) ?? DateTime.UtcNow.AddHours(1);
+        var expiresAt = jwtService.GetTokenExpiration(accessToken) ?? dateTime.UtcNow.AddHours(1);
 
         var result = new LoginResultDto(
             Token: accessToken,

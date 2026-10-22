@@ -32,7 +32,8 @@ using NasSystem.Domain.Repositories;
 /// </remarks>
 public sealed class SnapshotBackgroundService(
     IServiceScopeFactory scopeFactory,
-    ILogger<SnapshotBackgroundService> logger) : BackgroundService
+    ILogger<SnapshotBackgroundService> logger,
+    NasSystem.Domain.Services.IDateTimeProvider dateTime) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -78,7 +79,7 @@ public sealed class SnapshotBackgroundService(
                 return;
             }
 
-            var now = DateTime.UtcNow;
+            var now = dateTime.UtcNow;
             if (!schedule.Matches(now))
                 return;
 

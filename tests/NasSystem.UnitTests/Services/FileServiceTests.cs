@@ -76,6 +76,9 @@ public class FileServiceTests
             new NasSystem.Application.Storage.DiskSpace(
                 new Mock<NasSystem.Domain.Services.IFileSystemService>().Object),
 
+            // 时间源（CONVENTIONS §5.1）
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider(),
+
             NullLogger<NasSystem.Application.Files.FileService>.Instance);
     }
 

@@ -94,12 +94,12 @@ public static class SystemEndpoints
         return group;
     }
 
-    private static IResult GetHealthCheck()
+    private static IResult GetHealthCheck(NasSystem.Domain.Services.IDateTimeProvider dateTime)
     {
         return Results.Ok(ApiResponse<object>.Ok(new
         {
             Status = "Healthy",
-            Timestamp = DateTime.UtcNow
+            Timestamp = dateTime.UtcNow
         }));
     }
 
@@ -164,7 +164,9 @@ public static class SystemEndpoints
             statusCode: StatusCodes.Status501NotImplemented);
     }
 
-    private static IResult RestartSystem(ISystemControlService controlService)
+    private static IResult RestartSystem(
+        ISystemControlService controlService,
+        NasSystem.Domain.Services.IDateTimeProvider dateTime)
     {
         // 真实调度：响应先返回，3 秒后进程停止。Docker 的
         // restart: unless-stopped 会把它拉起来；裸进程需外部守护
@@ -172,17 +174,19 @@ public static class SystemEndpoints
         return Results.Accepted($"/api/v1/system/status", ApiResponse<object>.Ok(new
         {
             Message = "系统正在重启，约 3 秒后停止进程",
-            ScheduledTime = DateTime.UtcNow.AddSeconds(3)
+            ScheduledTime = dateTime.UtcNow.AddSeconds(3)
         }));
     }
 
-    private static IResult ShutdownSystem(ISystemControlService controlService)
+    private static IResult ShutdownSystem(
+        ISystemControlService controlService,
+        NasSystem.Domain.Services.IDateTimeProvider dateTime)
     {
         controlService.ScheduleShutdown();
         return Results.Accepted($"/api/v1/system/status", ApiResponse<object>.Ok(new
         {
             Message = "系统正在关机，约 3 秒后停止进程",
-            ScheduledTime = DateTime.UtcNow.AddSeconds(3)
+            ScheduledTime = dateTime.UtcNow.AddSeconds(3)
         }));
     }
 

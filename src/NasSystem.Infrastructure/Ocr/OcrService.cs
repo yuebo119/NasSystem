@@ -24,7 +24,8 @@ public sealed class OcrService(
     IFileItemRepository fileItemRepository,
     IFileOcrTextRepository ocrTextRepository,
     IUnitOfWork unitOfWork,
-    ILogger<OcrService> logger) : IOcrService
+    ILogger<OcrService> logger,
+    NasSystem.Domain.Services.IDateTimeProvider dateTime) : IOcrService
 {
     /// <summary>可识别的图片扩展名（与缩略图管线的图片集一致，不含视频帧）</summary>
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -227,7 +228,7 @@ public sealed class OcrService(
                 item.Id, text.Length, regions.Count, started.ElapsedMilliseconds);
 
             return Result<OcrTextDto>.Success(ToDto(item, text, regions,
-                PaddleOcrEngineHolder.ModelName, (int)started.ElapsedMilliseconds, DateTime.UtcNow));
+                PaddleOcrEngineHolder.ModelName, (int)started.ElapsedMilliseconds, dateTime.UtcNow));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -32,7 +32,7 @@ public class SystemInfoTests
     {
         // :memory: 内存库：sqlite_version 与 journal_mode 都能取到真值
         var holder = new PalormSessionHolder(new DbOptions { ConnectionString = "Data Source=:memory:" });
-        var sut = new SystemInfoService(holder, BuildConfig("Data Source=:memory:"));
+        var sut = new SystemInfoService(holder, BuildConfig("Data Source=:memory:"), new SystemDateTimeProvider());
 
         var result = await sut.GetSystemInfoAsync();
 
@@ -70,7 +70,7 @@ public class SystemInfoTests
         // 运行时/OS/CPU/内存/网络/进程六域照常返回
         var badPath = "Z:\\no\\such\\directory\\nas.db";
         var holder = new PalormSessionHolder(new DbOptions { ConnectionString = $"Data Source={badPath}" });
-        var sut = new SystemInfoService(holder, BuildConfig($"Data Source={badPath}"));
+        var sut = new SystemInfoService(holder, BuildConfig($"Data Source={badPath}"), new SystemDateTimeProvider());
 
         var result = await sut.GetSystemInfoAsync();
 
@@ -90,7 +90,7 @@ public class SystemInfoTests
         // 连接串缺失时回落默认值 "Data Source=data/nas.db"（与 DI 注册同一默认），
         // 不抛异常；该文件在测试工作目录不存在，数据库域降级
         var holder = new PalormSessionHolder(new DbOptions { ConnectionString = "Data Source=data/nas.db" });
-        var sut = new SystemInfoService(holder, new ConfigurationBuilder().Build());
+        var sut = new SystemInfoService(holder, new ConfigurationBuilder().Build(), new SystemDateTimeProvider());
 
         var result = await sut.GetSystemInfoAsync();
 

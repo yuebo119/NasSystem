@@ -31,6 +31,9 @@ public class ThumbnailService : IThumbnailService
     private readonly ThumbnailOptions _options;
     private readonly ILogger<ThumbnailService> _logger;
 
+    /// <summary>时间源注入（CONVENTIONS §5.1）：缓存过期判定可测试</summary>
+    private readonly NasSystem.Domain.Services.IDateTimeProvider _dateTime;
+
     /// <summary>全局生成并发闸：编解码是 CPU 密集同步工作，无上限并行会打满线程池</summary>
     private readonly SemaphoreSlim _generationGate = new(Math.Max(2, Environment.ProcessorCount / 2));
 
@@ -42,11 +45,13 @@ public class ThumbnailService : IThumbnailService
     public ThumbnailService(
         IOptions<ThumbnailOptions> options,
         ILogger<ThumbnailService> logger,
-        NasSystem.Application.Media.ITranscodeService transcodeService)
+        NasSystem.Application.Media.ITranscodeService transcodeService,
+        NasSystem.Domain.Services.IDateTimeProvider dateTime)
     {
         _options = options.Value;
         _logger = logger;
         _transcodeService = transcodeService;
+        _dateTime = dateTime;
 
         // 确保缓存目录存在
         if (!Directory.Exists(_options.CacheDirectory))
@@ -93,7 +98,7 @@ public class ThumbnailService : IThumbnailService
             // 检查缓存是否过期（源文件更新或缓存时间过长）
             if (sourceFileInfo.Exists &&
                 cacheFileInfo.LastWriteTimeUtc > sourceFileInfo.LastWriteTimeUtc &&
-                DateTime.UtcNow - cacheFileInfo.LastWriteTimeUtc < TimeSpan.FromHours(_options.CacheExpirationHours))
+                _dateTime.UtcNow - cacheFileInfo.LastWriteTimeUtc < TimeSpan.FromHours(_options.CacheExpirationHours))
             {
                 try
                 {

@@ -228,13 +228,13 @@ public static class ServiceCollectionExtensions
         // 健康检查端点
         app.MapHealthChecks("/health");
 
-        // 版本信息端点
-        app.MapGet("/api/version", () => Results.Ok(new
+        // 版本信息端点。时间源从容器取（请求期），不用注册期字面量
+        app.MapGet("/api/version", (NasSystem.Domain.Services.IDateTimeProvider dateTime) => Results.Ok(new
         {
             Name = "NAS System",
             Version = "1.0.0",
             Environment = app.Environment.EnvironmentName,
-            Timestamp = DateTime.UtcNow
+            Timestamp = dateTime.UtcNow
         }))
         .WithName("GetVersion")
         .WithTags("System")

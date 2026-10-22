@@ -37,6 +37,7 @@ public static class ExportEndpoints
         CreateExportRequest request,
         IFileItemRepository fileRepository,
         IStoragePoolRepository poolRepository,
+        NasSystem.Domain.Services.IDateTimeProvider dateTime,
         ClaimsPrincipal user,
         CancellationToken cancellationToken)
     {
@@ -61,7 +62,7 @@ public static class ExportEndpoints
             return new ExportResult(
                 defaultPool.MountPath,
                 rootPrefix,
-                $"{rootPrefix}-{DateTime.UtcNow:yyyyMMdd-HHmmss}",
+                $"{rootPrefix}-{dateTime.UtcNow:yyyyMMdd-HHmmss}",
                 request.Password);
         }
 
@@ -73,7 +74,7 @@ public static class ExportEndpoints
         if (!item.IsFolder)
             return Results.BadRequest(new { message = "只能导出目录（单文件请直接下载）" });
 
-        var fileName = $"{item.Name}-{DateTime.UtcNow:yyyyMMdd-HHmmss}";
+        var fileName = $"{item.Name}-{dateTime.UtcNow:yyyyMMdd-HHmmss}";
         return new ExportResult(item.PhysicalPath, item.Name, fileName, request.Password);
     }
 

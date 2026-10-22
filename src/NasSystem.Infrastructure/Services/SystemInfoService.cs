@@ -25,7 +25,8 @@ using PalORM.Sqlite;
 /// </summary>
 public sealed class SystemInfoService(
     PalormSessionHolder sessions,
-    IConfiguration configuration) : ISystemInfoService
+    IConfiguration configuration,
+    NasSystem.Domain.Services.IDateTimeProvider dateTime) : ISystemInfoService
 {
     private const string DefaultConnectionString = "Data Source=data/nas.db";
 
@@ -86,12 +87,12 @@ public sealed class SystemInfoService(
         UserName = Environment.UserName
     };
 
-    private static CpuInfo CollectCpu(Process process)
+    private CpuInfo CollectCpu(Process process)
     {
         // 进程 CPU 占用 = 进程 CPU 时间 /（核数 × 进程运行时长）。
         // 整机 CPU 需要性能计数器（Windows 专有）或解析 /proc/stat，
         // 跨平台口径不诚实，这里只报应用自身占用，展示层如实标注
-        var elapsedSeconds = (DateTime.UtcNow - process.StartTime.ToUniversalTime()).TotalSeconds;
+        var elapsedSeconds = (dateTime.UtcNow - process.StartTime.ToUniversalTime()).TotalSeconds;
         double cpuPercent = elapsedSeconds > 0
             ? process.TotalProcessorTime.TotalSeconds / (Environment.ProcessorCount * elapsedSeconds) * 100
             : 0;

@@ -81,6 +81,8 @@ public class ProtectedDirectoryEnforcementTests
             _protectedDirectoryServiceMock.Object,
             // 磁盘物理剩余探测（F-027 收口后为注入依赖）
             new NasSystem.Application.Storage.DiskSpace(_fileSystemServiceMock.Object),
+            // 时间源（CONVENTIONS §5.1）
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider(),
             NullLogger<FileService>.Instance);
     }
 

@@ -85,7 +85,9 @@ public sealed class NasHub : Hub
 /// Application 服务仅依赖抽象接口在用例成功路径发出事件，实现经 DI 注入。
 /// 这与 ILogger/MailKit 等横切关注点的"接口在内、实现在外"布局一致。
 /// </remarks>
-public sealed class HubNotificationService(IHubContext<NasHub> hubContext) : IHubNotificationService
+public sealed class HubNotificationService(
+    IHubContext<NasHub> hubContext,
+    NasSystem.Domain.Services.IDateTimeProvider dateTime) : IHubNotificationService
 {
     /// <summary>
     /// 向订阅了 <paramref name="path"/> 的客户端推送变更。
@@ -108,7 +110,7 @@ public sealed class HubNotificationService(IHubContext<NasHub> hubContext) : IHu
             Path = path,
             ChangeType = changeType.ToString(),
             Data = data,
-            Timestamp = DateTime.UtcNow
+            Timestamp = dateTime.UtcNow
         };
 
         // 目录组：浏览该目录的客户端（Files 页等）做精准静默刷新

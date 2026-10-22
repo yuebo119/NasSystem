@@ -74,7 +74,7 @@ public sealed partial class FileService
                 // ITM-N7/N4：默认软删除——自身 + 后代子树标记，回收站读 IsDeleted 记录。
                 // 单条 SQL 替代逐条实体 UPDATE（含根自身），先取轻量条目清单供副作用处理
                 var subtree = await _fileRepository.GetSubtreeEntriesAsync(item.Path, cancellationToken);
-                await _fileRepository.SoftDeleteSubtreeAsync(item.Path, DateTime.UtcNow, cancellationToken);
+                await _fileRepository.SoftDeleteSubtreeAsync(item.Path, _dateTime.UtcNow, cancellationToken);
 
                 foreach (var entry in subtree)
                 {

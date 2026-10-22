@@ -104,6 +104,8 @@ public class FilePathNormalizeTests
             // 磁盘物理剩余探测（F-027 收口后为注入依赖）
             new NasSystem.Application.Storage.DiskSpace(
                 new Moq.Mock<NasSystem.Domain.Services.IFileSystemService>().Object),
+            // 时间源（CONVENTIONS §5.1）
+            new NasSystem.Infrastructure.Services.SystemDateTimeProvider(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<NasSystem.Application.Files.FileService>.Instance);
     }
 }

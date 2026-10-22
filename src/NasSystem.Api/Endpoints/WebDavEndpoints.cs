@@ -65,6 +65,7 @@ public static class WebDavEndpoints
         IUnitOfWork unitOfWork,
         IWebDavAuthGuard authGuard,
         ISystemConfigService configService,
+        NasSystem.Domain.Services.IDateTimeProvider dateTime,
         CancellationToken cancellationToken)
     {
         var method = context.Request.Method;
@@ -99,7 +100,7 @@ public static class WebDavEndpoints
         }
 
         var (principal, authFailure) = await AuthenticateAsync(
-            context, userRepository, passwordHasher, unitOfWork, authGuard, configService, cancellationToken);
+            context, userRepository, passwordHasher, unitOfWork, authGuard, configService, dateTime, cancellationToken);
         if (authFailure is not null)
         {
             return authFailure;
@@ -115,7 +116,7 @@ public static class WebDavEndpoints
 
         return method.ToUpperInvariant() switch
         {
-            "PROPFIND" => await PropFindAsync(context, virtualPath, userId, browseService, cancellationToken),
+            "PROPFIND" => await PropFindAsync(context, virtualPath, userId, browseService, dateTime, cancellationToken),
             "GET" => await GetAsync(context, virtualPath, userId, browseService, transferService, cancellationToken),
             "HEAD" => await HeadAsync(context, virtualPath, userId, browseService, cancellationToken),
             "PUT" => await PutAsync(context, virtualPath, userId, browseService, transferService, cancellationToken),
@@ -139,6 +140,7 @@ public static class WebDavEndpoints
         IUnitOfWork unitOfWork,
         IWebDavAuthGuard authGuard,
         ISystemConfigService configService,
+        NasSystem.Domain.Services.IDateTimeProvider dateTime,
         CancellationToken cancellationToken)
     {
         // 测试与反代场景下 RemoteIpAddress 可能为空，统一归到 unknown 键
@@ -195,7 +197,7 @@ public static class WebDavEndpoints
 
         // 最后登录时间节流更新：WebDAV 每个目录浏览都带认证，不节流就是每请求
         // 一次 User 写。超过一小时未记录才写，既保"最后登录"语义又不放大写
-        if (user.LastLoginAt is null || DateTime.UtcNow - user.LastLoginAt.Value > TimeSpan.FromHours(1))
+        if (user.LastLoginAt is null || dateTime.UtcNow - user.LastLoginAt.Value > TimeSpan.FromHours(1))
         {
             user.RecordLogin();
             userRepository.UpdateAsync(user, cancellationToken);
@@ -255,6 +257,7 @@ public static class WebDavEndpoints
         string path,
         Guid userId,
         IFileBrowseService browseService,
+        NasSystem.Domain.Services.IDateTimeProvider dateTime,
         CancellationToken cancellationToken)
     {
         var depth = context.Request.Headers["Depth"].ToString();
@@ -291,7 +294,7 @@ public static class WebDavEndpoints
             // 这次聚合不产生额外查询
             var latest = content.Items.Count > 0
                 ? content.Items.Max(i => i.UpdatedAt ?? i.CreatedAt)
-                : DateTime.UtcNow;
+                : dateTime.UtcNow;
             var entries = new List<FileItemDto> { ToCollectionItem(content.Path, content.Name, latest) };
             if (includeChildren)
             {
