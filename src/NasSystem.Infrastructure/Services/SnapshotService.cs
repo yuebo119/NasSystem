@@ -28,6 +28,13 @@ public sealed class SnapshotService(
     private const int DefaultPageSize = 50;
     private const int MaxPageSize = 200;
 
+    /// <summary>
+    /// 条目分批大小。快照条目可达百万级，整表一次性物化会在
+    /// List&lt;SnapshotEntry&gt; 与仓储行对象上各留一份全量副本；
+    /// 按批提交把峰值压到与批次大小相关，所有批次仍在同一个 UoW 事务内。
+    /// </summary>
+    private const int EntryBatchSize = 5000;
+
     public async Task<Result<SnapshotDto>> CreateAsync(
         string rootPath,
         string? name,
@@ -45,7 +52,7 @@ public sealed class SnapshotService(
         // 采集库内子树（含删除态记录，回收站形态也是"那一刻的状态"）。
         // 根自身不入库：快照对象就是根，条目从根的子孙开始
         var subtree = await fileItems.GetSnapshotEntriesAsync(normalizedRoot, cancellationToken);
-        var entries = new List<SnapshotEntry>(subtree.Count);
+        var entries = new List<SnapshotEntry>(Math.Min(EntryBatchSize, subtree.Count));
         var fileCount = 0;
         var folderCount = 0;
         var totalSize = 0L;
@@ -70,9 +77,16 @@ public sealed class SnapshotService(
                 fileCount++;
                 totalSize += item.SizeBytes;
             }
+
+            if (entries.Count >= EntryBatchSize)
+            {
+                await snapshots.AddEntriesAsync(entries.ToArray(), cancellationToken);
+                entries.Clear();
+            }
         }
 
-        await snapshots.AddEntriesAsync(entries, cancellationToken);
+        if (entries.Count > 0)
+            await snapshots.AddEntriesAsync(entries.ToArray(), cancellationToken);
         snapshot.MarkCompleted(fileCount, folderCount, totalSize);
         snapshots.Update(snapshot);
         await SaveChangesAsync(cancellationToken);
