@@ -89,20 +89,32 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 容量控制改为余量预检加边写边检，中断留下的 `.uploading-` 半成品由扫描同步
 跳过。注意 multipart 字段顺序：`path`/`overwrite` 必须先于 `file`（流单向消费）。
 
-### 压缩层归属（未决，待部署环境实测）
+### 压缩层归属（2026-10-22 补实测数据，结论：两层等价，无需纠结）
 
 微软文档记录 nginx 代理时会剥掉请求的 `Accept-Encoding`，若属实则生产路径上
-ASP.NET Core 的响应压缩中间件全程空转，真正压缩的是 nginx 的 gzip（level 6，无 brotli）。
-本机无 nginx 与 docker，该行为**未实测**，仅直连 Kestrel 验证过 br/gzip 都生效。
+ASP.NET Core 的响应压缩中间件空转，真正压缩的是 nginx 的 gzip（level 6，无 brotli）。
+本机无 nginx 与 docker，该行为**仍未实测**。
 
-部署后一条命令可判定：
+但 2026-10-22 优化轮实测出的事实让这个未决项的**实际影响可以忽略**：
+应用侧把 Brotli/Gzip 都设为 `CompressionLevel.Optimal` 后，两者输出几乎相同——
+最大产物 element-plus（636,602 字节）br 201,296 / gzip 204,466，差 1.5%。
+也就是说无论最终是哪一层在压，客户端拿到的体积基本一致；真正要保证的是
+**等级不是默认的 Fastest**（Fastest 下 br 只有 40%，Optimal 是 31%）。
+
+部署后仍建议跑一条命令确认压缩层归属：
 
 ```
 curl -sD- -o /dev/null -H 'Accept-Encoding: br' https://<host>/api/v1/system/health | grep -i content-encoding
 ```
 
-有 `br` 说明压缩在应用侧；只有 `gzip` 或无该头，说明被 nginx 接管，此时调
-`AddResponseCompression` 的任何参数都不产生生产效果，要调的是 nginx 的 gzip 配置。
+有 `br` 说明压缩在应用侧（等级配置生效）；只有 `gzip` 或无该头，说明被 nginx
+接管，此时要调的是 nginx 的 `gzip_comp_level`。
+
+**缓存正确性**已本地实测收口：.NET 11 起压缩响应**始终**带
+`Vary: Accept-Encoding`（未压缩时也带，见 breaking-changes/11），而 nginx
+自 1.7.7 起在 proxy_cache 中处理 Vary，因此现有 `proxy_cache_key`
+（不含编码）不会把 br 变体发给不支持 br 的客户端。代价只是不同编码变体
+各自占一份缓存，属可接受的轻微低效。
 
 ## §5 时间处理
 
