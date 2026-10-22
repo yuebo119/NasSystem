@@ -961,3 +961,23 @@ Environment.MachineName / TimeZone             0.00ms
 - 首屏 JS 压缩传输：raw 926,753 → br **303,288**（32.7%）
 
 提交：`6fe30ea`（压缩等级）、`7154bcb`（夹具对齐 + 锁定）。
+
+### 10.5 静态资源缓存头（本轮新增）
+
+`nginx.conf` 的 `production` profile 一直是 `/assets/` 一年 immutable、入口
+`no-cache`，但直连 Kestrel（compose 默认只起应用，边缘可选）时静态文件只发
+`ETag`/`Last-Modified`，浏览器按「文件年龄的 10%」做启发式缓存，首屏近 1MB
+的 JS 在回访时仍可能重新校验。
+
+补法：`UseStaticFiles` 的 `OnPrepareResponse` 按路径前缀分流，`/assets/` 发
+`public, max-age=31536000, immutable`，其余（`index.html`、`sw.js`、图片等）
+发 `no-cache`；SPA 回退分支在 `SendFileAsync` 前同样发 `no-cache`。
+
+实测（`curl -D-`，运行中的实例）：`/assets/Backup-*.js` → immutable；
+`/`、`/files`、`/sw.js` → `no-cache`。锁定测试 `StaticCacheHeaderTests` 三例
+（哈希产物 / 入口与 SPA 回退 / Service Worker），走真实的 `wwwroot` 产物，
+从入口 HTML 里解析出实际哈希文件名而不是硬编码。
+
+`nginx.conf` 同步加了两处 `proxy_hide_header Cache-Control`：上游现在也发这份
+策略，不隐藏会由 `add_header` 追加出两条同值头（行为无害但不干净）。该改动
+`[未实测]`，本机无 nginx 与 docker；`proxy_hide_header` 是核心指令，语义稳定。

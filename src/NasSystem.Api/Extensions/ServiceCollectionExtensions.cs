@@ -228,9 +228,26 @@ public static class ServiceCollectionExtensions
         // 限流（必须在路由解析后、端点执行前）
         app.UseRateLimiter();
 
-        // 静态文件（前端 SPA）
+        // 静态文件（前端 SPA）。缓存头与 nginx.conf 同口径（2026-10-22 优化轮）：
+        // - /assets/* 是 Vite 的内容哈希产物（index-HASH.js），文件名变则内容必变，
+        //   可以无限期强缓存。此前直连 Kestrel 只发 ETag/Last-Modified，
+        //   浏览器按启发式缓存（约为文件年龄的 10%），每次回访都可能重新校验
+        //   958KB 的 JS；nginx 生产 profile 本来就有 immutable，但那个 profile
+        //   是可选的，未启用时这条是唯一保障
+        // - 其余静态文件（index.html / sw.js / manifest / favicon）必须每次回源校验：
+        //   长缓存会让发版后的浏览器继续用旧 HTML 引用已删除的哈希资源，页面白屏
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            OnPrepareResponse = ctx =>
+            {
+                var headers = ctx.Context.Response.Headers;
+                if (ctx.Context.Request.Path.StartsWithSegments("/assets"))
+                    headers.CacheControl = "public, max-age=31536000, immutable";
+                else
+                    headers.CacheControl = "no-cache";
+            }
+        });
 
         // 注册 API 端点
         app.MapApiEndpoints();
@@ -278,6 +295,9 @@ public static class ServiceCollectionExtensions
                 return;
             }
 
+            // 与静态中间件同口径：HTML 入口必须每次回源校验，否则发版后
+            // 浏览器拿旧 HTML 引用已删除的哈希资源导致白屏
+            context.Response.Headers.CacheControl = "no-cache";
             await context.Response.SendFileAsync(indexFile);
         });
 

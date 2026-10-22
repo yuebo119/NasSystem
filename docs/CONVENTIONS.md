@@ -116,6 +116,17 @@ curl -sD- -o /dev/null -H 'Accept-Encoding: br' https://<host>/api/v1/system/hea
 （不含编码）不会把 br 变体发给不支持 br 的客户端。代价只是不同编码变体
 各自占一份缓存，属可接受的轻微低效。
 
+### 静态资源缓存策略（2026-10-22）
+
+Vite 产物是内容哈希文件名，`/assets/` 可以无限期强缓存；`index.html`、`sw.js`
+与 SPA 回退必须每次回源校验，否则发版后浏览器拿旧 HTML 引用已删除的哈希资源。
+
+应用侧（`ServiceCollectionExtensions` 的 `UseStaticFiles` 与 SPA fallback）与
+边缘（`nginx.conf` 两个 location）发同一条策略：前者保证直连 Kestrel 的部署，
+后者覆盖启用生产 profile 的场景。nginx 侧用 `proxy_hide_header Cache-Control`
+隐藏上游那份，否则 `add_header` 会追加出两条同值的 Cache-Control。
+锁定测试 `StaticCacheHeaderTests` 三例。
+
 ## §5 时间处理
 
 | # | 规则 |
