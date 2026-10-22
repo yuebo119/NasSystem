@@ -184,14 +184,47 @@ public sealed class SystemInfoService(
         };
     }
 
-    private static NetworkInfo CollectNetwork()
+    /// <summary>
+    /// 网卡枚举缓存。2026-10-22 优化轮实测：NetworkInterface.GetAllNetworkInterfaces()
+    /// 在本机耗时 112ms（/system/info 服务层总耗时 233ms 的一半，另一次
+    /// GetIsNetworkAvailable 同量级），是整个系统信息端点唯一的主导项。
+    ///
+    /// 缓存 2 秒而不是更长：吞吐量（ReceivedBytes/SentBytes）要能反映近期变化，
+    /// 但网卡集合与 IP 不会在秒级频繁变动。2s 覆盖「系统信息页连续刷新/重试」
+    /// 这批重复调用，又不会让流量数字看起来冻住。
+    /// 静态字段而非实例：服务是 Scoped（内部查 SQLite 版本），缓存必须跨请求存活
+    /// </summary>
+    private static readonly (NetworkInfo Info, DateTime At)[] NetworkCacheSlot = new (NetworkInfo, DateTime)[1];
+    private static readonly TimeSpan NetworkCacheTtl = TimeSpan.FromSeconds(2);
+    private static readonly Lock NetworkCacheLock = new();
+
+    private NetworkInfo CollectNetwork()
+    {
+        lock (NetworkCacheLock)
+        {
+            var cached = NetworkCacheSlot[0];
+            if (cached.Info is not null && dateTime.UtcNow - cached.At < NetworkCacheTtl)
+                return cached.Info;
+        }
+
+        var info = CollectNetworkUncached();
+        lock (NetworkCacheLock)
+        {
+            NetworkCacheSlot[0] = (info, dateTime.UtcNow);
+        }
+        return info;
+    }
+
+    private static NetworkInfo CollectNetworkUncached()
     {
         var hostName = Environment.MachineName;
         try
         {
-            // 取首个可用（ operational ）网卡：本地枚举，不触发 DNS 解析
-            var nic = NetworkInterface.GetAllNetworkInterfaces()
-                .FirstOrDefault(n => n.OperationalStatus == OperationalStatus.Up
+            // 取首个可用（ operational ）网卡：本地枚举，不触发 DNS 解析。
+            // 只枚举一次：原实现在无匹配网卡与正常分支各调一次
+            // GetIsNetworkAvailable()（内部又会枚举一遍全部网卡）
+            var nics = NetworkInterface.GetAllNetworkInterfaces();
+            var nic = nics.FirstOrDefault(n => n.OperationalStatus == OperationalStatus.Up
                     && n.NetworkInterfaceType is NetworkInterfaceType.Ethernet
                         or NetworkInterfaceType.Wireless80211
                         or NetworkInterfaceType.GigabitEthernet);
@@ -200,7 +233,7 @@ public sealed class SystemInfoService(
             {
                 return new NetworkInfo
                 {
-                    IsAvailable = NetworkInterface.GetIsNetworkAvailable(),
+                    IsAvailable = nics.Any(n => n.OperationalStatus == OperationalStatus.Up),
                     HostName = hostName,
                     PrimaryInterface = string.Empty,
                     InterfaceType = string.Empty,
@@ -218,7 +251,8 @@ public sealed class SystemInfoService(
             var stats = nic.GetIPv4Statistics();
             return new NetworkInfo
             {
-                IsAvailable = NetworkInterface.GetIsNetworkAvailable(),
+                // 用同一次枚举结果判定，不再触发第二轮网卡扫描
+                IsAvailable = true,
                 HostName = hostName,
                 PrimaryInterface = nic.Name,
                 InterfaceType = nic.NetworkInterfaceType.ToString(),
