@@ -278,6 +278,8 @@ wslc run -d --name nas-system --network nas-network --network-alias nas-system \
 | `ConnectionStrings__DefaultConnection` | 数据库连接 | - |
 | `NasSystem__StoragePath` | 存储路径 | /app/storage |
 | `NasSystem__AdminPassword` | 初始管理员密码（仅首次播种生效；不提供则生成随机密码并打印到启动日志） | - |
+| `NasSystem__ForwardedHeaders__KnownProxies` | 反代真实客户端 IP：可信代理 IP 列表（填 nginx 容器 IP）。填了才采纳 X-Forwarded-For，WebDAV 失败锁定与分享限流由此按真实客户端隔离；不填则全体共享一个桶（详见 docker-compose.yml 注释） | - |
+| `NasSystem__RateLimiting__ShareGlobalPerMinute` | 分享码探测的全局速率闸（次/分钟），防分布式枚举 | 600 |
 
 ### 数据卷
 

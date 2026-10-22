@@ -37,6 +37,19 @@ services:
       - Jwt__Issuer=NasSystem
       - Jwt__Audience=NasSystemUsers
       - Jwt__AccessTokenExpirationMinutes=60
+      # 反代真实客户端 IP（审计 F-072）。nginx 之后 Kestrel 看到的对端是
+      # nginx 容器，WebDAV 失败锁定与分享限流都会退化成"全体共享一个桶"：
+      # 一个攻击者的失败轰炸把同反代下所有正常用户一起锁掉。
+      # 填 nginx 容器 IP（或整个 docker 网桥段）后应用才采纳 X-Forwarded-For。
+      # 默认不填 = 不信任客户端自报头：6050 端口对外发布，无条件信任等于
+      # 允许伪造客户端键绕过失败锁定，比共享桶更糟。
+      # 给 nginx 配固定 IP 的做法（推荐，IP 稳定）：
+      #   networks: { nas-network: { ipv4_address: 172.20.0.10 } }
+      # 然后这里填 172.20.0.10；或填网段 NasSystem__ForwardedHeaders__KnownNetworks=172.20.0.0/16
+      # - NasSystem__ForwardedHeaders__KnownProxies=${NAS_FORWARDED_PROXY_IP:-}
+      # 分享码枚举的全局速率闸阈值（次/分钟，缺省 600）。合法场景一个链接
+      # 被几十人同时点开远到不了；若实测正常使用会触碰 429 就调大
+      # - NasSystem__RateLimiting__ShareGlobalPerMinute=600
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6050/health"]
