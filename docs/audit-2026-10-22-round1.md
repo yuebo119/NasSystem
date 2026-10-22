@@ -150,7 +150,7 @@
 
 本轮合计新增测试 11 个：单元 10 例（199 增至 209），集成 1 例（306 增至 307）。其中 `ImageDecoderTests` 8 例、`PaddleOcrEngineHolderTests` 1 例、`SnapshotServiceBatchTests` 1 例、`MediaMetadataExtractorTests` 1 例。
 
-提交前最终验证：构建 exit 0 / 0 错误（`--no-incremental`）；单测 209/0；集成 307/0；前端 183/26、oxlint 0 警告、vue-tsc exit 0、生产构建 exit 0；门禁 20 通过 / 0 失败 / 1 跳过（`--allow-dirty` 跳过 G22）。
+提交前最终验证：构建 exit 0 / 0 错误（`--no-incremental`）；单测 209/0；集成 307/0；前端 183/26、oxlint 0 警告、vue-tsc exit 0、生产构建 exit 0；门禁 20 通过 / 0 失败 / 1 跳过（`--allow-dirty` 跳过 G22）。报告提交后工作树干净复跑：21 通过 / 0 失败 / 0 跳过（NAS-G22 恢复执行）。
 
 ## 7. 实测数据
 
