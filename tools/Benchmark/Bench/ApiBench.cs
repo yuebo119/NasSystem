@@ -57,6 +57,17 @@ public static class ApiBench
 
             var token = await LoginAsync(baseUrl);
 
+            // 浏览端点是列目录的代表路径。夹具的 OwnerId 若与登录用户不一致，
+            // 该端点会整组 404 并被错误计数吞掉，报告只剩 7 个端点。
+            // 预检失败直接中止，避免"少一组数据"被当成正常结果。
+            using (var probeClient = CreateClient(token))
+            using (var probe = await probeClient.GetAsync($"{baseUrl}/api/v1/files/browse/folder000"))
+            {
+                if (!probe.IsSuccessStatusCode)
+                    throw new InvalidOperationException(
+                        $"基准预检失败：/api/v1/files/browse/folder000 返回 {(int)probe.StatusCode}，检查种子库归属");
+            }
+
             // 分享码从种子库取：公开分享访问是真实 NAS 里最热的只读路径之一，
             // 且它正是仓储里唯一还有 3 次按 Id 直查的路径（B3 的优化对象），必须进基准
             var shareCode = await FirstShareCodeAsync(workDb) ?? "share000000";
@@ -64,7 +75,7 @@ public static class ApiBench
             var endpoints = new[]
             {
                 $"{baseUrl}/api/v1/system/health",
-                $"{baseUrl}/api/v1/files/browse/%2Ffolder000",
+                $"{baseUrl}/api/v1/files/browse/folder000",
                 $"{baseUrl}/api/v1/files/search?query=report",
                 $"{baseUrl}/api/v1/files/statistics",
                 $"{baseUrl}/api/v1/storage/overview",

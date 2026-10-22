@@ -114,7 +114,8 @@ public static class Seeder
             var folderName = $"folder{t:D3}";
             var folderPath = $"/{folderName}";
             await InsertFileItem(connection, random, folderId, folderName, folderPath,
-                folderType: 1, parentId: null, poolIds, userIds, now, sizeBytes: 0, extension: null, deleted: false);
+                folderType: 1, parentId: null, poolIds, userIds, now, sizeBytes: 0, extension: null,
+                deleted: false, ownerId: userIds[0]);
             inserted++;
 
             for (var f = 0; f < perTop && inserted < targetRows; f++)
@@ -131,7 +132,7 @@ public static class Seeder
                     folderType: isFolder ? 1 : 0, parentId: folderId, poolIds, userIds, now,
                     sizeBytes: isFolder ? 0 : random.Next(1024, 64 * 1024 * 1024),
                     extension: isFolder ? null : Path.GetExtension(name),
-                    deleted: deleted);
+                    deleted: deleted, ownerId: userIds[0]);
                 inserted++;
 
                 // 每 20 条取一个非软删文件作分享目标（FileItemId 是非空外键）
@@ -173,7 +174,7 @@ public static class Seeder
     private static async Task InsertFileItem(
         SqliteConnection connection, Random random, Guid id, string name, string path,
         int folderType, Guid? parentId, List<Guid> poolIds, List<Guid> userIds, DateTime now,
-        long sizeBytes, string? extension, bool deleted)
+        long sizeBytes, string? extension, bool deleted, Guid? ownerId = null)
     {
         await ExecuteAsync(connection,
             """INSERT INTO "FileItems" ("Id","Name","Path","PhysicalPath","ItemType","SizeBytes","MimeType","Extension","Hash","StoragePoolId","OwnerId","ParentId","IsDeleted","DeletedAt","IsHidden","IsSystem","IsReadOnly","CreatedAt") VALUES ($id,$name,$path,$phys,$type,$size,$mime,$ext,$hash,$pool,$owner,$parent,$del,$delat,$hid,$sys,$ro,$created)""",
@@ -184,7 +185,7 @@ public static class Seeder
             ("$ext", (object?)extension ?? DBNull.Value),
             ("$hash", extension is null ? DBNull.Value : Convert.ToHexStringLower(RandomBytes(random, 16))),
             ("$pool", Key(poolIds[random.Next(poolIds.Count)])),
-            ("$owner", Key(userIds[random.Next(userIds.Count)])),
+            ("$owner", Key(ownerId ?? userIds[random.Next(userIds.Count)])),
             ("$parent", (object?)(parentId.HasValue ? Key(parentId.Value) : null) ?? DBNull.Value),
             ("$del", deleted ? 1 : 0),
             ("$delat", deleted ? Iso(now.AddDays(-random.Next(1, 30))) : DBNull.Value),
