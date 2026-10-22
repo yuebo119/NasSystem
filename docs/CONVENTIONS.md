@@ -27,12 +27,12 @@ NasSystem.Shared          ← 共享内核：Result/ApiResponse/PagedResult（�
 | 1.2 | Application 层仅允许 ProjectReference Domain + Shared；禁止引用 Infrastructure/Api |
 | 1.3 | Domain + Application 源码零基础设施关键字：`DbContext` / `SqlConnection` / `SqliteConnection` / `DbCommand` |
 | 1.4 | Application + Domain 源码零表现层关键字：`HttpClient` / `IHttpClientFactory` / `HttpContext` / `Hub` |
-| 1.5 | 文件系统访问收口 `IFileSystemService` 抽象；Application 层裸 IO 调用（`File.X`/`Directory.X`/`new FileStream|StreamReader|StreamWriter|ZipArchive|DriveInfo`）属存量债务，只减不增 |
+| 1.5 | 文件系统访问收口 `IFileSystemService` 抽象；Application 层裸 IO 调用（`File.X`/`Directory.X`/`new FileStream\|StreamReader\|StreamWriter\|ZipArchive\|DriveInfo\|FileInfo\|DirectoryInfo`）属存量债务，只减不增 |
 | 1.6 | 具体异常类型必须 `sealed`；公共接口必须 `I` 前缀 |
 
 ### 现状基线（2026-08-24；2026-10-22 审计收口后重定标）
 
-- Application 层裸 IO 直调 **0 处**（白名单口径：`File.Exists|Create|Delete|Copy|Move|...` 等真实 System.IO 成员名，剔除 `"File.Xxx"` 错误码字符串误报）。2026-10-22 审计 F-027 收口归零：FileVersionStore 从静态类改为可注入服务，版本/分享/扫描/磁盘探测域全部经 IFileSystemService，接口补齐 CreateHardLink/CopyFile/ReplaceFile/EnumerateFiles/EnumerateDirectories/GetAvailableFreeSpace/IsVolumeReady
+- Application 层裸 IO 直调 **0 处**（白名单口径：`File.Exists|Create|Delete|Copy|Move|...` 等真实 System.IO 成员名，剔除 `"File.Xxx"` 错误码字符串误报）。2026-10-22 审计 F-027 收口归零：FileVersionStore 从静态类改为可注入服务，版本/分享/扫描/磁盘探测域全部经 IFileSystemService，接口补齐 CreateHardLink/CopyFile/ReplaceFile/EnumerateFiles/EnumerateDirectories/GetAvailableFreeSpace/IsVolumeReady。2026-10-22 第 2 轮 F-084 把 `new FileInfo/new DirectoryInfo` 纳入门禁口径（此前 G16 模式漏掉这两型，FileService.Sync 两处裸 IO 未被计入），两处改经 `IFileSystemService.GetDirectoryInfo/GetFileInfo`，基线保持 0
 - 异常 sealed 违规 0；接口 I 前缀违规 0 ✓
 
 ## §2 异步与并发

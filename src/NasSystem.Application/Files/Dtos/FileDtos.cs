@@ -164,6 +164,9 @@ public sealed record ScanResultDto
     public string? TotalSizeDisplay { get; init; }
     public TimeSpan Duration { get; init; }
     public string? Message { get; init; }
+
+    /// <summary>因权限或读取失败被跳过的目录/文件数（F-084）</summary>
+    public int SkippedUnreadable { get; init; }
 }
 
 /// <summary>

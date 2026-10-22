@@ -369,6 +369,8 @@ export interface ScanResult {
   removedFiles: number
   removedFolders: number
   updatedFiles: number
+  /** 权限/读取失败被跳过的目录与文件数（后端 F-084） */
+  skippedUnreadable: number
   totalSizeBytes: number
   totalSizeDisplay?: string
   duration: string

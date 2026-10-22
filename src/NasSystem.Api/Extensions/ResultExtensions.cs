@@ -41,6 +41,8 @@ public static class ResultExtensions
         ["FileVersion.CurrentVersionConflict"] = HttpStatusCode.Conflict,
         ["StoragePool.NameExists"] = HttpStatusCode.Conflict,
         ["StoragePool.MountPathExists"] = HttpStatusCode.Conflict,
+        // 并发扫描的单飞闸拒绝：有另一个扫描在跑，属状态冲突
+        ["Scan.InProgress"] = HttpStatusCode.Conflict,
 
         // ─── 507：容量/配额（RFC 4918 语义；WebDAV 层本就特判这两个码）───
         ["Storage.InsufficientSpace"] = HttpStatusCode.InsufficientStorage,
@@ -66,6 +68,8 @@ public static class ResultExtensions
         ["User.CannotDeleteSuperAdmin"] = HttpStatusCode.BadRequest,
         ["StoragePool.CannotDeleteDefault"] = HttpStatusCode.BadRequest,
         ["Thumbnail.NotSupported"] = HttpStatusCode.BadRequest,
+        // 源文件损坏/伪装扩展名/超出像素上限：客户端输入问题，不是服务端故障
+        ["Thumbnail.DecodeFailed"] = HttpStatusCode.BadRequest,
 
         // ─── 403：认证了但没权限 ───
         ["File.ProtectedForbidden"] = HttpStatusCode.Forbidden,

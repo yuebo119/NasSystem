@@ -1064,4 +1064,79 @@ public class FileServiceTests
     }
 
     #endregion
+
+    #region ScanAndSyncAsync Tests
+
+    [Fact]
+    public async Task ScanAndSyncAsync_WhileAnotherScanRunning_ReturnsInProgress()
+    {
+        var userId = Guid.NewGuid();
+        var pool = StoragePool.Create("扫描池", "/mnt/scan");
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+        _fileSystemServiceMock.Setup(x => x.DirectoryExists(It.IsAny<string>())).Returns(true);
+        _fileSystemServiceMock.Setup(x => x.EnumerateDirectories(It.IsAny<string>())).Returns(Array.Empty<string>());
+        _fileSystemServiceMock.Setup(x => x.EnumerateFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _fileRepositoryMock
+            .Setup(x => x.GetScanEntriesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                entered.TrySetResult();
+                await release.Task;
+                return (IReadOnlyList<FileItemScanEntry>)Array.Empty<FileItemScanEntry>();
+            });
+
+        var first = _sut.ScanAndSyncAsync(userId);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            // 单飞闸要求"立即拒绝"而不是排队等待：没有闸时这里会挂在 release 上
+            var secondTask = _sut.ScanAndSyncAsync(userId);
+            var completed = await Task.WhenAny(secondTask, Task.Delay(TimeSpan.FromSeconds(2)));
+            completed.Should().Be(secondTask, "第二个扫描应立即返回 InProgress 而不是等待");
+
+            var second = await secondTask;
+            second.IsFailure.Should().BeTrue("第二个扫描应被单飞闸拒绝");
+            second.Error.Code.Should().Be("Scan.InProgress");
+        }
+        finally
+        {
+            release.TrySetResult();
+            var firstResult = await first;
+            firstResult.IsSuccess.Should().BeTrue("第一个扫描释放闸后应完成");
+        }
+    }
+
+    [Fact]
+    public async Task ScanAndSyncAsync_UnreadableDirectory_SkipsItAndCompletes()
+    {
+        var userId = Guid.NewGuid();
+        var pool = StoragePool.Create("扫描池", "/mnt/scan");
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+        _fileSystemServiceMock.Setup(x => x.DirectoryExists(It.IsAny<string>())).Returns(true);
+        _fileSystemServiceMock
+            .Setup(x => x.EnumerateDirectories(It.IsAny<string>()))
+            .Returns(new[] { "/mnt/scan/locked" });
+        _fileSystemServiceMock.Setup(x => x.EnumerateFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
+        _fileSystemServiceMock
+            .Setup(x => x.GetDirectoryInfo("/mnt/scan/locked"))
+            .Throws(new UnauthorizedAccessException("拒绝访问"));
+        _fileRepositoryMock
+            .Setup(x => x.GetScanEntriesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<FileItemScanEntry>)Array.Empty<FileItemScanEntry>());
+
+        var result = await _sut.ScanAndSyncAsync(userId);
+
+        result.IsSuccess.Should().BeTrue("单个目录不可读不应终止整轮扫描");
+        result.Value.SkippedUnreadable.Should().Be(1);
+    }
+
+    #endregion
 }

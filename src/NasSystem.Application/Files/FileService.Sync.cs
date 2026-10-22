@@ -28,6 +28,14 @@ public sealed partial class FileService
         Guid userId,
         CancellationToken cancellationToken = default)
     {
+        // 单飞闸：拿到才继续，拿不到立刻回 InProgress（409）。不排队——
+        // 重复点击的管理员需要立刻知道"已经有一次在跑"，而不是排在后面
+        if (!await ScanGate.WaitAsync(TimeSpan.Zero, cancellationToken))
+        {
+            return Result<ScanResultDto>.Failure(
+                new Error("Scan.InProgress", "已有扫描任务在执行，请稍后重试"));
+        }
+
         var startTime = _dateTime.UtcNow;
         var counters = new ScanCounters();
 
@@ -161,11 +169,15 @@ public sealed partial class FileService
                 TotalSizeBytes = counters.TotalSize,
                 TotalSizeDisplay = FormatSize(counters.TotalSize),
                 Duration = duration,
+                SkippedUnreadable = counters.SkippedUnreadable,
                 Message = $"扫描完成：新增 {counters.AddedFiles} 个文件、{counters.AddedFolders} 个文件夹，"
                     + $"删除 {counters.RemovedFiles} 个文件、{counters.RemovedFolders} 个文件夹，"
                     + $"更新 {counters.UpdatedFiles} 个文件"
                     + (counters.SkippedTooDeep > 0
                         ? $"（跳过 {counters.SkippedTooDeep} 个超过深度上限 {MaxScanDepth} 的目录）"
+                        : string.Empty)
+                    + (counters.SkippedUnreadable > 0
+                        ? $"（跳过 {counters.SkippedUnreadable} 个不可读目录或文件）"
                         : string.Empty)
             });
         }
@@ -176,6 +188,11 @@ public sealed partial class FileService
         {
             _logger.LogError(ex, "扫描同步失败: User={User}", userId);
             return Result<ScanResultDto>.Failure(new Error("Scan.Failed", "扫描失败，请查看服务端日志"));
+        }
+        finally
+        {
+            // 取消异常不在此 catch 范围（客户端断开走调用方），finally 仍会释放
+            ScanGate.Release();
         }
     }
 
@@ -190,6 +207,9 @@ public sealed partial class FileService
 
         /// <summary>因超过深度上限被跳过的目录数（超深树/junction 环）</summary>
         public int SkippedTooDeep { get; set; }
+
+        /// <summary>因权限或读取失败被跳过的目录/文件数（F-084）</summary>
+        public int SkippedUnreadable { get; set; }
     }
 
     /// <summary>
@@ -216,6 +236,13 @@ public sealed partial class FileService
     /// Windows 目录联接（junction）成环时无限递归</summary>
     private const int MaxScanDepth = 32;
 
+    /// <summary>
+    /// 扫描同步单飞闸（进程内）。两个并发扫描会重复全池枚举，且同一批新文件
+    /// 会让后完成者的 BulkInsert 撞 Path 唯一索引，整个事务回滚成 Scan.Failed。
+    /// 拿不到闸直接回 Scan.InProgress，不排队。单实例部署下进程内闸即全局。
+    /// </summary>
+    private static readonly SemaphoreSlim ScanGate = new(1, 1);
+
     private async Task ScanDirectoryAsync(
         string physicalDir,
         string virtualPath,
@@ -238,146 +265,167 @@ public sealed partial class FileService
         }
 
         // 扫描子目录。用 Enumerate 而非 Get：Get* 每次调用都物化整个目录的
-        // 完整字符串数组，深目录树上万目录时是成比例的白分配；Enumerate 边遍历边产出
+        // 完整字符串数组，深目录树上万目录时是成比例的白分配；Enumerate 边遍历边产出。
+        // 单个目录读取失败（权限/中途消失）只跳过并计数，不终止整轮扫描
         foreach (var dir in _fileSystemService.EnumerateDirectories(physicalDir))
         {
-            // 再解析点（junction/symlink）不跟随：环状链接会让递归永不终止
-            if ((new DirectoryInfo(dir).Attributes & FileAttributes.ReparsePoint) != 0)
-                continue;
-
-            var dirName = Path.GetFileName(dir);
-
-            // 版本库目录（ROADMAP Phase 1）：.versions 存文件历史版本，
-            // 与 .uploading- 半成品同理，物理上在池内但不对用户呈现，
-            // 扫描入库会把版本文件当正常文件导进来。
-            // 只认池挂载点顶层的那一个：用户自建的 /docs/.versions 是合法目录，
-            // 按目录名一刀切会把里面的用户文件判"已消失"删掉库记录（ITM-N26 家族）
-            if (depth == 0 && dirName == FileVersionStore.DirectoryName)
-                continue;
-
-            var dirVirtualPath = CombinePath(virtualPath, dirName);
-            physicalPaths.Add(dirVirtualPath);
-
-            Guid dirId;
-            if (!dbPathMap.TryGetValue(dirVirtualPath, out var existingFolder))
+            try
             {
-                // 新文件夹：只建实体进批量插入列表，不碰数据库（父先于子的顺序由
-                // 遍历顺序天然保证，BulkInsertAsync 按列表顺序执行）
-                var folder = FileItem.CreateFolder(
-                    name: dirName,
-                    path: dirVirtualPath,
-                    physicalPath: dir,
-                    storagePoolId: storagePoolId,
-                    ownerId: userId,
-                    parentId: currentDirId);
-
-                newItems.Add(folder);
-                dirId = folder.Id;
-                counters.AddedFolders++;
-                changedDirs.Add(virtualPath);
-            }
-            else
-            {
-                dirId = existingFolder.Id;
-                // 【保留论证】软删命中物理存在时为何"什么都不做"而不是恢复或重建：
-                // 软删语义=用户明确不要了但暂存回收站；扫描只负责"物理↔数据库对齐"，
-                // 无权替用户改变删除决定（NPD-4 同族：扫描不是所有权/状态改写工具）。
-                // 若外部把文件放回原位，正确动作仍是保持回收站态由用户手动恢复。
-                if (existingFolder.IsDeleted)
+                // 再解析点（junction/symlink）不跟随：环状链接会让递归永不终止。
+                // 属性经 IFileSystemService 读取（CONVENTIONS §1.5 收口）
+                if ((_fileSystemService.GetDirectoryInfo(dir).Attributes & FileAttributes.ReparsePoint) != 0)
                     continue;
 
-                // 修复 parentId 如果不正确。按需加载实体：修复是少见路径
-                // （树链接漂移），不值得为它把全池实体物化出来
-                if (existingFolder.ParentId != currentDirId)
+                var dirName = Path.GetFileName(dir);
+
+                // 版本库目录（ROADMAP Phase 1）：.versions 存文件历史版本，
+                // 与 .uploading- 半成品同理，物理上在池内但不对用户呈现，
+                // 扫描入库会把版本文件当正常文件导进来。
+                // 只认池挂载点顶层的那一个：用户自建的 /docs/.versions 是合法目录，
+                // 按目录名一刀切会把里面的用户文件判"已消失"删掉库记录（ITM-N26 家族）
+                if (depth == 0 && dirName == FileVersionStore.DirectoryName)
+                    continue;
+
+                var dirVirtualPath = CombinePath(virtualPath, dirName);
+                physicalPaths.Add(dirVirtualPath);
+
+                Guid dirId;
+                if (!dbPathMap.TryGetValue(dirVirtualPath, out var existingFolder))
                 {
-                    var entity = await _fileRepository.GetByPathAsync(dirVirtualPath, cancellationToken);
-                    if (entity is not null)
+                    // 新文件夹：只建实体进批量插入列表，不碰数据库（父先于子的顺序由
+                    // 遍历顺序天然保证，BulkInsertAsync 按列表顺序执行）
+                    var folder = FileItem.CreateFolder(
+                        name: dirName,
+                        path: dirVirtualPath,
+                        physicalPath: dir,
+                        storagePoolId: storagePoolId,
+                        ownerId: userId,
+                        parentId: currentDirId);
+
+                    newItems.Add(folder);
+                    dirId = folder.Id;
+                    counters.AddedFolders++;
+                    changedDirs.Add(virtualPath);
+                }
+                else
+                {
+                    dirId = existingFolder.Id;
+                    // 【保留论证】软删命中物理存在时为何"什么都不做"而不是恢复或重建：
+                    // 软删语义=用户明确不要了但暂存回收站；扫描只负责"物理↔数据库对齐"，
+                    // 无权替用户改变删除决定（NPD-4 同族：扫描不是所有权/状态改写工具）。
+                    // 若外部把文件放回原位，正确动作仍是保持回收站态由用户手动恢复。
+                    if (existingFolder.IsDeleted)
+                        continue;
+
+                    // 修复 parentId 如果不正确。按需加载实体：修复是少见路径
+                    // （树链接漂移），不值得为它把全池实体物化出来
+                    if (existingFolder.ParentId != currentDirId)
                     {
-                        entity.MoveTo(entity.Path, entity.PhysicalPath, currentDirId);
-                        updatedItems.Add(entity);
-                        counters.UpdatedFiles++;
-                        changedDirs.Add(virtualPath);
+                        var entity = await _fileRepository.GetByPathAsync(dirVirtualPath, cancellationToken);
+                        if (entity is not null)
+                        {
+                            entity.MoveTo(entity.Path, entity.PhysicalPath, currentDirId);
+                            updatedItems.Add(entity);
+                            counters.UpdatedFiles++;
+                            changedDirs.Add(virtualPath);
+                        }
                     }
                 }
-            }
 
-            // 递归扫描子目录，传递文件夹的 ID 作为子项的 parentId
-            await ScanDirectoryAsync(
-                dir,
-                dirVirtualPath,
-                storagePoolId,
-                userId,
-                dbPathMap,
-                physicalPaths,
-                counters,
-                newItems,
-                updatedItems,
-                changedDirs,
-                dirId,
-                depth + 1,
-                cancellationToken);
+                // 递归扫描子目录，传递文件夹的 ID 作为子项的 parentId。
+                // 子目录内部异常由它自己的 try/catch 处理；逃逸到这里也只跳过该目录
+                await ScanDirectoryAsync(
+                    dir,
+                    dirVirtualPath,
+                    storagePoolId,
+                    userId,
+                    dbPathMap,
+                    physicalPaths,
+                    counters,
+                    newItems,
+                    updatedItems,
+                    changedDirs,
+                    dirId,
+                    depth + 1,
+                    cancellationToken);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                counters.SkippedUnreadable++;
+                _logger.LogWarning(ex, "扫描跳过不可读目录: {Directory}", dir);
+            }
         }
 
-        // 扫描文件。同用 Enumerate：GetFiles 会物化整目录文件名字符串数组
+        // 扫描文件。同用 Enumerate：GetFiles 会物化整目录文件名字符串数组。
+        // 逐文件 try：单个文件消失或不可读只跳过该文件并计数
         foreach (var file in _fileSystemService.EnumerateFiles(physicalDir))
         {
-            var fileName = Path.GetFileName(file);
-
-            // S5：上传半成品临时文件（<目标名>.uploading-<32位hex>）不入库。
-            // 上传中断（客户端断开/进程退出）会留下它，库里没有对应记录，
-            // 不跳过的话下次扫描会把半成品当用户文件导入。后缀锚定到 32 位
-            // hex：用户合法文件叫 report.uploading-2024.pdf 时不应被误排除
-            // （排除规则与用户可创建的名字空间重叠就会删掉他们的记录）
-            // 版本恢复的 .restore.tmp 同理，后缀常量与 FileVersionStore 同源
-            if (IsTempArtifactFileName(fileName))
-                continue;
-
-            var fileVirtualPath = CombinePath(virtualPath, fileName);
-            physicalPaths.Add(fileVirtualPath);
-
-            var fileInfo = new FileInfo(file);
-            counters.TotalSize += fileInfo.Length;
-
-            if (!dbPathMap.TryGetValue(fileVirtualPath, out var existingFile))
+            try
             {
-                // 新文件，进批量插入列表
-                var newFile = FileItem.CreateFile(
-                    name: fileName,
-                    path: fileVirtualPath,
-                    physicalPath: file,
-                    sizeBytes: fileInfo.Length,
-                    mimeType: _fileSystemService.GetMimeType(fileName),
-                    storagePoolId: storagePoolId,
-                    ownerId: userId,
-                    parentId: currentDirId);
+                var fileName = Path.GetFileName(file);
 
-                newItems.Add(newFile);
-                counters.AddedFiles++;
-                changedDirs.Add(virtualPath);
-            }
-            else
-            {
-                // 【保留论证】同上——扫描无权解除用户的软删决定（ITM-N26 交互语义）
-                if (existingFile.IsDeleted)
+                // S5：上传半成品临时文件（<目标名>.uploading-<32位hex>）不入库。
+                // 上传中断（客户端断开/进程退出）会留下它，库里没有对应记录，
+                // 不跳过的话下次扫描会把半成品当用户文件导入。后缀锚定到 32 位
+                // hex：用户合法文件叫 report.uploading-2024.pdf 时不应被误排除
+                // （排除规则与用户可创建的名字空间重叠就会删掉他们的记录）
+                // 版本恢复的 .restore.tmp 同理，后缀常量与 FileVersionStore 同源
+                if (IsTempArtifactFileName(fileName))
                     continue;
 
-                // 修复 parentId 或大小变化。两者都按需加载实体（少见路径）
-                var needsParentFix = existingFile.ParentId != currentDirId;
-                var needsSizeUpdate = existingFile.SizeBytes != fileInfo.Length;
-                if (needsParentFix || needsSizeUpdate)
+                var fileVirtualPath = CombinePath(virtualPath, fileName);
+                physicalPaths.Add(fileVirtualPath);
+
+                // 文件信息经 IFileSystemService 取（CONVENTIONS §1.5 收口）
+                var fileInfo = _fileSystemService.GetFileInfo(file);
+                counters.TotalSize += fileInfo.Length;
+
+                if (!dbPathMap.TryGetValue(fileVirtualPath, out var existingFile))
                 {
-                    var entity = await _fileRepository.GetByPathAsync(fileVirtualPath, cancellationToken);
-                    if (entity is not null)
+                    // 新文件，进批量插入列表
+                    var newFile = FileItem.CreateFile(
+                        name: fileName,
+                        path: fileVirtualPath,
+                        physicalPath: file,
+                        sizeBytes: fileInfo.Length,
+                        mimeType: _fileSystemService.GetMimeType(fileName),
+                        storagePoolId: storagePoolId,
+                        ownerId: userId,
+                        parentId: currentDirId);
+
+                    newItems.Add(newFile);
+                    counters.AddedFiles++;
+                    changedDirs.Add(virtualPath);
+                }
+                else
+                {
+                    // 【保留论证】同上——扫描无权解除用户的软删决定（ITM-N26 交互语义）
+                    if (existingFile.IsDeleted)
+                        continue;
+
+                    // 修复 parentId 或大小变化。两者都按需加载实体（少见路径）
+                    var needsParentFix = existingFile.ParentId != currentDirId;
+                    var needsSizeUpdate = existingFile.SizeBytes != fileInfo.Length;
+                    if (needsParentFix || needsSizeUpdate)
                     {
-                        if (needsParentFix)
-                            entity.MoveTo(entity.Path, entity.PhysicalPath, currentDirId);
-                        if (needsSizeUpdate)
-                            entity.UpdateSize(fileInfo.Length);
-                        updatedItems.Add(entity);
-                        counters.UpdatedFiles++;
-                        changedDirs.Add(virtualPath);
+                        var entity = await _fileRepository.GetByPathAsync(fileVirtualPath, cancellationToken);
+                        if (entity is not null)
+                        {
+                            if (needsParentFix)
+                                entity.MoveTo(entity.Path, entity.PhysicalPath, currentDirId);
+                            if (needsSizeUpdate)
+                                entity.UpdateSize(fileInfo.Length);
+                            updatedItems.Add(entity);
+                            counters.UpdatedFiles++;
+                            changedDirs.Add(virtualPath);
+                        }
                     }
                 }
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                counters.SkippedUnreadable++;
+                _logger.LogWarning(ex, "扫描跳过不可读文件: {File}", file);
             }
         }
     }

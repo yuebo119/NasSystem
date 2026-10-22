@@ -446,6 +446,7 @@
     "removedFiles": 5,
     "removedFolders": 1,
     "updatedFiles": 3,
+    "skippedUnreadable": 0,
     "totalSizeBytes": 1073741824,
     "totalSizeDisplay": "1 GB",
     "duration": "00:00:05.123",
@@ -453,6 +454,10 @@
   }
 }
 ```
+
+`skippedUnreadable` 是权限不足或读取失败被跳过的目录与文件数（2026-10-22 第 2 轮
+F-084：单目录异常不再终止整轮扫描）。已有扫描在执行时，第二次请求返回
+409（`Scan.InProgress`），不排队。
 
 ---
 
