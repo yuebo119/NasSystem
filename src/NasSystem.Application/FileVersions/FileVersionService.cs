@@ -77,8 +77,10 @@ public class FileVersionService : IFileVersionService
 
             var now = _dateTime.UtcNow;
             var versionPath = FileVersionStore.GetVersionPath(poolMountPath, item.Id, item.Name, now);
-            _versionStore.CreateSnapshot(item.PhysicalPath, versionPath);
+            // 先登记孤儿路径再建快照：CreateSnapshot 内部硬链接失败会降级复制，
+            // 复制中途失败会留下半成品；不先登记就没人清理它
             orphanSnapshot = versionPath;
+            _versionStore.CreateSnapshot(item.PhysicalPath, versionPath);
 
             // 版本号先读后写，并发覆盖同一文件时两个请求都读到同一个 max：
             // 唯一索引兜底的后果是整件事被外层 catch 吞掉（只留一行日志），
@@ -97,10 +99,12 @@ public class FileVersionService : IFileVersionService
                     _logger.LogWarning(
                         "自动版本号冲突（并发覆盖？），重试: FileItemId={FileItemId}, Attempt={Attempt}",
                         item.Id, attempt);
-                    // 换一个新快照名：旧路径已被上一次尝试占用（硬链接/复制皆唯一）
+                    // 上一次尝试的快照没有记录引用：先删掉再换名重建，
+                    // 否则重试成功后它会成为永久孤儿（保留策略只按库记录删物理）
+                    TryDeleteOrphanSnapshot(versionPath);
                     versionPath = FileVersionStore.GetVersionPath(poolMountPath, item.Id, item.Name, _dateTime.UtcNow);
-                    _versionStore.CreateSnapshot(item.PhysicalPath, versionPath);
                     orphanSnapshot = versionPath;
+                    _versionStore.CreateSnapshot(item.PhysicalPath, versionPath);
                 }
             }
 
@@ -117,21 +121,24 @@ public class FileVersionService : IFileVersionService
             // 落库失败时补删孤儿快照（硬链接只删链接不动源文件）。
             // 删失败只记日志：主流程已放行，清理是尽力而为
             if (orphanSnapshot is not null)
-            {
-                try
-                {
-                    _fileSystemService.DeleteFile(orphanSnapshot);
-                }
-                catch (Exception cleanupEx)
-                {
-                    _logger.LogWarning(cleanupEx,
-                        "孤儿版本快照清理失败: {Path}", orphanSnapshot);
-                }
-            }
+                TryDeleteOrphanSnapshot(orphanSnapshot);
 
             // 快照失败不阻断主流程：覆盖上传/永久删除是用户明确意图，
             // 为版本失败回滚主操作会把"保险"凌驾于主路径之上
             _logger.LogWarning(ex, "自动版本创建失败（主操作继续）: FileItemId={FileItemId}", item.Id);
+        }
+    }
+
+    /// <summary>删掉无记录引用的版本快照文件。删失败只记日志，不抛</summary>
+    private void TryDeleteOrphanSnapshot(string versionPath)
+    {
+        try
+        {
+            _fileSystemService.DeleteFile(versionPath);
+        }
+        catch (Exception cleanupEx)
+        {
+            _logger.LogWarning(cleanupEx, "孤儿版本快照清理失败: {Path}", versionPath);
         }
     }
 
