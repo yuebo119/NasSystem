@@ -51,7 +51,6 @@ public static class SemanticEndpoints
 
     private static async Task<IResult> GetStatus(
         ISemanticSearchService semanticService,
-        IFileItemRepository fileRepository,
         CancellationToken cancellationToken)
     {
         var status = await semanticService.GetStatusAsync(cancellationToken);

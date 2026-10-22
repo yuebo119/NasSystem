@@ -6,8 +6,8 @@
 namespace NasSystem.Api.Extensions;
 
 using System.Security.Claims;
+using NasSystem.Application.Files;
 using NasSystem.Application.Media;
-using NasSystem.Domain.Repositories;
 using NasSystem.Shared;
 
 /// <summary>
@@ -56,7 +56,7 @@ public static class TranscodeEndpoints
     private static async Task<IResult> GetStream(
         string path,
         ITranscodeService transcodeService,
-        IFileItemRepository fileRepository,
+        IFileAccessResolver accessResolver,
         ClaimsPrincipal user,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -66,16 +66,15 @@ public static class TranscodeEndpoints
         var segment = httpContext.Request.Query["segment"].ToString();
 
         var normalized = "/" + path.Trim('/');
-        var item = await fileRepository.GetByPathAsync(normalized, cancellationToken);
-        if (item is null)
-            return Results.NotFound(new { message = $"路径不存在: {normalized}" });
-
         var userId = GetUserId(user);
-        if (item.OwnerId != userId)
+        var access = await accessResolver.ResolveAsync(normalized, userId, cancellationToken);
+        if (access.Status == FileAccessStatus.NotFound)
+            return Results.NotFound(new { message = $"路径不存在: {normalized}" });
+        if (access.Status == FileAccessStatus.Forbidden)
             return Results.Forbid();
 
         // 复用 GetOrCreateHlsAsync 的缓存键口径（同路径同目录），不重复转码
-        var result = await transcodeService.GetOrCreateHlsAsync(item.PhysicalPath, cancellationToken);
+        var result = await transcodeService.GetOrCreateHlsAsync(access.File!.PhysicalPath, cancellationToken);
         if (result.IsFailure)
         {
             // ffmpeg 缺失与源缺失都是诚实 501/404：客户端展示"转码不可用"

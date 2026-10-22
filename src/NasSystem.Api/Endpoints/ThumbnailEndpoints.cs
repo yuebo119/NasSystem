@@ -7,7 +7,6 @@ namespace NasSystem.Api.Extensions;
 
 using System.Security.Claims;
 using NasSystem.Application.Files;
-using NasSystem.Domain.Repositories;
 
 using NasSystem.Shared;
 
@@ -59,7 +58,7 @@ public static class ThumbnailEndpoints
         int? width,
         int? height,
         IThumbnailService thumbnailService,
-        IFileItemRepository fileItemRepository,
+        IFileAccessResolver accessResolver,
         ClaimsPrincipal user,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -86,12 +85,12 @@ public static class ThumbnailEndpoints
 
         // 端点收到的是虚拟路径，缩略图服务要的是物理路径。原先直接把虚拟路径交给
         // 服务，File.Exists 恒为 false，缩略图功能整个不工作（Thumbnail.FileNotFound）。
-        // 多用户隔离：记录不存在或非本人时按不存在处理，不回退原值——
+        // 多用户隔离：记录不存在、已软删或非本人时按不存在处理，不回退原值——
         // 回退会让服务拿裸路径去碰磁盘，既是越权面也是噪声错误
-        var item = await fileItemRepository.GetByPathAsync(path, cancellationToken);
-        if (item is null || item.OwnerId != userId)
+        var access = await accessResolver.ResolveAsync(path, userId, cancellationToken);
+        if (access.Status != FileAccessStatus.Ok)
             return Results.NotFound(ApiResponse<object>.Fail("File.NotFound", $"文件不存在: {path}"));
-        var physicalPath = item.PhysicalPath;
+        var physicalPath = access.File!.PhysicalPath;
 
         var result = await thumbnailService.GetThumbnailAsync(
             path,

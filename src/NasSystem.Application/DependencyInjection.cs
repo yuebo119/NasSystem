@@ -37,6 +37,9 @@ public static class DependencyInjection
         services.AddScoped<IFileShareService, FileShareService>();
         services.AddScoped<IBackupService, BackupService>();
 
+        // 虚拟路径 -> 属主校验后的物理路径。端点不再各自注入仓储做属主比较
+        services.AddScoped<IFileAccessResolver, FileAccessResolver>();
+
         // 版本库物理存储（F-027 收口：文件系统访问经 IFileSystemService，
         // 从静态类改为可注入服务）。单例：无状态，只有路径运算与 IO 委派
         services.AddSingleton<FileVersionStore>();

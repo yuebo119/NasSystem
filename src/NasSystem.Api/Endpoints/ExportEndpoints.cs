@@ -5,7 +5,6 @@
 
 namespace NasSystem.Api.Extensions;
 
-using System.Security.Claims;
 using NasSystem.Api.Endpoints;
 using NasSystem.Domain.Repositories;
 
@@ -38,7 +37,6 @@ public static class ExportEndpoints
         IFileItemRepository fileRepository,
         IStoragePoolRepository poolRepository,
         NasSystem.Domain.Services.IDateTimeProvider dateTime,
-        ClaimsPrincipal user,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.RootPath))
@@ -79,10 +77,4 @@ public static class ExportEndpoints
     }
 
     private sealed record CreateExportRequest(string RootPath, string? Password);
-
-    private static Guid GetUserId(ClaimsPrincipal user)
-    {
-        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.TryParse(userIdClaim, out var userId) ? userId : Guid.Empty;
-    }
 }
