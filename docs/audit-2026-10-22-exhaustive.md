@@ -842,3 +842,74 @@ F-074 的闭环过程值得记一条教训：**上一轮「NU 警告归零」是
 - 集成测试：**298 total / 0 failed** / exit 0（起点 270，新增 28 条锁定测试）
 - 前端：vitest **183 tests / 26 files 全过**；oxlint **0 警告**；vue-tsc exit 0；生产构建 exit 0；业务代码 `as any` **20 → 0**
 - 项目门禁：**exit 0，20 通过 / 0 失败 / 1 警告（D9 无 CHANGELOG，可选）**。NAS-G15 UtcNow **16/16**（起点 52）、NAS-G16 裸 IO **0/0**（起点 31），两条基线债务随 F-027/F-028 两批收口按「只减不增」规则三同步下调（CONVENTIONS §1.5/§5.1/§9 ↔ gate-check.sh 常量 ↔ .ai/README.md，doc-consistency D4 实测三方一致）
+
+---
+
+## 9. 优化轮（2026-10-22 续，用户要求「完整优化」）
+
+审计轮解决的是「对不对」，本节解决「快不快」。三条原则：先测量再改、每条改动附前后实测、不以行数或体积论英雄。
+
+### 9.1 前端产物瘦身
+
+| 项 | 改动 | 实测 |
+|---|---|---|
+| hls.js 按需加载 | Media.vue 的静态 import 改 import type + mountPlayer 内 await import() | **Media chunk 589,825 → 15,216 字节（−97.4%）**；gzip 183.75KB → 5.47KB；hls 独立成 574KB 懒加载块 |
+| table-v2 拆包 | vite manualChunks 把 table-v2 + virtual-list 拆独立块，**排除 /style/ 路径** | 43KB 独立块，仅文件页按需；首屏 preload 从 7 项降到 6 项；element-plus 主块 679,199 → 636,602 字节 |
+
+两处都由浏览器实测验证：媒体库网络清单确认**不再请求 hls chunk**、页面正常渲染出图片项；文件页确认**按需请求 table-v2**（200）、表格渲染出数据行与表头；两页 console 均 0 错误。
+
+table-v2 拆包的关键陷阱：main.ts 里有 table-v2/style/css 的副作用导入（表头顺序依赖它）。若连这条样式路径一起归入新块，入口就会静态引入它，Vite 会把该块 preload 进 index.html，拆分等于白做（第一次尝试就被实测否掉了）。
+
+### 9.2 前端回归修复（上一轮引入的潜伏缺陷）
+
+拆 hls 时浏览器实测抓到 `Cannot access 'Lt' before initialization` —— 媒体库首屏完全空白。
+
+根因：上一轮加序号闸时把 `let loadSeq = 0` 写在了 `watch(..., { immediate: true })` **之后**。该 watch 的回调在 setup 期同步执行并调用 loadMore，此时 loadSeq 仍在暂时性死区。这是合法代码——vue-tsc 通过、183 个单测通过、构建通过，只有真跑浏览器才炸。已把声明前移并注明原因。
+
+这条是本轮最有价值的副产品：**静态检查与单测都拦不住 TDZ，只有真实渲染能**。
+
+### 9.3 后端热点定位与消除
+
+先建探针再改，不猜。实测 6 个读端点的延迟：
+
+| 端点 | 修复前 |
+|---|---|
+| `/api/v1/system/info` | **295~347ms**（8 次全部 300ms+） |
+| 其他 5 个读端点 | 9~30ms |
+
+新增 SystemInfoLatencyProbeTests 把耗时拆成「端到端 / 服务层 / 逐项采集」三层，定位到唯一主导项：
+
+```
+NetworkInterface.GetAllNetworkInterfaces()   112.41ms   ← 唯一大头
+Process.GetCurrentProcess + StartTime          5.37ms
+Registry.ReadCpuModel                          0.06ms
+Environment.MachineName / TimeZone             0.00ms
+```
+
+而服务层总耗时 233ms > 单项 112ms，说明该 API 被调了两次——原实现正常分支与无网卡分支各调一次 GetIsNetworkAvailable()，后者内部又枚举一遍全部网卡。
+
+修复两处：
+
+1. **只枚举一次**：一次 GetAllNetworkInterfaces() 结果同时用于「挑主网卡」与「判定 IsAvailable」
+2. **2 秒 TTL 缓存**（静态字段 + Lock）：网卡集合与 IP 不秒级变动，2s 吸收「系统信息页连续刷新」，又不让流量数字看起来冻住。服务本身 Scoped（要查 SQLite 版本），缓存必须跨请求存活
+
+实测：**服务层 233ms → 2.9ms，端点端到端 300ms+ → 5.3ms（−97.8%）**；真实实例 curl 6 次为 187ms（首次冷缓存）/ 17 / 14 / 12 / 14 / 12ms。S3 反向验证：摘掉缓存后服务层回到 217ms，探针转红。
+
+### 9.4 未采纳的方向（有测量依据的否决）
+
+| 方向 | 否决理由 |
+|---|---|
+| element-plus 主块 636KB 继续拆 | 已按需引入（符合 CONVENTIONS §7.1），剩余体积是 table-v2 之外各组件本身；再拆会让请求数增加而无净收益 |
+| sortedFiles 的 `[...files.value]` 复制 | 它是 computed（有缓存），只在 files 变化时重算一次；改成原地排序会破坏响应式语义 |
+| Dashboard 首屏 9 个请求合并 | 已用 Promise.all 并发，且 60s 轮询前有「不与 onMounted 重复」的显式注释；后端各端点 10-20ms，合并没有净收益 |
+| SQLite 压往返 / JOIN / 投影裁剪 | 项目已结论：本地 SQLite 往返成本近似零，实测压往返/JOIN/投影全慢（本审计任务书第 5 步明令禁止重提） |
+| 冷启动 3.2s | 含 dotnet run 的编译检查开销；Docker 侧已开 ReadyToRun。要进一步压需分解到具体阶段，当前没有可归因的热点 |
+
+### 9.5 优化轮最终验证
+
+- 后端构建 exit 0 / 0 错误；单元 **199/0**；集成 **299/0**（新增探针 1 例）
+- 前端 vitest **183/26 全过**；oxlint 0；vue-tsc exit 0；生产构建 exit 0
+- 项目门禁 **20 过 0 败**
+- 浏览器实测：媒体库渲染正常、文件页表格正常、两页 0 console 错误
+
+提交：`9346f1a`（前端两项 + TDZ 修复）、`a18a97b`（system/info 优化 + 探针）。
