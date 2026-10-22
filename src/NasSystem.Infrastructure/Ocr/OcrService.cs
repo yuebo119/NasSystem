@@ -11,6 +11,7 @@ using NasSystem.Application.Ocr;
 using NasSystem.Domain.Common;
 using NasSystem.Domain.Enums;
 using NasSystem.Domain.Repositories;
+using NasSystem.Infrastructure.Files;
 using NasSystem.Shared;
 using Sdcb.SimdPaddleOCR;
 using SkiaSharp;
@@ -32,6 +33,12 @@ public sealed class OcrService(
     {
         ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif"
     };
+
+    /// <summary>JPEG 等可缩放格式的解码像素预算（24MP 原图会按比例缩小）</summary>
+    private const long MaxDecodePixels = 16_000_000;
+
+    /// <summary>不可缩放格式（PNG 实测）的全解上限，超过直接失败而非按原尺寸占内存</summary>
+    private const long MaxFallbackPixels = 64_000_000;
 
     public async Task<Result<OcrTextDto>> RecognizeAsync(
         string path,
@@ -164,47 +171,31 @@ public sealed class OcrService(
 
             string text;
             List<NasSystem.Domain.Entities.OcrTextRegion> regions = [];
-            using (var bitmap = SKBitmap.Decode(item.PhysicalPath))
+
+            // 解码必须在识别闸内：Run 闸只压 2 路推理，原先解码在闸外，
+            // N 个并发请求会各自先解一张全图（24MP 约 94MB 原生内存）再排队。
+            // 代价是解码与推理串行，吞吐略降；相对 OOM 风险是正确取舍。
+            using (var runScope = await engineHolder.EnterRunAsync(cancellationToken))
+            using (var bitmap = ImageDecoder.Decode(
+                item.PhysicalPath, MaxDecodePixels, MaxFallbackPixels, SKColorType.Bgra8888))
             {
                 if (bitmap is null)
                 {
-                    // 解码失败是输入文件问题（损坏或伪装扩展名），按客户端错误报
-                    return Result<OcrTextDto>.Failure(Error.Validation("图片解码失败"));
+                    // 解码失败或超出兜底像素上限，都是输入文件问题，按客户端错误报
+                    return Result<OcrTextDto>.Failure(Error.Validation("图片解码失败或尺寸过大"));
                 }
 
-                // SimdPaddleOCR 的 SkiaSharp 集成路径：BGRA8888 输入。
-                // 已是目标色彩类型就直接用原位图（解码器多数直接给 BGRA），
-                // 否则复制一份转换；副本用 finally 兜底释放，
-                // 整段 Run 期间源位图不得释放（外层 using 保证）
-                SKBitmap? converted = null;
-                var bgra = bitmap.ColorType == SKColorType.Bgra8888
-                    ? bitmap
-                    : (converted = bitmap.Copy(SKColorType.Bgra8888));
-                try
-                {
-                    if (bgra is null)
-                    {
-                        return Result<OcrTextDto>.Failure(Error.Validation("图片转 BGRA 失败"));
-                    }
-
-                    using var runScope = await engineHolder.EnterRunAsync(cancellationToken);
-
-                    // GetPixelSpan 托管直取像素（span 生命周期与位图绑定，
-                    // 位图在外层 using 内有效），不开项目级 unsafe 开关。
-                    // stride 传 RowBytes：位图可能有行对齐填充，不能按 width*4 密排假设
-                    ReadOnlySpan<byte> pixels = bgra.GetPixelSpan();
-                    var ocrResult = engine.Run(
-                        pixels, bgra.Width, bgra.Height, bgra.RowBytes,
-                        Sdcb.SimdPaddleOCR.ImagePixelFormat.Bgra32);
-                    text = ocrResult.Text;
-                    // 行区域（2026-10-21 OCR 叠加定位）：引擎每行带四角像素坐标，
-                    // 归一化到 0..1 后随文本落库——前端按显示尺寸比例换算叠回原位
-                    regions = BuildRegions(ocrResult.Lines, bgra.Width, bgra.Height);
-                }
-                finally
-                {
-                    converted?.Dispose();
-                }
+                // 直接按 BGRA 解码，省掉"原生格式 + 转换副本"的第二份位图。
+                // GetPixelSpan 托管直取像素（span 生命周期与位图绑定），
+                // stride 传 RowBytes：位图可能有行对齐填充，不能按 width*4 密排假设
+                ReadOnlySpan<byte> pixels = bitmap.GetPixelSpan();
+                var ocrResult = engine.Run(
+                    pixels, bitmap.Width, bitmap.Height, bitmap.RowBytes,
+                    Sdcb.SimdPaddleOCR.ImagePixelFormat.Bgra32);
+                text = ocrResult.Text;
+                // 行区域（2026-10-21 OCR 叠加定位）：引擎每行带四角像素坐标，
+                // 归一化到 0..1 后随文本落库——前端按显示尺寸比例换算叠回原位
+                regions = BuildRegions(ocrResult.Lines, bitmap.Width, bitmap.Height);
             }
 
             started.Stop();

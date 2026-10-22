@@ -5,7 +5,7 @@
 
 namespace NasSystem.Infrastructure.Media;
 
-using SkiaSharp;
+using NasSystem.Infrastructure.Files;
 
 /// <summary>
 /// 托管媒体元数据提取。三种格式族各自的最小解析：
@@ -47,15 +47,17 @@ public static class MediaMetadataExtractor
         }
     }
 
-    /// <summary>图片：SkiaSharp 解码取尺寸。不解码全图的廉价路径不存在，但仅取尺寸仍要过解码器</summary>
+    /// <summary>
+    /// 图片：只读文件头取尺寸（SKCodec.Info），不解码像素。
+    /// 原实现 SKBitmap.Decode 为两个数字解全图，实测一张 6000x4000 JPEG
+    /// 在工作集上多占 94MB；媒体页一次请求最多 200 个路径，是成比例的分配浪费。
+    /// </summary>
     private static MediaMetadata ExtractImage(string filePath)
     {
-        using var bitmap = SKBitmap.Decode(filePath);
-        if (bitmap is null)
-        {
-            return MediaMetadata.Empty;
-        }
-        return new MediaMetadata(bitmap.Width, bitmap.Height, null);
+        var dimensions = ImageDecoder.ReadDimensions(filePath);
+        return dimensions is { } size
+            ? new MediaMetadata(size.Width, size.Height, null)
+            : MediaMetadata.Empty;
     }
 }
 

@@ -28,6 +28,12 @@ public class ThumbnailService : IThumbnailService
     /// <summary>服务端尺寸白名单：客户端请求就近吸附，缓存文件数与档位挂钩可控</summary>
     private static readonly int[] AllowedSizes = [64, 128, 256, 512, 1024];
 
+    /// <summary>
+    /// 不可缩放编解码器（PNG 实测）允许全解的上限。超过即拒绝生成缩略图，
+    /// 避免异常大图在解码阶段占满原生内存。
+    /// </summary>
+    private const long MaxFullDecodePixels = 64_000_000;
+
     private readonly ThumbnailOptions _options;
     private readonly ILogger<ThumbnailService> _logger;
 
@@ -298,7 +304,8 @@ public class ThumbnailService : IThumbnailService
     /// </summary>
     private static byte[] ScaleJpegBytes(byte[] source, int targetWidth, int targetHeight, int jpegQuality)
     {
-        using var sourceBitmap = SkiaSharp.SKBitmap.Decode(source)
+        using var sourceBitmap = ImageDecoder.Decode(
+                source, DecodeMaxPixels(targetWidth, targetHeight), MaxFullDecodePixels)
             ?? throw new InvalidOperationException("视频帧解码失败");
 
         // 与 GenerateImageThumbnailAsync 逐字同口径：等比缩放适配目标框，
@@ -322,6 +329,17 @@ public class ThumbnailService : IThumbnailService
     }
 
     /// <summary>
+    /// 解码预算：目标框最大边长的两倍为边长，等价于目标像素数的 4 倍。
+    /// 缩略图最终等比缩到目标框内，解码到两倍边长不会损失可见清晰度；
+    /// 64px 档只解 128px 等价面积，不必为小图标解一张 24MP 原图。
+    /// </summary>
+    private static long DecodeMaxPixels(int targetWidth, int targetHeight)
+    {
+        var side = (long)Math.Max(1, Math.Max(targetWidth, targetHeight)) * 2;
+        return side * side;
+    }
+
+    /// <summary>
     /// 使用 SkiaSharp 生成等比缩放的 JPEG 缩略图（ITM-N5 收尾：替换"返回原图字节"的占位实现）。
     /// 解码失败（损坏/不支持的编码）抛出异常，由上层统一转 Thumbnail.GenerationFailed。
     /// </summary>
@@ -334,7 +352,8 @@ public class ThumbnailService : IThumbnailService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        using var source = SkiaSharp.SKBitmap.Decode(filePath)
+        using var source = ImageDecoder.Decode(
+                filePath, DecodeMaxPixels(targetWidth, targetHeight), MaxFullDecodePixels)
             ?? throw new InvalidOperationException($"图像解码失败: {Path.GetFileName(filePath)}");
 
         // 等比缩放适配目标框（不放大小图、不留白边）

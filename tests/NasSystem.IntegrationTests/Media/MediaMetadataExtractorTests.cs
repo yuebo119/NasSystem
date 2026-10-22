@@ -9,6 +9,7 @@ using System.Buffers.Binary;
 using System.Text;
 using FluentAssertions;
 using NasSystem.Infrastructure.Media;
+using SkiaSharp;
 using Xunit;
 
 /// <summary>
@@ -36,6 +37,27 @@ public class MediaMetadataExtractorTests : IDisposable
             // 句柄未释放时留下，由系统临时目录清理
         }
         GC.SuppressFinalize(this);
+    }
+
+    [Fact]
+    public void Extract_Jpeg_ReturnsDimensions()
+    {
+        var path = Path.Combine(_tempDir, "photo.jpg");
+        using (var bitmap = new SKBitmap(640, 480))
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.CornflowerBlue);
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Jpeg, 90)
+                ?? throw new InvalidOperationException("测试图片编码失败");
+            using var stream = File.Create(path);
+            data.SaveTo(stream);
+        }
+
+        var metadata = MediaMetadataExtractor.Extract(path, ".jpg");
+
+        metadata.Width.Should().Be(640);
+        metadata.Height.Should().Be(480);
     }
 
     [Fact]
