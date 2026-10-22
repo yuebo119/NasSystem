@@ -77,6 +77,12 @@ public interface IFileSystemService
     DirectoryInfo GetDirectoryInfo(string path);
 
     /// <summary>
+    /// 是否为重解析点（符号链接/junction）。路径不可读或读取失败时返回 true，
+    /// 让调用方按"跳过"处理：不可判断的链接按不安全对待。
+    /// </summary>
+    bool IsReparsePoint(string path);
+
+    /// <summary>
     /// 获取目录内容
     /// </summary>
     IEnumerable<FileSystemInfo> GetDirectoryContents(string path);

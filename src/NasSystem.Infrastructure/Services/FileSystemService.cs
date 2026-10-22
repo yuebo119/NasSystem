@@ -138,6 +138,26 @@ public sealed class FileSystemService : IFileSystemService
 
     public DirectoryInfo GetDirectoryInfo(string path) => new(path);
 
+    public bool IsReparsePoint(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (FileNotFoundException)
+        {
+            return true;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
     public IEnumerable<FileSystemInfo> GetDirectoryContents(string path)
     {
         var directory = new DirectoryInfo(path);

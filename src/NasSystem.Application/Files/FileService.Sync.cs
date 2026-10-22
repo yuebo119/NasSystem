@@ -271,9 +271,9 @@ public sealed partial class FileService
         {
             try
             {
-                // 再解析点（junction/symlink）不跟随：环状链接会让递归永不终止。
-                // 属性经 IFileSystemService 读取（CONVENTIONS §1.5 收口）
-                if ((_fileSystemService.GetDirectoryInfo(dir).Attributes & FileAttributes.ReparsePoint) != 0)
+                // 再解析点（junction/symlink）不跟随：环状链接会让递归永不终止，
+                // 且目标可能在池外。判断经 IFileSystemService（CONVENTIONS §1.5 收口）
+                if (_fileSystemService.IsReparsePoint(dir))
                     continue;
 
                 var dirName = Path.GetFileName(dir);
@@ -371,6 +371,11 @@ public sealed partial class FileService
                 // （排除规则与用户可创建的名字空间重叠就会删掉他们的记录）
                 // 版本恢复的 .restore.tmp 同理，后缀常量与 FileVersionStore 同源
                 if (IsTempArtifactFileName(fileName))
+                    continue;
+
+                // 符号链接/junction 文件同样不导入：内容是池外目标，导入后
+                // 下载、分享、导出都会把池外数据带出去（目录侧同类检查见 F-013）
+                if (_fileSystemService.IsReparsePoint(file))
                     continue;
 
                 var fileVirtualPath = CombinePath(virtualPath, fileName);

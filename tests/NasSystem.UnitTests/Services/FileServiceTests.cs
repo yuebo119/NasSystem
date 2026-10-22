@@ -1126,7 +1126,7 @@ public class FileServiceTests
             .Returns(new[] { "/mnt/scan/locked" });
         _fileSystemServiceMock.Setup(x => x.EnumerateFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
         _fileSystemServiceMock
-            .Setup(x => x.GetDirectoryInfo("/mnt/scan/locked"))
+            .Setup(x => x.IsReparsePoint("/mnt/scan/locked"))
             .Throws(new UnauthorizedAccessException("拒绝访问"));
         _fileRepositoryMock
             .Setup(x => x.GetScanEntriesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
@@ -1136,6 +1136,39 @@ public class FileServiceTests
 
         result.IsSuccess.Should().BeTrue("单个目录不可读不应终止整轮扫描");
         result.Value.SkippedUnreadable.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ScanAndSyncAsync_ReparsePointFile_SkipsIt()
+    {
+        var userId = Guid.NewGuid();
+        var pool = StoragePool.Create("扫描池", "/mnt/scan");
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+        _fileSystemServiceMock.Setup(x => x.DirectoryExists(It.IsAny<string>())).Returns(true);
+        _fileSystemServiceMock.Setup(x => x.EnumerateDirectories(It.IsAny<string>())).Returns(Array.Empty<string>());
+
+        var realFile = Path.Combine(Path.GetTempPath(), $"scan-link-{Guid.NewGuid():N}.bin");
+        await File.WriteAllBytesAsync(realFile, [1, 2, 3]);
+        try
+        {
+            _fileSystemServiceMock.Setup(x => x.EnumerateFiles(It.IsAny<string>())).Returns(new[] { realFile });
+            _fileSystemServiceMock.Setup(x => x.IsReparsePoint(realFile)).Returns(true);
+            _fileSystemServiceMock.Setup(x => x.GetFileInfo(realFile)).Returns(new FileInfo(realFile));
+            _fileRepositoryMock
+                .Setup(x => x.GetScanEntriesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((IReadOnlyList<FileItemScanEntry>)Array.Empty<FileItemScanEntry>());
+
+            var result = await _sut.ScanAndSyncAsync(userId);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.AddedFiles.Should().Be(0, "符号链接/junction 文件不能导入库（目标是池外内容）");
+        }
+        finally
+        {
+            File.Delete(realFile);
+        }
     }
 
     #endregion
