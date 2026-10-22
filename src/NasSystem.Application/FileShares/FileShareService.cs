@@ -5,7 +5,6 @@
 
 namespace NasSystem.Application.FileShares;
 
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
@@ -49,7 +48,9 @@ public sealed class FileShareService(
     // + SaveChanges）在闸外并发时两个请求都读到同一个旧值：MaxDownloads=1 的分享
     // 会被并发打穿，且计数丢一次更新。SQLite 单写者 + 单容器部署下进程内串行
     // 即等价原子（模式同 StorageService.RefreshGates）
-    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> DownloadGates = new();
+    // 用固定分片闸而非"无等待者即移除"的字典：后者在释放与移除之间有窗口，
+    // 窗口内新请求取到旧实例后被移除，再来的请求拿到新实例，两个持有者会同时进临界区
+    private static readonly KeyedGate DownloadGates = new();
 
     #region 管理 API
 
@@ -420,9 +421,8 @@ public sealed class FileShareService(
     /// </summary>
     private async Task<Result> RecordDownloadAsync(FileShare share, CancellationToken cancellationToken)
     {
-        var gate = DownloadGates.GetOrAdd(share.Id, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken);
-        try
+        var gate = await DownloadGates.AcquireAsync(share.Id, cancellationToken);
+        using (gate)
         {
             // 闸内重读：本请求的 share 实例是进闸前加载的，等待期间前一个
             // 请求可能已把计数推高（限流也可能刚好用尽）。仓储每次调用都
@@ -439,14 +439,6 @@ public sealed class FileShareService(
             await fileShareRepository.UpdateAsync(share, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
             return Result.Success();
-        }
-        finally
-        {
-            gate.Release();
-            // 无等待者即移除闸门，防字典随分享增删无限增长（竞态窗口内新等待者
-            // 取到同一实例引用，最坏后果是多一次串行等待，不会错）
-            if (gate.CurrentCount == 1)
-                DownloadGates.TryRemove(new KeyValuePair<Guid, SemaphoreSlim>(share.Id, gate));
         }
     }
 

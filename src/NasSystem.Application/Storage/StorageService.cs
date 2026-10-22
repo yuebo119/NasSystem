@@ -5,7 +5,6 @@
 
 namespace NasSystem.Application.Storage;
 
-using System.Collections.Concurrent;
 using NasSystem.Application.Common;
 using NasSystem.Application.Storage.Dtos;
 using NasSystem.Domain.Common;
@@ -41,10 +40,12 @@ public sealed class StorageService(
     /// 前端首页的 overview 与 pools 两个端点由 Promise.all 并发发出，两者各自检查
     /// 60s 节流缓存都未命中（缓存只在遍历完成后才写），结果是同一池被完整遍历两遍。
     /// 闸门让第二个请求等第一个的结果，等待期间再双检一次节流缓存，命中即跳过。
-    /// 静态字典：闸门必须跨请求共享才有意义，与 DirectoryVersion 同一先例。
-    /// 无等待者时移除闸门，字典规模不随池的增删增长。
+    /// 静态分片闸：闸门必须跨请求共享才有意义，与 DirectoryVersion 同一先例。
+    /// 用固定分片而非"无等待者即移除"的字典：后者释放与移除之间的窗口内，
+    /// 新请求可能取到已被移除给后来者的旧实例，两个持有者同时刷新同一池。
+    /// 分片表长度固定，规模不随池的增删增长。
     /// </remarks>
-    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> RefreshGates = new();
+    private static readonly KeyedGate RefreshGates = new();
 
     public async Task<Result<StorageOverviewDto>> GetOverviewAsync(
         CancellationToken cancellationToken = default)
@@ -409,23 +410,14 @@ public sealed class StorageService(
 
         // 同一池的并发刷新合并：前端 overview/pools 两个端点并发打出时，
         // 两者都未命中节流缓存（缓存在刷新完成后才写），无闸门会各查一次 SUM
-        var gate = RefreshGates.GetOrAdd(pool.Id, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken);
-        try
+        var gate = await RefreshGates.AcquireAsync(pool.Id, cancellationToken);
+        using (gate)
         {
             // 双检：等待期间前一个请求可能已完成刷新并写了缓存
             if (!ShouldRefreshPool(pool, force))
                 return false;
 
             return await MeasureAndUpdatePoolAsync(pool, cancellationToken);
-        }
-        finally
-        {
-            gate.Release();
-            // CurrentCount 回 1 表示没有等待者，移除闸门防字典随池增删无限增长。
-            // 竞态窗口内新等待者取到的是同一实例引用，最坏后果是多一次 SUM，不会错
-            if (gate.CurrentCount == 1)
-                RefreshGates.TryRemove(new KeyValuePair<Guid, SemaphoreSlim>(pool.Id, gate));
         }
     }
 
