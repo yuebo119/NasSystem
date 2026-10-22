@@ -83,7 +83,7 @@ internal sealed class ZipDirectoryResult : IResult
     {
         // Enumerate 而非 Get：Get* 每次物化整个目录的名字符串数组，
         // 深目录树上万目录时是成比例的白分配（与扫描同步同一取舍）
-        foreach (var filePath in Directory.EnumerateFiles(sourceDir))
+        foreach (var filePath in SafeFileEnumeration.EnumerateFiles(sourceDir))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -106,7 +106,7 @@ internal sealed class ZipDirectoryResult : IResult
             await fileStream.CopyToAsync(entryStream, BufferSize, cancellationToken);
         }
 
-        foreach (var subDir in Directory.EnumerateDirectories(sourceDir))
+        foreach (var subDir in SafeFileEnumeration.EnumerateDirectories(sourceDir))
         {
             cancellationToken.ThrowIfCancellationRequested();
 

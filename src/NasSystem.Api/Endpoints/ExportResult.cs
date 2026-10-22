@@ -123,7 +123,7 @@ internal sealed class ExportResult : IResult
         // 物化名字符串数组），空目录也入包（CreateEntry 一个以 / 结尾的条目），
         // 否则解出来目录结构丢了
         var hasEntries = false;
-        foreach (var filePath in Directory.EnumerateFiles(sourceDir))
+        foreach (var filePath in SafeFileEnumeration.EnumerateFiles(sourceDir))
         {
             hasEntries = true;
             cancellationToken.ThrowIfCancellationRequested();
@@ -141,7 +141,7 @@ internal sealed class ExportResult : IResult
             await fileStream.CopyToAsync(entryStream, BufferSize, cancellationToken);
         }
 
-        foreach (var subDir in Directory.EnumerateDirectories(sourceDir))
+        foreach (var subDir in SafeFileEnumeration.EnumerateDirectories(sourceDir))
         {
             hasEntries = true;
             cancellationToken.ThrowIfCancellationRequested();
@@ -150,8 +150,11 @@ internal sealed class ExportResult : IResult
             var newPrefix = string.IsNullOrEmpty(entryPrefix) ? dirName : $"{entryPrefix}/{dirName}";
 
             // 空目录入包：ZIP 用斜杠结尾的条目表达目录。枚举结果物化一次，
-            // 既判空又给递归复用（递归内还会再枚举，但那遍历的是下一层）
-            var subEntries = Directory.EnumerateFileSystemEntries(subDir).ToList();
+            // 既判空又给递归复用（递归内还会再枚举，但那遍历的是下一层）。
+            // 重解析点排除在判空之外：只有 junction 的目录按空目录处理
+            var subEntries = Directory.EnumerateFileSystemEntries(subDir)
+                .Where(path => !SafeFileEnumeration.IsReparsePoint(path))
+                .ToList();
             if (subEntries.Count == 0)
             {
                 archive.CreateEntry($"{newPrefix}/", CompressionLevel.Fastest);
