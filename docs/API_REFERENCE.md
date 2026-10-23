@@ -719,6 +719,10 @@ F-101，防不可逆的元数据清空）。
 
 ## 6. 公开分享访问 API
 
+整组匿名端点受两层限流：按客户端 IP 的 `share` 固定窗口，以及全局分享枚举闸
+（所有端点共享每分钟总探测数，超限 429）。全局闸覆盖 info、download、files、
+verify 全部匿名端点，不只 info（2026-10-22 第 8 轮 F-103）。
+
 ### 6.1 获取分享信息
 
 **GET** `/api/v1/public-shares/{shareCode}`
@@ -1155,6 +1159,7 @@ F-101，防不可逆的元数据清空）。
 | Error.Conflict | 409 | 与现有状态冲突（Shared 工厂家族） |
 | Error.Unauthorized | 401 | 未认证（Shared 工厂家族） |
 | Error.Forbidden | 403 | 已认证但无权限（Shared 工厂家族） |
+| Error.DatabaseUnavailable | 503 | 数据库锁库/只读/不可打开（依赖故障，可重试） |
 | File.NotFound | 404 | 文件不存在 |
 | FileShare.NotFound | 404 | 分享不存在 |
 | FileShare.FileNotFound | 404 | 分享内文件不存在 |
@@ -1168,6 +1173,9 @@ F-101，防不可逆的元数据清空）。
 | FileVersion.CurrentVersionConflict | 409 | 与当前版本冲突 |
 | StoragePool.NameExists | 409 | 存储池名已存在 |
 | StoragePool.MountPathExists | 409 | 挂载路径已被占用 |
+| Scan.InProgress | 409 | 已有扫描在执行，第二次请求立即拒绝 |
+| Scan.PoolEmpty | 409 | 物理池为空但库内仍有活跃记录，需 force=true 确认 |
+| Storage.PoolUnavailable | 503 | 存储挂载点不存在或不可用 |
 | Storage.InsufficientSpace | 507 | 存储空间不足（RFC 4918 语义） |
 | User.QuotaExceeded | 507 | 用户配额超限（RFC 4918 语义） |
 | Config.ValidationFailed | 400 | 配置校验失败 |
