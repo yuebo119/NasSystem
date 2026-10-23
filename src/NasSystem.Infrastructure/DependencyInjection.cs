@@ -90,6 +90,11 @@ public static class DependencyInjection
             configuration.GetSection("Thumbnails"));
         services.AddSingleton<Application.Files.IThumbnailService, Files.ThumbnailService>();
 
+        // 缩略图缓存过期清理（F-105）：TTL 原先只在读取时判定，过期文件不会
+        // 被主动删除；后台每小时按同一 TTL 清理一次
+        services.AddSingleton<Files.ThumbnailCachePruner>();
+        services.AddHostedService<Files.ThumbnailCacheCleanupService>();
+
         // OCR（ROADMAP Phase 2）。引擎单例：模型从 Assembly 嵌入资源解析，
         // 首次加载一两秒，每请求新建等于每次识别都付这个成本；引擎无状态可重入。
         // 识别服务 Scoped：走仓储与工作单元，与请求同生命周期
