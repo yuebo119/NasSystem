@@ -86,6 +86,9 @@ public sealed partial class FileService
             var newItems = new List<FileItem>();
             var updatedItems = new List<FileItem>();
             var changedDirs = new HashSet<string>(StringComparer.Ordinal);
+            // 读取失败被跳过的目录/文件虚拟路径。F-084 用户裁决：不可读不等于
+            // 用户删除，这些路径的库记录不参与删除集判定
+            var skippedPaths = new HashSet<string>(StringComparer.Ordinal);
 
             await ScanDirectoryAsync(
                 storagePath,
@@ -100,13 +103,17 @@ public sealed partial class FileService
                 changedDirs,
                 null,  // 根目录的 parentId 为 null
                 0,     // 根深度
+                skippedPaths,
                 cancellationToken);
 
             // 删除集：库里有、物理上没了的活跃记录。软删记录不进（ITM-N26 语义），
             // 但被删文件夹下的软删后代要一并删：ParentId 外键是 ON DELETE RESTRICT，
-            // 父行被子行引用时删父必失败，软删后代同样引用父行
+            // 父行被子行引用时删父必失败，软删后代同样引用父行。
+            // 读取失败被跳过的路径同样排除：把它当"物理消失"会因一次权限抖动
+            // 不可逆地删掉用户记录（F-084）
             var activeRemoved = scanEntries
                 .Where(e => !e.IsDeleted && !physicalPaths.Contains(e.Path))
+                .Where(e => !IsUnderSkippedPath(e.Path, skippedPaths))
                 .ToList();
 
             var toDelete = activeRemoved.ToList();
@@ -177,7 +184,7 @@ public sealed partial class FileService
                         ? $"（跳过 {counters.SkippedTooDeep} 个超过深度上限 {MaxScanDepth} 的目录）"
                         : string.Empty)
                     + (counters.SkippedUnreadable > 0
-                        ? $"（跳过 {counters.SkippedUnreadable} 个不可读目录或文件）"
+                        ? $"（跳过 {counters.SkippedUnreadable} 个不可读目录或文件，其库记录保留）"
                         : string.Empty)
             });
         }
@@ -232,6 +239,26 @@ public sealed partial class FileService
         return fileName.EndsWith(FileVersionStore.RestoreTempSuffix, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 路径本身，或其祖先目录，在"读取失败被跳过"集合里。
+    /// 跳过目录以其自身路径为前缀判定后代（F-084：库记录保留）
+    /// </summary>
+    private static bool IsUnderSkippedPath(string path, HashSet<string> skippedPaths)
+    {
+        if (skippedPaths.Contains(path))
+            return true;
+
+        foreach (var skipped in skippedPaths)
+        {
+            if (path.Length > skipped.Length
+                && path.StartsWith(skipped, StringComparison.Ordinal)
+                && path[skipped.Length] == '/')
+                return true;
+        }
+
+        return false;
+    }
+
     /// <summary>目录扫描深度上限。CONVENTIONS §2.5 要求设上限：深树爆栈，
     /// Windows 目录联接（junction）成环时无限递归</summary>
     private const int MaxScanDepth = 32;
@@ -256,6 +283,7 @@ public sealed partial class FileService
         HashSet<string> changedDirs,
         Guid? currentDirId,  // 当前目录的 ID，作为子项的 parentId
         int depth,  // 当前深度（根为 0）
+        HashSet<string> skippedPaths,  // 读取失败被跳过的目录/文件虚拟路径（F-084：其库记录保留）
         CancellationToken cancellationToken)
     {
         if (depth > MaxScanDepth)
@@ -269,14 +297,16 @@ public sealed partial class FileService
         // 单个目录读取失败（权限/中途消失）只跳过并计数，不终止整轮扫描
         foreach (var dir in _fileSystemService.EnumerateDirectories(physicalDir))
         {
+            // 虚拟路径在 try 之前算出：目录读取失败时要把它的库记录从删除集
+            // 排除（F-084，用户裁决"不可读不等于用户删除"）
+            var dirName = Path.GetFileName(dir);
+            var dirVirtualPath = CombinePath(virtualPath, dirName);
             try
             {
                 // 再解析点（junction/symlink）不跟随：环状链接会让递归永不终止，
                 // 且目标可能在池外。判断经 IFileSystemService（CONVENTIONS §1.5 收口）
                 if (_fileSystemService.IsReparsePoint(dir))
                     continue;
-
-                var dirName = Path.GetFileName(dir);
 
                 // 版本库目录（ROADMAP Phase 1）：.versions 存文件历史版本，
                 // 与 .uploading- 半成品同理，物理上在池内但不对用户呈现，
@@ -286,7 +316,6 @@ public sealed partial class FileService
                 if (depth == 0 && dirName == FileVersionStore.DirectoryName)
                     continue;
 
-                var dirVirtualPath = CombinePath(virtualPath, dirName);
                 physicalPaths.Add(dirVirtualPath);
 
                 Guid dirId;
@@ -347,12 +376,14 @@ public sealed partial class FileService
                     changedDirs,
                     dirId,
                     depth + 1,
+                    skippedPaths,
                     cancellationToken);
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
             {
                 counters.SkippedUnreadable++;
-                _logger.LogWarning(ex, "扫描跳过不可读目录: {Directory}", dir);
+                skippedPaths.Add(dirVirtualPath);
+                _logger.LogWarning(ex, "扫描跳过不可读目录（库记录保留）: {Directory}", dir);
             }
         }
 
@@ -360,10 +391,11 @@ public sealed partial class FileService
         // 逐文件 try：单个文件消失或不可读只跳过该文件并计数
         foreach (var file in _fileSystemService.EnumerateFiles(physicalDir))
         {
+            // 同目录侧：虚拟路径先算出，读取失败时把该文件的库记录从删除集排除
+            var fileName = Path.GetFileName(file);
+            var fileVirtualPath = CombinePath(virtualPath, fileName);
             try
             {
-                var fileName = Path.GetFileName(file);
-
                 // S5：上传半成品临时文件（<目标名>.uploading-<32位hex>）不入库。
                 // 上传中断（客户端断开/进程退出）会留下它，库里没有对应记录，
                 // 不跳过的话下次扫描会把半成品当用户文件导入。后缀锚定到 32 位
@@ -378,7 +410,6 @@ public sealed partial class FileService
                 if (_fileSystemService.IsReparsePoint(file))
                     continue;
 
-                var fileVirtualPath = CombinePath(virtualPath, fileName);
                 physicalPaths.Add(fileVirtualPath);
 
                 // 文件信息经 IFileSystemService 取（CONVENTIONS §1.5 收口）
@@ -430,7 +461,8 @@ public sealed partial class FileService
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
             {
                 counters.SkippedUnreadable++;
-                _logger.LogWarning(ex, "扫描跳过不可读文件: {File}", file);
+                skippedPaths.Add(fileVirtualPath);
+                _logger.LogWarning(ex, "扫描跳过不可读文件（库记录保留）: {File}", file);
             }
         }
     }

@@ -1130,14 +1130,24 @@ public class FileServiceTests
         _fileSystemServiceMock
             .Setup(x => x.IsReparsePoint("/mnt/scan/locked"))
             .Throws(new UnauthorizedAccessException("拒绝访问"));
+
+        // 库里有该目录的活跃记录：不可读不等于用户删除，记录必须保留（F-084）
+        var lockedId = Guid.NewGuid();
         _fileRepositoryMock
             .Setup(x => x.GetScanEntriesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<FileItemScanEntry>)Array.Empty<FileItemScanEntry>());
+            .ReturnsAsync((IReadOnlyList<FileItemScanEntry>)new[]
+            {
+                new FileItemScanEntry(lockedId, "/locked", FileItemType.Folder, 0, null, false)
+            });
 
         var result = await _sut.ScanAndSyncAsync(userId);
 
         result.IsSuccess.Should().BeTrue("单个目录不可读不应终止整轮扫描");
         result.Value.SkippedUnreadable.Should().Be(1);
+        _fileRepositoryMock.Verify(
+            x => x.BulkDeleteAsync(It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "被跳过的不可读目录其库记录不得当作物理消失删除");
     }
 
     [Fact]
