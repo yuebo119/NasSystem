@@ -6,6 +6,7 @@
 namespace NasSystem.Infrastructure.Services;
 
 using NasSystem.Domain.Services;
+using NasSystem.Shared.IO;
 
 /// <summary>
 /// 文件系统服务实现
@@ -138,25 +139,7 @@ public sealed class FileSystemService : IFileSystemService
 
     public DirectoryInfo GetDirectoryInfo(string path) => new(path);
 
-    public bool IsReparsePoint(string path)
-    {
-        try
-        {
-            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
-        }
-        catch (FileNotFoundException)
-        {
-            return true;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return true;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return true;
-        }
-    }
+    public bool IsReparsePoint(string path) => ReparsePointPolicy.IsReparsePoint(path);
 
     public IEnumerable<FileSystemInfo> GetDirectoryContents(string path)
     {
