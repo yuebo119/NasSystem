@@ -26,6 +26,7 @@ public sealed partial class FileService
 {
     public async Task<Result<ScanResultDto>> ScanAndSyncAsync(
         Guid userId,
+        bool force = false,
         CancellationToken cancellationToken = default)
     {
         // 单飞闸：拿到才继续，拿不到立刻回 InProgress（409）。不排队——
@@ -50,7 +51,11 @@ public sealed partial class FileService
 
             if (!_fileSystemService.DirectoryExists(storagePath))
             {
-                _fileSystemService.CreateDirectory(storagePath);
+                // 不自动创建：配置的挂载点不存在通常意味着卷未挂载或网络盘掉线。
+                // 以前在这里 CreateDirectory 会造一个本地空目录，随后扫描把库内
+                // 记录当"物理消失"全部删掉，属不可逆的元数据清空（F-101）
+                return Result<ScanResultDto>.Failure(new Error(
+                    "Storage.PoolUnavailable", $"存储挂载点不可用: {storagePath}"));
             }
 
             // S2：轻量对比表。原实现载全池活跃实体 + 软删实体两份再 concat 建字典，
@@ -105,6 +110,17 @@ public sealed partial class FileService
                 0,     // 根深度
                 skippedPaths,
                 cancellationToken);
+
+            // F-101：物理树完全为空但库内仍有活跃记录，极可能是卷未挂载
+            // （挂载点是空目录）而不是用户删光了数据。默认拒绝，需 force=true 放行；
+            // 此时尚未发生任何写入，直接返回不会留下半成品
+            var activeRecordCount = scanEntries.Count(e => !e.IsDeleted);
+            if (!force && counters.PhysicalEntriesObserved == 0 && activeRecordCount > 0)
+            {
+                return Result<ScanResultDto>.Failure(new Error(
+                    "Scan.PoolEmpty",
+                    $"存储池物理为空但库内仍有 {activeRecordCount} 条活跃记录，疑似挂载点不可用；确认池已清空可带 force=true 重试"));
+            }
 
             // 删除集：库里有、物理上没了的活跃记录。软删记录不进（ITM-N26 语义），
             // 但被删文件夹下的软删后代要一并删：ParentId 外键是 ON DELETE RESTRICT，
@@ -217,6 +233,9 @@ public sealed partial class FileService
 
         /// <summary>因权限或读取失败被跳过的目录/文件数（F-084）</summary>
         public int SkippedUnreadable { get; set; }
+
+        /// <summary>实际枚举到的物理条目数（含跳过的）。用于区分"空池"与"全部跳过"（F-101）</summary>
+        public int PhysicalEntriesObserved { get; set; }
     }
 
     /// <summary>
@@ -301,6 +320,7 @@ public sealed partial class FileService
             // 排除（F-084，用户裁决"不可读不等于用户删除"）
             var dirName = Path.GetFileName(dir);
             var dirVirtualPath = CombinePath(virtualPath, dirName);
+            counters.PhysicalEntriesObserved++;
             try
             {
                 // 再解析点（junction/symlink）不跟随：环状链接会让递归永不终止，
@@ -394,6 +414,7 @@ public sealed partial class FileService
             // 同目录侧：虚拟路径先算出，读取失败时把该文件的库记录从删除集排除
             var fileName = Path.GetFileName(file);
             var fileVirtualPath = CombinePath(virtualPath, fileName);
+            counters.PhysicalEntriesObserved++;
             try
             {
                 // S5：上传半成品临时文件（<目标名>.uploading-<32位hex>）不入库。

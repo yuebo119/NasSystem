@@ -104,9 +104,11 @@ public class ScanSyncTests : ApiTestBase, IDisposable
         var scanBefore = await Client.PostAsJsonAsync("/api/v1/files/scan", new { });
         scanBefore.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Act：物理上整棵删掉（模拟在资源管理器/SMB 里删目录），再扫描
+        // Act：物理上整棵删掉（模拟在资源管理器/SMB 里删目录），再扫描。
+        // 整池清空是 F-101 安全守卫默认拒绝的形态（空池更像挂载点不可用），
+        // 这里带 force=true 表明确认
         Directory.Delete(physicalDir, recursive: true);
-        var scan = await Client.PostAsJsonAsync("/api/v1/files/scan", new { });
+        var scan = await Client.PostAsJsonAsync("/api/v1/files/scan?force=true", new { });
         scan.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Assert①：库记录必须被清掉。旧实现按路径升序删（父先于子），

@@ -1183,5 +1183,80 @@ public class FileServiceTests
         }
     }
 
+    [Fact]
+    public async Task ScanAndSyncAsync_MissingMount_FailsWithoutCreatingDirectory()
+    {
+        var pool = StoragePool.Create("扫描池", "/mnt/scan");
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+        _fileSystemServiceMock.Setup(x => x.DirectoryExists(It.IsAny<string>())).Returns(false);
+
+        var result = await _sut.ScanAndSyncAsync(Guid.NewGuid());
+
+        result.IsFailure.Should().BeTrue("挂载点缺失是依赖故障，不能当空池扫描");
+        result.Error.Code.Should().Be("Storage.PoolUnavailable");
+        _fileSystemServiceMock.Verify(
+            x => x.CreateDirectory(It.IsAny<string>()),
+            Times.Never,
+            "不能在缺失的挂载点上造一个本地空目录再扫描");
+        _fileRepositoryMock.Verify(
+            x => x.GetScanEntriesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ScanAndSyncAsync_EmptyPoolWithActiveRecords_RefusesMassDelete()
+    {
+        var userId = Guid.NewGuid();
+        var pool = StoragePool.Create("扫描池", "/mnt/scan");
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+        _fileSystemServiceMock.Setup(x => x.DirectoryExists(It.IsAny<string>())).Returns(true);
+        _fileSystemServiceMock.Setup(x => x.EnumerateDirectories(It.IsAny<string>())).Returns(Array.Empty<string>());
+        _fileSystemServiceMock.Setup(x => x.EnumerateFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
+        _fileRepositoryMock
+            .Setup(x => x.GetScanEntriesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<FileItemScanEntry>)new[]
+            {
+                new FileItemScanEntry(Guid.NewGuid(), "/keep.txt", FileItemType.File, 1, null, false)
+            });
+
+        var result = await _sut.ScanAndSyncAsync(userId);
+
+        result.IsFailure.Should().BeTrue("空池更可能是挂载点不可用，默认不能清空元数据");
+        result.Error.Code.Should().Be("Scan.PoolEmpty");
+        _fileRepositoryMock.Verify(
+            x => x.BulkDeleteAsync(It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ScanAndSyncAsync_EmptyPoolWithForce_DeletesRecords()
+    {
+        var userId = Guid.NewGuid();
+        var pool = StoragePool.Create("扫描池", "/mnt/scan");
+        _storagePoolRepositoryMock
+            .Setup(x => x.GetDefaultAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pool);
+        _fileSystemServiceMock.Setup(x => x.DirectoryExists(It.IsAny<string>())).Returns(true);
+        _fileSystemServiceMock.Setup(x => x.EnumerateDirectories(It.IsAny<string>())).Returns(Array.Empty<string>());
+        _fileSystemServiceMock.Setup(x => x.EnumerateFiles(It.IsAny<string>())).Returns(Array.Empty<string>());
+        _fileRepositoryMock
+            .Setup(x => x.GetScanEntriesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<FileItemScanEntry>)new[]
+            {
+                new FileItemScanEntry(Guid.NewGuid(), "/gone.txt", FileItemType.File, 1, null, false)
+            });
+
+        var result = await _sut.ScanAndSyncAsync(userId, force: true);
+
+        result.IsSuccess.Should().BeTrue("force 是显式确认，允许按物理树清空");
+        _fileRepositoryMock.Verify(
+            x => x.BulkDeleteAsync(It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     #endregion
 }

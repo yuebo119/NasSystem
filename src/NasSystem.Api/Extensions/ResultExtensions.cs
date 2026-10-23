@@ -43,6 +43,10 @@ public static class ResultExtensions
         ["StoragePool.MountPathExists"] = HttpStatusCode.Conflict,
         // 并发扫描的单飞闸拒绝：有另一个扫描在跑，属状态冲突
         ["Scan.InProgress"] = HttpStatusCode.Conflict,
+        // 空池但库有记录：需要管理员确认是否真的清空（F-101）
+        ["Scan.PoolEmpty"] = HttpStatusCode.Conflict,
+        // 挂载点不存在/不可用：依赖故障，不是请求错误
+        ["Storage.PoolUnavailable"] = HttpStatusCode.ServiceUnavailable,
 
         // ─── 507：容量/配额（RFC 4918 语义；WebDAV 层本就特判这两个码）───
         ["Storage.InsufficientSpace"] = HttpStatusCode.InsufficientStorage,
@@ -150,6 +154,8 @@ public static class ResultExtensions
             HttpStatusCode.Forbidden => Results.Forbid(),
             HttpStatusCode.InsufficientStorage => Results.Json(
                 response, statusCode: (int)HttpStatusCode.InsufficientStorage),
+            HttpStatusCode.ServiceUnavailable => Results.Json(
+                response, statusCode: (int)HttpStatusCode.ServiceUnavailable),
             _ => Results.InternalServerError(response)
         };
     }

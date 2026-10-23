@@ -135,7 +135,7 @@ public static class FileEndpoints
         files.MapPost("/scan", ScanAndSync)
              .WithName("ScanAndSync")
              .WithSummary("扫描并同步文件")
-             .WithDescription("扫描存储目录下的物理文件，并同步到数据库。以物理文件为准，数据库为辅。")
+             .WithDescription("扫描存储目录下的物理文件，并同步到数据库。以物理文件为准，数据库为辅。物理树为空但库内仍有活跃记录时默认拒绝（疑似挂载点不可用），确认池已清空可带 force=true 重试")
              .RequireAuthorization("RequireAdmin");
 
         // 识别图片文字（ROADMAP Phase 2）
@@ -464,10 +464,11 @@ public static class FileEndpoints
 
     private static async Task<IResult> ScanAndSync(
         IFileSyncService fileService,
-        ClaimsPrincipal user)
+        ClaimsPrincipal user,
+        bool? force)
     {
         var userId = GetUserId(user);
-        var result = await fileService.ScanAndSyncAsync(userId);
+        var result = await fileService.ScanAndSyncAsync(userId, force ?? false);
         return result.ToHttpResult();
     }
 
