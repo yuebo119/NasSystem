@@ -288,8 +288,9 @@ public class FileServiceTests
         };
 
         _fileRepositoryMock
-            .Setup(x => x.PathExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .Setup(x => x.GetByPathIncludingDeletedAsync("/documents/existing", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateFileItem(
+                Guid.NewGuid(), "existing", "/documents/existing", FileItemType.Folder, ownerId: userId));
 
         // Act
         var result = await _sut.CreateFolderAsync(request, userId);
@@ -630,8 +631,9 @@ public class FileServiceTests
             .ReturnsAsync(file);
 
         _fileRepositoryMock
-            .Setup(x => x.PathExistsAsync(It.Is<string>(p => p.Contains("existing.txt")), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .Setup(x => x.GetByPathIncludingDeletedAsync("/documents/existing.txt", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateFileItem(
+                Guid.NewGuid(), "existing.txt", "/documents/existing.txt", FileItemType.File, ownerId: userId));
 
         // Act
         var result = await _sut.RenameAsync(request, userId);

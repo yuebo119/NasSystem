@@ -234,9 +234,15 @@ public interface IFileItemRepository : IRepository<FileItem>
     Task<long> CalculateAllUsersUsedSpaceAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 检查路径是否存在
+    /// 检查路径是否存在（仅活跃记录）
     /// </summary>
     Task<bool> PathExistsAsync(string path, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 检查路径是否存在，含软删记录。物理路径与虚拟路径同构且软删记录的物理
+    /// 内容仍在盘上，写入目标判定必须把回收站记录也算作"占用"（F-094）
+    /// </summary>
+    Task<bool> PathExistsIncludingDeletedAsync(string path, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 取当前用户最近修改的文件（按 CreatedAt 倒序，含文件夹）。

@@ -162,6 +162,49 @@ public class CrossUserIsolationTests : ApiTestBase
         }
     }
 
+    [Fact]
+    public async Task Upload_UnderOtherUsersRecycledPath_DoesNotDestroyRecycledContent()
+    {
+        // F-094：目标冲突检查此前只查活跃记录（GetByPathAsync/PathExistsAsync
+        // 都带 IsDeleted=0）。A 软删目录后物理内容仍在回收站，B 重建同名目录再传
+        // 同名文件，File.Move(overwrite:true) 会覆盖 A 回收站里的物理内容——
+        // 库记录指向同一物理路径，A 的数据永久丢失且恢复必然撞唯一索引
+        var (ownerToken, otherToken, ownerUsername) = await TwoUsersAsync();
+        var folder = "isor" + Guid.NewGuid().ToString("N")[..6];
+        await SeedTestFolderAsync($"/{folder}", ownerUsername);
+        await SeedTestFileAsync($"/{folder}/keep.txt", ownerUsername);
+        var physicalPath = await GetPhysicalPathAsync($"/{folder}/keep.txt");
+        (await File.ReadAllTextAsync(physicalPath)).Should().Be("isolation probe");
+
+        // A 软删整个目录（物理内容留在回收站）
+        SetAuthToken(ownerToken);
+        var delete = await Client.PostAsJsonAsync("/api/v1/files/delete",
+            new { paths = new[] { $"/{folder}" }, permanent = false });
+        delete.StatusCode.Should().Be(HttpStatusCode.OK, "软删应成功");
+        File.Exists(physicalPath).Should().BeTrue("软删不移除物理内容");
+
+        // B 尝试重建同名目录并上传同名文件
+        SetAuthToken(otherToken);
+        var mkdir = await Client.PostAsJsonAsync("/api/v1/files/folder",
+            new { parentPath = "/", name = folder });
+        mkdir.StatusCode.Should().NotBe(HttpStatusCode.OK,
+            "他人回收站占用的同名路径不得被重新占用");
+
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent($"/{folder}"), "path");
+        form.Add(new StringContent("true"), "overwrite");
+        var payload = new ByteArrayContent(Encoding.UTF8.GetBytes("intruder"));
+        payload.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        form.Add(payload, "file", "keep.txt");
+        var upload = await Client.PostAsync("/api/v1/files/upload", form);
+        upload.StatusCode.Should().NotBe(HttpStatusCode.OK,
+            "他人回收站占用的同路径上传不得成功");
+
+        // 核心断言：A 回收站里的物理内容未被覆盖
+        (await File.ReadAllTextAsync(physicalPath)).Should().Be("isolation probe",
+            "他人重建同路径不得覆盖回收站里的物理内容");
+    }
+
     /// <summary>取默认池挂载点下某虚拟路径对应的物理路径</summary>
     private async Task<string> GetPhysicalPathAsync(string virtualPath)
     {

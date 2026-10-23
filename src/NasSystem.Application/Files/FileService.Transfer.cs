@@ -31,9 +31,12 @@ public sealed partial class FileService
         var parentPath = NormalizePath(request.ParentPath);
         var newPath = CombinePath(parentPath, request.Name);
 
-        // 检查是否已存在
-        if (await _fileRepository.PathExistsAsync(newPath, cancellationToken))
-            return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(newPath));
+        // 检查是否已存在（含回收站记录：软删记录的物理目录/文件仍在盘上，
+        // 他人重建同名路径会覆盖受害者回收站内容，F-094）
+        var folderConflict = await CheckDestinationConflictAsync(
+            newPath, userId, allowSameOwnerRecycled: true, cancellationToken);
+        if (folderConflict is not null)
+            return Result<FileItemDto>.Failure(folderConflict.Value);
 
         // 获取父目录
         Guid? parentId = null;
@@ -93,6 +96,17 @@ public sealed partial class FileService
             return Result<FileItemDto>.Failure(FileErrors.NotFound(filePath));
         if (existingItem != null && !metadata.Overwrite)
             return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(filePath));
+
+        // F-094：活跃记录为空时还要看回收站记录。他人同路径（含软删）按不存在
+        // 处理，物理内容不会被覆盖；本人软删记录允许写入，保持"删除后重传同名"
+        // 的既有行为（旧内容由本次写入覆盖，属用户自己的选择）
+        if (existingItem is null)
+        {
+            var recycledConflict = await CheckDestinationConflictAsync(
+                filePath, userId, allowSameOwnerRecycled: true, cancellationToken);
+            if (recycledConflict is not null)
+                return Result<FileItemDto>.Failure(recycledConflict.Value);
+        }
 
         // ROADMAP Phase 2 只读保护：覆盖上传即破坏受保护目录内的既有内容，
         // 在任何 IO（临时文件落盘）之前拦截。新建（existingItem 为 null）
@@ -362,8 +376,12 @@ public sealed partial class FileService
         var parentPath = GetParentPath(path);
         var newPath = CombinePath(parentPath, request.NewName);
         
-        if (await _fileRepository.PathExistsAsync(newPath, cancellationToken))
-            return Result<FileItemDto>.Failure(FileErrors.AlreadyExists(newPath));
+        // F-094：目标路径含回收站记录时不得改名（物理同路径，Move 非覆盖语义会失败，
+        // 也可能破坏回收站内容）。本人回收站记录同样视为占用，提示先去回收站处理
+        var renameConflict = await CheckDestinationConflictAsync(
+            newPath, userId, allowSameOwnerRecycled: false, cancellationToken);
+        if (renameConflict is not null)
+            return Result<FileItemDto>.Failure(renameConflict.Value);
 
         var oldPhysicalPath = item.PhysicalPath;
         var newPhysicalPath = Path.Combine(Path.GetDirectoryName(item.PhysicalPath)!, request.NewName);
@@ -442,6 +460,19 @@ public sealed partial class FileService
                 continue;
 
             var newPath = CombinePath(destPath, item.Name);
+            if (string.Equals(newPath, normalized, StringComparison.Ordinal))
+                continue; // 目标与源相同：无操作
+
+            // F-094：目标路径含回收站记录时不得移动（物理同路径，Move 非覆盖
+            // 语义会失败且可能破坏回收站内容）。批量语义：跳过该项并记日志
+            var moveConflict = await CheckDestinationConflictAsync(
+                newPath, userId, allowSameOwnerRecycled: false, cancellationToken);
+            if (moveConflict is not null)
+            {
+                _logger.LogWarning("移动跳过：目标路径已占用 {Path}", newPath);
+                continue;
+            }
+
             var newPhysicalPath = GetPhysicalPath(newPath, poolMountPath);
 
             try
@@ -573,6 +604,37 @@ public sealed partial class FileService
     }
 
     /// <summary>
+    /// 目标路径冲突检查（含回收站记录）。物理路径与虚拟路径同构，软删记录的
+    /// 物理内容仍在盘上：只查活跃记录会让写入覆盖他人（或本人）的回收站内容
+    /// （F-094，跨用户数据销毁）。
+    /// </summary>
+    /// <remarks>
+    /// 返回 null 表示可写；他人记录（含软删）一律按不存在处理，不确认存在性。
+    /// <paramref name="allowSameOwnerRecycled"/> 为 true 时本人回收站记录视为
+    /// 可写（上传/建目录保持"删除后重用同名路径"的既有行为，旧内容由本次
+    /// 写入覆盖）；为 false 时视为占用（改名/移动/复制的目标不得与回收站物理
+    /// 同路径，否则非覆盖语义的 Move 会失败）。
+    /// </remarks>
+    private async Task<Error?> CheckDestinationConflictAsync(
+        string path,
+        Guid userId,
+        bool allowSameOwnerRecycled,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _fileRepository.GetByPathIncludingDeletedAsync(path, cancellationToken);
+        if (existing is null)
+            return null;
+
+        if (existing.OwnerId != userId)
+            return FileErrors.NotFound(path);
+
+        if (existing.IsDeleted && allowSameOwnerRecycled)
+            return null;
+
+        return FileErrors.AlreadyExists(path);
+    }
+
+    /// <summary>
     /// 传输前准备：默认存储池 Id/挂载点 + 目标父目录 ID。
     /// Move/Copy 共用；目标目录显式不存在时报错（两侧语义统一）
     /// </summary>
@@ -623,13 +685,13 @@ public sealed partial class FileService
 
         // 检查原名称是否可用
         var targetPath = CombinePath(destPath, originalName);
-        if (!await _fileRepository.PathExistsAsync(targetPath, cancellationToken))
+        if (!await _fileRepository.PathExistsIncludingDeletedAsync(targetPath, cancellationToken))
             return originalName;
 
         // 尝试 "名称 - 副本"
         var copyName = $"{baseName} - 副本{extension}";
         targetPath = CombinePath(destPath, copyName);
-        if (!await _fileRepository.PathExistsAsync(targetPath, cancellationToken))
+        if (!await _fileRepository.PathExistsIncludingDeletedAsync(targetPath, cancellationToken))
             return copyName;
 
         // 尝试 "名称 - 副本 (n)"
@@ -638,13 +700,13 @@ public sealed partial class FileService
         {
             copyName = $"{baseName} - 副本 ({counter}){extension}";
             targetPath = CombinePath(destPath, copyName);
-            if (!await _fileRepository.PathExistsAsync(targetPath, cancellationToken))
+            if (!await _fileRepository.PathExistsIncludingDeletedAsync(targetPath, cancellationToken))
                 return copyName;
             counter++;
         }
 
         // 极端情况：使用时间戳
-        return $"{baseName} - 副本 ({DateTime.Now:yyyyMMddHHmmss}){extension}";
+        return $"{baseName} - 副本 ({_dateTime.UtcNow:yyyyMMddHHmmss}){extension}";
     }
 
     /// <summary>

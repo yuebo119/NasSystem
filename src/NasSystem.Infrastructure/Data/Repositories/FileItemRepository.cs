@@ -730,6 +730,16 @@ public sealed class FileItemRepository(
         return count > 0;
     }
 
+    public async Task<bool> PathExistsIncludingDeletedAsync(
+        string path, CancellationToken cancellationToken = default)
+    {
+        var normalizedPath = NormalizePath(path);
+        var db = await sessions.GetAsync(cancellationToken);
+        var count = await db.CountAsync<FileItemRow>(
+            $"Path = {normalizedPath}", cancellationToken);
+        return count > 0;
+    }
+
     public Task DeleteRangeAsync(
         IEnumerable<FileItem> items,
         CancellationToken cancellationToken = default)
