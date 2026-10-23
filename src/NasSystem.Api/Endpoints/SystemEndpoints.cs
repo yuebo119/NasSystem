@@ -5,6 +5,7 @@
 
 namespace NasSystem.Api.Extensions;
 
+using System.Security.Claims;
 using Microsoft.Extensions.Options;
 using NasSystem.Application.Common;
 using NasSystem.Application.Storage;
@@ -105,9 +106,27 @@ public static class SystemEndpoints
 
     private static async Task<IResult> GetSystemInfo(
         NasSystem.Application.SystemInfo.ISystemInfoService systemInfoService,
+        ClaimsPrincipal user,
         CancellationToken cancellationToken)
     {
         var result = await systemInfoService.GetSystemInfoAsync(cancellationToken);
+
+        // 角色过滤（用户裁决 2026-10-22）：主机名、操作系统用户名、数据库文件路径、
+        // 网卡地址与进程细节只给管理员；普通用户保留 CPU/内存/运行时等非敏感项。
+        // 置空后经 WhenWritingNull 从响应中缺席，前端按可选字段渲染
+        var isAdmin = user.IsInRole("SuperAdmin") || user.IsInRole("Admin");
+        if (!isAdmin)
+        {
+            result = result with
+            {
+                MachineName = null,
+                Database = null,
+                Network = null,
+                Process = null,
+                OperatingSystem = result.OperatingSystem with { UserName = null },
+            };
+        }
+
         return Results.Ok(ApiResponse<object>.Ok(result));
     }
 

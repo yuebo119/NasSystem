@@ -14,7 +14,8 @@ public sealed record SystemInfoDto
     // ─── 应用（保留原扁平字段的语义，Settings 页直接用）───
     public required string Name { get; init; }
     public required string Version { get; init; }
-    public required string MachineName { get; init; }
+    /// <summary>主机名。非管理员响应中缺席（角色过滤，F-098 落地）</summary>
+    public string? MachineName { get; init; }
     public required DateTime StartTime { get; init; }
     public required bool RunningInContainer { get; init; }
 
@@ -30,14 +31,14 @@ public sealed record SystemInfoDto
     // ─── 内存 ───
     public required MemoryInfo Memory { get; init; }
 
-    // ─── 数据库 ───
-    public required DatabaseInfo Database { get; init; }
+    // ─── 数据库（非管理员缺席：含库文件路径）───
+    public DatabaseInfo? Database { get; init; }
 
-    // ─── 网络 ───
-    public required NetworkInfo Network { get; init; }
+    // ─── 网络（非管理员缺席：含主机名与网卡地址）───
+    public NetworkInfo? Network { get; init; }
 
-    // ─── 进程 ───
-    public required ProcessInfo Process { get; init; }
+    // ─── 进程（非管理员缺席）───
+    public ProcessInfo? Process { get; init; }
 }
 
 public sealed record RuntimeInfo
@@ -62,7 +63,8 @@ public sealed record OsInfo
     public required bool Is64Bit { get; init; }
     public required string TimeZone { get; init; }
     public required string Culture { get; init; }
-    public required string UserName { get; init; }
+    /// <summary>运行应用的操作系统用户名。非管理员响应中缺席（角色过滤）</summary>
+    public string? UserName { get; init; }
 }
 
 public sealed record CpuInfo

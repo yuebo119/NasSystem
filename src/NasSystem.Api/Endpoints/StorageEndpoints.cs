@@ -27,17 +27,18 @@ public static class StorageEndpoints
                .WithSummary("获取存储概览")
                .RequireAuthorization();
 
-        // 获取存储池列表
+        // 获取存储池列表。含物理挂载路径，只给管理员（用户裁决 2026-10-22）；
+// Dashboard 的容量卡走 /storage/overview，那个不含挂载路径
         storage.MapGet("/pools", GetStoragePools)
                .WithName("GetStoragePools")
                .WithSummary("获取存储池列表")
-               .RequireAuthorization();
+               .RequireAuthorization("RequireAdmin");
 
         // 获取单个存储池
         storage.MapGet("/pools/{id:guid}", GetStoragePoolById)
                .WithName("GetStoragePoolById")
                .WithSummary("获取存储池详情")
-               .RequireAuthorization();
+               .RequireAuthorization("RequireAdmin");
 
         // 创建存储池
         storage.MapPost("/pools", CreateStoragePool)

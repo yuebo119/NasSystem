@@ -456,7 +456,8 @@
 ```
 
 `skippedUnreadable` 是权限不足或读取失败被跳过的目录与文件数（2026-10-22 第 2 轮
-F-084：单目录异常不再终止整轮扫描）。已有扫描在执行时，第二次请求返回
+F-084：单目录异常不再终止整轮扫描）。被跳过路径的库记录保留，不按"物理消失"
+删除（2026-10-22 用户裁决：不可读不等于用户删除）。已有扫描在执行时，第二次请求返回
 409（`Scan.InProgress`），不排队。
 
 ---
@@ -854,13 +855,13 @@ F-084：单目录异常不再终止整轮扫描）。已有扫描在执行时，
 
 **GET** `/api/v1/storage/pools`
 
-需要认证
+需要管理员权限（响应含 `mountPath` 物理挂载路径）
 
 ### 7.3 获取存储池详情
 
 **GET** `/api/v1/storage/pools/{id}`
 
-需要认证
+需要管理员权限（响应含 `mountPath` 物理挂载路径）
 
 ### 7.4 创建存储池
 
@@ -964,20 +965,27 @@ F-084：单目录异常不再终止整轮扫描）。已有扫描在执行时，
 
 **GET** `/api/v1/system/info`
 
-需要认证
+需要认证。响应按角色过滤：管理员见全量；普通用户不含 `machineName`、
+`operatingSystem.userName`、`database`、`network`、`process` 五处敏感信息
+（CPU、内存、运行时等非敏感项仍返回，前端按可选字段渲染）。
 
-**响应：**
+**响应（管理员全量；普通用户缺 `machineName`、`operatingSystem.userName`、`database`、`network`、`process`）：**
 ```json
 {
   "success": true,
   "data": {
     "name": "NAS System",
     "version": "1.0.0",
-    "os": "Microsoft Windows NT 10.0.22631.0",
     "machineName": "NAS-SERVER",
-    "processorCount": 8,
-    "dotNetVersion": "10.0.0",
-    "startTime": "2026-01-29T08:00:00Z"
+    "startTime": "2026-01-29T08:00:00Z",
+    "runningInContainer": true,
+    "runtime": { "framework": "Microsoft.NETCore.App", "version": "11.0.0" },
+    "operatingSystem": { "description": "Debian GNU/Linux 13", "userName": "nasuser" },
+    "cpu": { "logicalCores": 8, "model": "...", "processCpuPercent": 0.4 },
+    "memory": { "totalPhysicalBytes": 0, "processWorkingSetBytes": 0, "gcHeapBytes": 0 },
+    "database": { "provider": "SQLite", "version": "3.54", "filePath": "/app/data/nas.db" },
+    "network": { "hostName": "NAS-SERVER", "ipv4Addresses": ["192.168.1.10"] },
+    "process": { "threadCount": 20, "handleCount": 300 }
   }
 }
 ```

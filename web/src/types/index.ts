@@ -392,16 +392,20 @@ export interface SystemStatus {
 export interface SystemInfo {
   name: string
   version: string
-  machineName: string
+  /** 主机名。非管理员响应中缺席（后端角色过滤） */
+  machineName?: string
   startTime: string
   runningInContainer: boolean
   runtime: SystemInfoRuntime
   operatingSystem: SystemInfoOperatingSystem
   cpu: SystemInfoCpu
   memory: SystemInfoMemory
-  database: SystemInfoDatabase
-  network: SystemInfoNetwork
-  process: SystemInfoProcess
+  /** 数据库细节（含库文件路径）。仅管理员可见 */
+  database?: SystemInfoDatabase
+  /** 网络细节（主机名/网卡地址）。仅管理员可见 */
+  network?: SystemInfoNetwork
+  /** 进程细节。仅管理员可见 */
+  process?: SystemInfoProcess
 }
 
 export interface SystemInfoRuntime {
@@ -424,7 +428,8 @@ export interface SystemInfoOperatingSystem {
   is64Bit: boolean
   timeZone: string
   culture: string
-  userName: string
+  /** 运行应用的操作系统用户名。非管理员响应中缺席 */
+  userName?: string
 }
 
 export interface SystemInfoCpu {

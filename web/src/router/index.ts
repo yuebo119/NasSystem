@@ -64,7 +64,7 @@ const routes: RouteRecordRaw[] = [
         path: 'storage',
         name: 'Storage',
         component: () => import('@/views/Storage.vue'),
-        meta: { title: '存储管理', icon: 'Box' }
+        meta: { title: '存储管理', icon: 'Box', requiresAdmin: true }
       },
       {
         path: 'users',

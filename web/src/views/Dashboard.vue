@@ -1143,28 +1143,28 @@ onUnmounted(() => {
         <!-- 数据库 -->
         <div class="sys-group">
           <div class="group-title">{{ t('dashboard.sysDatabase') }}</div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysDbEngine') }}</span><span class="row-value">{{ systemInfo.database.provider || '-' }}</span></div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysDbVersion') }}</span><span class="row-value">{{ systemInfo.database.version || '-' }}</span></div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysDbSize') }}</span><span class="row-value">{{ formatSize(systemInfo.database.fileSizeBytes) }}</span></div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysJournal') }}</span><span class="row-value">{{ systemInfo.database.journalMode || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysDbEngine') }}</span><span class="row-value">{{ systemInfo.database?.provider || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysDbVersion') }}</span><span class="row-value">{{ systemInfo.database?.version || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysDbSize') }}</span><span class="row-value">{{ formatSize(systemInfo.database?.fileSizeBytes ?? 0) }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysJournal') }}</span><span class="row-value">{{ systemInfo.database?.journalMode || '-' }}</span></div>
         </div>
 
         <!-- 网络 -->
         <div class="sys-group">
           <div class="group-title">{{ t('dashboard.sysNetwork') }}</div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysNic') }}</span><span class="row-value" :title="systemInfo.network.primaryInterface">{{ systemInfo.network.primaryInterface || '-' }}</span></div>
-          <div class="group-row"><span class="row-label">IPv4</span><span class="row-value">{{ systemInfo.network.ipv4Addresses?.join(', ') || '-' }}</span></div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysReceived') }}</span><span class="row-value">{{ formatSize(systemInfo.network.receivedBytes) }}</span></div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysSent') }}</span><span class="row-value">{{ formatSize(systemInfo.network.sentBytes) }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysNic') }}</span><span class="row-value" :title="systemInfo.network?.primaryInterface">{{ systemInfo.network?.primaryInterface || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">IPv4</span><span class="row-value">{{ systemInfo.network?.ipv4Addresses?.join(', ') || '-' }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysReceived') }}</span><span class="row-value">{{ formatSize(systemInfo.network?.receivedBytes ?? 0) }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysSent') }}</span><span class="row-value">{{ formatSize(systemInfo.network?.sentBytes ?? 0) }}</span></div>
         </div>
 
         <!-- 进程 -->
         <div class="sys-group">
           <div class="group-title">{{ t('dashboard.sysProcess') }}</div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysThreads') }}</span><span class="row-value">{{ systemInfo.process.threadCount }}</span></div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysHandles') }}</span><span class="row-value">{{ systemInfo.process.handleCount }}</span></div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysPagedMemory') }}</span><span class="row-value">{{ formatSize(systemInfo.process.pagedMemoryBytes) }}</span></div>
-          <div class="group-row"><span class="row-label">{{ t('dashboard.sysCpuTime') }}</span><span class="row-value">{{ formatSeconds(systemInfo.process.totalProcessorSeconds) }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysThreads') }}</span><span class="row-value">{{ systemInfo.process?.threadCount }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysHandles') }}</span><span class="row-value">{{ systemInfo.process?.handleCount }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysPagedMemory') }}</span><span class="row-value">{{ formatSize(systemInfo.process?.pagedMemoryBytes ?? 0) }}</span></div>
+          <div class="group-row"><span class="row-label">{{ t('dashboard.sysCpuTime') }}</span><span class="row-value">{{ formatSeconds(systemInfo.process?.totalProcessorSeconds ?? 0) }}</span></div>
         </div>
       </div>
     </el-card>
