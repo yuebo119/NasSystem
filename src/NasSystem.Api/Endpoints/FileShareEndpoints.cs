@@ -84,11 +84,19 @@ public static class FileShareEndpoints
             .RequireRateLimiting("share")
             .WithTags("公开分享访问");
 
-        // 信息端点是分享码存在性预言机（404 vs 200）。ASP.NET Core 的
-        // RequireRateLimiting 是端点级元数据，同端点叠加第二个策略不会
-        // 都生效（实测只有端点级那个生效），因此全局桶不走策略叠加，
-        // 改由 ShareEnumerationGuard 在 handler 内显式检查，与组级的
-        // 按 IP 窗口（对本端点仍生效）叠加成双闸
+        // 全局枚举闸（F-073 起于 info 端点，F-103 扩到整组）：分享码存在性
+        // 预言机不只 info——download/files/verify 同样通过 404 与 401/400 的
+        // 差异泄漏存在性。组级 filter 统一计数，新增匿名端点不会漏挂；
+        // 与组级按 IP 窗口叠加成双闸
+        publicShares.AddEndpointFilter(async (context, next) =>
+        {
+            var guard = context.HttpContext.RequestServices
+                .GetRequiredService<ShareEnumerationGuard>();
+            return guard.TryAcquire()
+                ? await next(context)
+                : Results.StatusCode(StatusCodes.Status429TooManyRequests);
+        });
+
         publicShares.MapGet("/{shareCode}", GetPublicShareInfo)
                     .WithName("GetPublicShareInfo")
                     .WithSummary("获取公开分享信息");
@@ -196,14 +204,9 @@ public static class FileShareEndpoints
 
     private static async Task<IResult> GetPublicShareInfo(
         string shareCode,
-        IFileShareService fileShareService,
-        ShareEnumerationGuard enumerationGuard)
+        IFileShareService fileShareService)
     {
-        // 全局枚举闸（F-073）：本端点是分享码存在性预言机，按 IP 的窗口
-        // 挡不住分布式枚举，这里再钉一层总速率。超限回 429 且不查库
-        if (!enumerationGuard.TryAcquire())
-            return Results.StatusCode(StatusCodes.Status429TooManyRequests);
-
+        // 全局枚举闸由公开分享组的 endpoint filter 统一执行（F-103），这里只查库
         var result = await fileShareService.GetPublicShareInfoAsync(shareCode);
         return result.ToHttpResult();
     }
