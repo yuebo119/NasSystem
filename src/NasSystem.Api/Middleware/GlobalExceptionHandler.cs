@@ -78,6 +78,23 @@ public sealed class GlobalExceptionHandler(
                 HttpStatusCode.Conflict,
                 new ApiError("Error.Conflict", "相同记录已被并发创建，请修改后重试")),
 
+            // F-103：数据库依赖故障。锁库（5）、只读（8）、文件打不开（14）是
+            // 暂时性依赖问题，回 503 而不是 500，客户端可以稍后重试
+            Microsoft.Data.Sqlite.SqliteException sqliteEx
+                when sqliteEx.SqliteErrorCode is 5 or 8 or 14 => (
+                HttpStatusCode.ServiceUnavailable,
+                new ApiError("Error.DatabaseUnavailable", "数据库暂时不可用，请稍后重试")),
+
+            // 库文件写满（SQLITE_FULL=13）与 OS 级磁盘满同属 507
+            Microsoft.Data.Sqlite.SqliteException sqliteFullEx
+                when sqliteFullEx.SqliteErrorCode == 13 => (
+                HttpStatusCode.InsufficientStorage,
+                new ApiError("Storage.InsufficientSpace", "磁盘空间不足")),
+
+            IOException ioEx when IsDiskFull(ioEx) => (
+                HttpStatusCode.InsufficientStorage,
+                new ApiError("Storage.InsufficientSpace", "磁盘空间不足")),
+
             _ => (
                 HttpStatusCode.InternalServerError,
                 new ApiError(
@@ -107,6 +124,18 @@ public sealed class GlobalExceptionHandler(
         });
 
         await context.Response.WriteAsync(json);
+    }
+
+    /// <summary>
+    /// OS 级磁盘满判定。Windows 是 ERROR_DISK_FULL / ERROR_HANDLE_DISK_FULL，
+    /// Unix 的 ENOSPC 经 .NET 映射为 HResult 28
+    /// </summary>
+    private static bool IsDiskFull(IOException exception)
+    {
+        var hr = exception.HResult;
+        return hr == unchecked((int)0x80070070)
+            || hr == unchecked((int)0x80070027)
+            || hr == 28;
     }
 }
 

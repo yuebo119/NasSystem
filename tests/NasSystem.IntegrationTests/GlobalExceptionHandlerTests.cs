@@ -60,6 +60,64 @@ public sealed class GlobalExceptionHandlerTests
         text.Should().NotContain("/mnt/secret-pool", "物理路径不能回显给客户端");
     }
 
+    [Fact]
+    public async Task InvokeAsync_SqliteReadOnly_ReturnsServiceUnavailable()
+    {
+        var environment = new TestHostEnvironment { EnvironmentName = "Production" };
+        var middleware = new GlobalExceptionHandler(
+            _ => throw new Microsoft.Data.Sqlite.SqliteException("readonly", 8),
+            NullLogger<GlobalExceptionHandler>.Instance,
+            environment);
+        var context = new DefaultHttpContext();
+        var body = new MemoryStream();
+        context.Response.Body = body;
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be((int)HttpStatusCode.ServiceUnavailable,
+            "数据库只读是暂时性依赖故障，不是内部 bug");
+        body.Position = 0;
+        using var reader = new StreamReader(body);
+        (await reader.ReadToEndAsync()).Should().Contain("Error.DatabaseUnavailable");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_SqliteFull_ReturnsInsufficientStorage()
+    {
+        var environment = new TestHostEnvironment { EnvironmentName = "Production" };
+        var middleware = new GlobalExceptionHandler(
+            _ => throw new Microsoft.Data.Sqlite.SqliteException("database full", 13),
+            NullLogger<GlobalExceptionHandler>.Instance,
+            environment);
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be((int)HttpStatusCode.InsufficientStorage);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_DiskFull_ReturnsInsufficientStorage()
+    {
+        var environment = new TestHostEnvironment { EnvironmentName = "Production" };
+        var diskFull = new IOException("disk full") { HResult = unchecked((int)0x80070070) };
+        var middleware = new GlobalExceptionHandler(
+            _ => throw diskFull,
+            NullLogger<GlobalExceptionHandler>.Instance,
+            environment);
+        var context = new DefaultHttpContext();
+        var body = new MemoryStream();
+        context.Response.Body = body;
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be((int)HttpStatusCode.InsufficientStorage);
+        body.Position = 0;
+        using var reader = new StreamReader(body);
+        (await reader.ReadToEndAsync()).Should().Contain("Storage.InsufficientSpace");
+    }
+
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = "Production";
