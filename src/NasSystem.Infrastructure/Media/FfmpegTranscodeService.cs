@@ -547,7 +547,10 @@ public sealed class FfmpegTranscodeService : ITranscodeService
     private static long DirectorySize(string directory)
     {
         if (!Directory.Exists(directory)) return 0;
-        return Directory.EnumerateFiles(directory).Sum(f => new FileInfo(f).Length);
+        // 必须递归：分片在 v{N}/ 子目录里，默认 TopDirectoryOnly 只数到 master.m3u8
+        // （实测 5 秒 1080p 源：递归 1,151,356 字节 vs 只数根目录 373 字节，少报三个量级）
+        return Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+            .Sum(f => new FileInfo(f).Length);
     }
 
     private static void TryDeleteDirectory(string directory)

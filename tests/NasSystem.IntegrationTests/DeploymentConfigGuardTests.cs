@@ -87,4 +87,40 @@ public class DeploymentConfigGuardTests
         streamBlock.Should().Contain("proxy_read_timeout 3600s",
             "长视频转码会超过全局 600s，超时断流会让转码作废并反复重来");
     }
+
+    [Fact]
+    public void ContainerConfig_MustKeepSafeDefaults()
+    {
+        // F-099：容器默认值的机械守护——浮动镜像标签、root 运行、Development 环境、
+        // 缺健康检查或重启策略都是"部署后才发现"的静默风险
+        var root = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..");
+        var compose = File.ReadAllText(Path.Combine(root, "docker-compose.yml"));
+        var dockerfile = File.ReadAllText(Path.Combine(root, "Dockerfile"));
+
+        // 镜像显式标签，禁 latest 浮动标签
+        compose.Should().NotContain(":latest");
+        dockerfile.Should().NotContain(":latest");
+        var imageLines = compose.Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.StartsWith("image:", StringComparison.Ordinal))
+            .ToList();
+        imageLines.Should().NotBeEmpty("compose 应声明外部镜像");
+        imageLines.Should().OnlyContain(l => l.Contains(':'),
+            "每个镜像必须带显式标签，裸仓库名等于随时跟随最新版");
+
+        // 运行时不以 root 启动
+        var lastUser = dockerfile.LastIndexOf("USER ", StringComparison.Ordinal);
+        lastUser.Should().BeGreaterThanOrEqualTo(0, "Dockerfile 必须有 USER 指令");
+        dockerfile[lastUser..].Should().StartWith("USER nasuser",
+            "最后一条 USER 必须是非 root 的 nasuser");
+
+        // compose 不得用 Development（GlobalExceptionHandler 会回显异常细节）
+        compose.Should().NotContain("ASPNETCORE_ENVIRONMENT=Development");
+        compose.Should().Contain("ASPNETCORE_ENVIRONMENT=Production");
+
+        // 健康检查与重启策略
+        compose.Should().Contain("healthcheck");
+        compose.Should().Contain("restart: unless-stopped");
+        dockerfile.Should().Contain("HEALTHCHECK");
+    }
 }

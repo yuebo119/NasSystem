@@ -123,6 +123,13 @@ public class FfmpegTranscodeTests : IDisposable
         segments.All(s => new FileInfo(s).Length > 0).Should().BeTrue("分片非空");
         playlist.TotalSizeBytes.Should().BeGreaterThan(0);
 
+        // F-100：体积必须递归统计。分片在 v{N}/ 子目录里，只数根目录会少报三个量级
+        var recursiveBytes = Directory
+            .EnumerateFiles(playlist.Directory, "*", SearchOption.AllDirectories)
+            .Sum(f => new FileInfo(f).Length);
+        playlist.TotalSizeBytes.Should().Be(recursiveBytes,
+            "HLS 体积应等于产物目录的递归字节和");
+
         // 缓存命中：记下 mtime，第二次调用后内容与时间戳不变（不重转）
         var playlistBefore = File.GetLastWriteTimeUtc(playlistPath);
         await Task.Delay(50);
