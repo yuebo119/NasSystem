@@ -103,8 +103,9 @@ services:
     environment:
       # SMB 账号独立于应用账号体系（samba 自有 passdb，与应用 SQLite 不通）。
       # 用户名固定 nasadmin（smb.conf 的 valid users）。缺省空值由 entrypoint
-      # 兜底为本地体验密码并打 WARN；不能用 ${VAR:?} 形式，那会让未设变量的
-      # 宿主在解析整个 compose 文件时就失败，连带拖垮不带 smb profile 的默认启动
+      # fail-fast 拒绝启动（F-096：不得用写进仓库的弱口令暴露共享卷）；
+      # 不能用 ${VAR:?} 形式，那会让未设变量的宿主在解析整个 compose 文件时
+      # 就失败，连带拖垮不带 smb profile 的默认启动
       - NAS_SMB_PASSWORD=${NAS_SMB_PASSWORD:-}
     restart: unless-stopped
     networks:

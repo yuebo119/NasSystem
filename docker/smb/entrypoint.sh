@@ -30,10 +30,13 @@ fi
 chown -R nasuser:nasuser /app/storage 2>/dev/null || true
 
 # SMB 账号独立于应用账号体系（应用账号在 SQLite 里，samba 有自己的
-# passdb 后端，两边不通）。密码从环境变量注入，缺省值仅供本地体验
+# passdb 后端，两边不通）。密码必须显式注入：缺省即拒绝启动。
+# 曾经兜底为 "nasadmin" 并打 WARN——启用 smb profile 又忘记设置变量时，
+# 445 端口会用一个写进仓库的弱口令暴露整个共享卷，而 WARN 埋在容器日志里
+# 没人看；sidecar 本就是显式 profile，fail-fast 才是安全默认
 if [ -z "${NAS_SMB_PASSWORD}" ]; then
-    echo "[smb] WARN: NAS_SMB_PASSWORD 未设置，使用默认密码 nasadmin（生产必须显式设置）" >&2
-    NAS_SMB_PASSWORD="nasadmin"
+    echo "[smb] FATAL: NAS_SMB_PASSWORD 未设置；SMB 直通会以该密码暴露共享卷，必须显式设置强密码" >&2
+    exit 1
 fi
 
 printf '%s\n%s\n' "${NAS_SMB_PASSWORD}" "${NAS_SMB_PASSWORD}" \

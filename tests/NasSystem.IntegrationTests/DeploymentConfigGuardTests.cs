@@ -42,4 +42,49 @@ public class DeploymentConfigGuardTests
         line.Should().Contain("${JWT_SECRET}",
             "缺失变量应求值为空，由应用 fail-fast 明确报错");
     }
+
+    [Fact]
+    public void SmbEntrypoint_MustNotShipDefaultPassword()
+    {
+        // F-096：SMB sidecar 曾在 NAS_SMB_PASSWORD 缺省时兜底为 "nasadmin"，
+        // 启用 smb profile 又忘记设置变量会让 445 端口用弱口令暴露整个共享卷
+        var entrypointPath = Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..", "docker", "smb", "entrypoint.sh");
+        File.Exists(entrypointPath).Should().BeTrue("测试应能在仓库根定位 SMB sidecar entrypoint");
+
+        var script = File.ReadAllText(entrypointPath);
+
+        script.Should().NotContain("NAS_SMB_PASSWORD=\"nasadmin\"",
+            "SMB 直通不得带写进仓库的默认密码");
+        script.Should().NotContain("NAS_SMB_PASSWORD=nasadmin");
+        script.Should().Contain("NAS_SMB_PASSWORD 未设置",
+            "缺省时必须 fail-fast 并给出可操作提示");
+        script.Should().Contain("exit 1",
+            "缺省密码应拒绝启动而不是用弱口令继续");
+    }
+
+    [Fact]
+    public void NginxConfig_MustAlignWithUpstreamLimitsAndLongTranscode()
+    {
+        // F-097：nginx 默认值曾与上游语义不匹配——body 上限 10G 对 Kestrel
+        // 500MB（白缓冲）、全局 600s 读超时会截断同步转码的长视频、
+        // 缺 HSTS/server_tokens、上传被 nginx 全量缓冲
+        var nginxPath = Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..", "nginx.conf");
+        File.Exists(nginxPath).Should().BeTrue("测试应能在仓库根定位 nginx.conf");
+
+        var text = File.ReadAllText(nginxPath);
+        text.Should().Contain("server_tokens off", "不回显 nginx 版本号");
+        text.Should().Contain("Strict-Transport-Security", "HTTPS 部署应带 HSTS");
+        text.Should().Contain("client_max_body_size 512m",
+            "应与 Kestrel 的 500MB 上限对齐，避免缓冲超限请求");
+        text.Should().Contain("proxy_request_buffering off", "上传应流式直通");
+
+        var streamIndex = text.IndexOf("location /api/v1/media/stream/", StringComparison.Ordinal);
+        streamIndex.Should().BeGreaterThanOrEqualTo(0, "HLS 同步转码需要独立的放长超时");
+        var streamBlock = text[streamIndex..];
+        streamBlock = streamBlock[..streamBlock.IndexOf('}')];
+        streamBlock.Should().Contain("proxy_read_timeout 3600s",
+            "长视频转码会超过全局 600s，超时断流会让转码作废并反复重来");
+    }
 }
