@@ -172,8 +172,10 @@ public static class ServiceCollectionExtensions
         // 与 "share" 限流策略（按 IP）互补：那个挡单来源轰炸，这个挡分布式枚举
         services.AddSingleton<Security.ShareEnumerationGuard>();
 
-        // 健康检查
-        services.AddHealthChecks();
+        // 健康检查。数据库探测必须有：只读库/损坏库时进程仍能起，但所有写入失败，
+        // 没有这张检查 /health 会一直报健康（F-102）
+        services.AddHealthChecks()
+            .AddCheck<Health.DatabaseHealthCheck>("database");
 
         return services;
     }
