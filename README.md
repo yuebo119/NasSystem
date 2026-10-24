@@ -298,7 +298,7 @@ wslc run -d --name nas-system --network nas-network --network-alias nas-system \
 
 ## 📜 许可证
 
-MIT License
+本项目基于 [Apache License 2.0](LICENSE) 开源。
 
 ## 🤝 贡献
 
